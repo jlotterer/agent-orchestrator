@@ -59,7 +59,19 @@
     "squash": true,
     "copyFiles": [],
     "setupCommand": "",
-    "tickTasksMd": true
+    "tickTasksMd": true,
+    "ghCommand": "gh",
+    "feedback": {
+      "enabled": true,
+      "waitForChecks": true,
+      "pollSeconds": 60,
+      "maxRounds": 3,
+      "checksTimeoutMinutes": 60,
+      "noChecksGraceSeconds": 90,
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "logChars": 6000
+    }
   },
   "handoff": {
     "specChars": 12000,
