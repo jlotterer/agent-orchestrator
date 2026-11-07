@@ -71,7 +71,8 @@ export function runAgent(opts: RunOptions): Promise<AgentResult> {
     opts.onSpawn?.(child);
 
     const timer = setTimeout(() => {
-      opts.onEvent("error", { message: `${adapter.name} timed out after ${Math.round(opts.timeoutMs / 60000)} min; killing` });
+      const limit = opts.timeoutMs >= 60_000 ? `${Math.round(opts.timeoutMs / 60_000)} min` : `${Math.round(opts.timeoutMs / 1000)} s`;
+      opts.onEvent("error", { message: `${adapter.name} timed out after ${limit}; killing` });
       child.kill("SIGTERM");
       setTimeout(() => child.kill("SIGKILL"), 5000).unref();
     }, opts.timeoutMs);

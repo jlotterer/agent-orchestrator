@@ -11,6 +11,14 @@
  *                CIFAIL until it gets feedback (fake gh's CI fails on it); review feedback
  *                that mentions "the reviewer" makes the worker write "reviewed"
  *   validator -> FAIL if the diff contains NEEDS_REVIEW, else PASS
+ *
+ * Lifecycle markers (scripts/e2e-lifecycle.mjs), matched anywhere in the prompt:
+ *   PLANNER_FAIL  (spec.md, planner) -> prints to stderr and exits 1 with no plan
+ *   SLEEP_LONG    (task, worker)     -> commits impl/<KEY>.wip, writes its pid to $FAKE_STATE_DIR/<KEY>.pid,
+ *                                       then sleeps (up to 120 s; exits early if orphaned). Once
+ *                                       impl/<KEY>.wip exists in the worktree it behaves normally.
+ *   NO_COMMIT     (task, worker)     -> reports done without changing anything
+ *   CONFLICT_FILE (task, worker)     -> also writes shared.txt with task-specific content
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -52,7 +60,11 @@ if (gemini) emit({ type: "init", timestamp: new Date().toISOString(), session_id
 else emit({ type: "system", subtype: "init", model: "fake", session_id: sessionId });
 await new Promise((r) => setTimeout(r, 200));
 
-if (prompt.includes("You are the PLANNER")) {
+if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
+  say("Something went wrong.");
+  console.error("fake planner: PLANNER_FAIL marker; giving up");
+  process.exit(1);
+} else if (prompt.includes("You are the PLANNER")) {
   const m = prompt.match(/```json\n([\s\S]*?)\n```/);
   const tasks = JSON.parse(m[1]);
   say("Reading the spec and tasks.");
@@ -76,6 +88,25 @@ if (prompt.includes("You are the PLANNER")) {
     say("The spec is ambiguous about the greeting format.");
     orch(`ask "Should T002 greet in English or French?" --options "English,French"`);
     finish({ status: "blocked", summary: "Waiting for an answer about greeting language." }, "Blocked on a question.");
+  } else if (prompt.includes("SLEEP_LONG") && !fs.existsSync(`impl/${key}.wip`)) {
+    fs.mkdirSync("impl", { recursive: true });
+    fs.writeFileSync(`impl/${key}.wip`, "work in progress\n");
+    execSync(`git add -A && git -c user.name=fake -c user.email=f@x commit -q -m "${key}: wip"`, { stdio: "ignore" });
+    tool("Bash", { command: "git commit" }, "committed wip");
+    orch(`decide "Started slow work on ${key}" --why "SLEEP_LONG marker"`);
+    if (process.env.FAKE_STATE_DIR) fs.writeFileSync(path.join(process.env.FAKE_STATE_DIR, `${key}.pid`), String(process.pid));
+    say("Thinking for a long time…");
+    const parent = process.ppid;
+    const deadline = Date.now() + 120_000;
+    // Exit if the daemon died (we were re-parented), so a kill -9 scenario leaves no stray agent behind.
+    while (Date.now() < deadline) {
+      if (process.ppid !== parent) process.exit(1);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    finish({ status: "failed", reason: "slept too long" });
+  } else if (prompt.includes("NO_COMMIT")) {
+    say("Nothing to change, apparently.");
+    finish({ status: "done", summary: `${key}: nothing to do.`, files: [], decisions: [] }, "Done (no changes).");
   } else {
     fs.mkdirSync("impl", { recursive: true });
     let content = "OK";
@@ -88,6 +119,7 @@ if (prompt.includes("You are the PLANNER")) {
       content = `OK greeting=${ans}`;
     }
     fs.writeFileSync(`impl/${key}.txt`, content + "\n");
+    if (prompt.includes("CONFLICT_FILE")) fs.writeFileSync("shared.txt", `written by ${key}\n`);
     tool("Write", { file_path: `impl/${key}.txt`, content }, "written");
     if (!retry) orch(`decide "Used a plain text file for ${key}" --why "the spec does not require a format"`);
     execSync(`git add -A && git -c user.name=fake -c user.email=f@x commit -q -m "${key}: implement"`, { stdio: "ignore" });

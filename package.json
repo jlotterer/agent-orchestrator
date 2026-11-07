@@ -13,7 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && npm run test:unit && npm run check && npm run test:e2e",
     "test:unit": "node --test test/unit/*.test.mjs",
-    "test:e2e": "node scripts/e2e.mjs && node scripts/e2e-pr.mjs",
+    "test:e2e": "node scripts/e2e.mjs && node scripts/e2e-pr.mjs && node scripts/e2e-lifecycle.mjs",
     "check": "node scripts/check-invariants.mjs"
   },
   "engines": {
