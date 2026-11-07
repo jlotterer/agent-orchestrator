@@ -253,12 +253,14 @@ A failed run keeps its throwaway repo and prints its path.
 
 `scripts/check-invariants.mjs` fails if `package.json` has any runtime dependency besides
 `better-sqlite3`, or if `claude`, `gemini` or `anthropic` appears in `src/**/*.ts` outside
-`src/adapters/` (the built-in adapter defaults in `src/config.ts` are allowlisted in the script).
+`src/adapters/` (the built-in adapter defaults in `src/config.ts` are allowlisted in the script), or if a
+file in `src/core/` imports `node:fs`, `node:child_process` or the database, or reads the clock.
 
 `test/fixtures/` holds the spec-first fixture tables for the risky logic (tasks.md parser, JSON
 extraction, readiness, task transitions, PR-poll decisions). Their expected outputs are owner-reviewed;
-see [test/fixtures/README.md](test/fixtures/README.md) for the formats and the `pending` marker. The
-unit tests that run them arrive with TASK-03.
+see [test/fixtures/README.md](test/fixtures/README.md) for the formats and the `pending` marker.
+`test/unit/core.test.mjs` runs every case (`npm run test:unit`); cases marked `pending` are reported as
+skipped until the task that builds them removes the marker.
 
 The e2e tests need Linux or macOS (they spawn `.mjs` files and `sh`). On Windows, run them in a
 container. Copy the source in so the container's `npm ci` does not replace your Windows `node_modules`:
@@ -267,7 +269,8 @@ container. Copy the source in so the container's `npm ci` does not replace your 
 ## Layout
 
 ```
-src/orchestrator.ts   state machine: plan → approve → run → validate → merge; questions, decisions, retries
+src/orchestrator.ts   gathers facts, calls src/core, performs side effects: plan → approve → run → validate → merge
+src/core/             pure decisions: readiness (who starts), task transitions, PR-poll actions
 src/adapters/         one adapter per agent CLI (claude.ts, gemini.ts) + the shared process runner
 src/git.ts            worktrees, diffs, push, gh pr create/merge/view, CI logs, local merge
 src/prfeedback.ts     PR feedback loop helpers: check verdicts, review comments, worker feedback text
