@@ -7,7 +7,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T002 [P] Test harness, invariants check and CI. Brief: docs/tasks/TASK-02.md.
 
 ## Phase 2: Wave 2
-- [ ] T003 [P] Extract the pure decision core. Brief: docs/tasks/TASK-03.md.
+- [x] T003 [P] Extract the pure decision core. Brief: docs/tasks/TASK-03.md.
 - [ ] T004 [P] Regression e2e for built lifecycle behaviour. Brief: docs/tasks/TASK-04.md.
 
 ## Phase 3: Wave 3

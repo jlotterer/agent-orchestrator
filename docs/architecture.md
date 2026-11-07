@@ -45,10 +45,10 @@ src/
   server.ts         node:http router, auth gate, SSE, serves dashboard/index.html
   orchestrator.ts   side-effecting coordinator: tick, runTask, validate, finalize, PR poll, human actions
   core/             PURE (no fs, no child_process, no Date.now: time is passed in)
-    readiness.ts    selectReady(): which tasks start now                      [planned: TASK-03]
-    transitions.ts  nextTaskState(): task status after an event               [planned: TASK-03]
-    prpoll.ts       decidePrAction(): what to do with a PR observation        [planned: TASK-03]
-    ownership.ts    ownedOverlap(): do two owned-file lists overlap           [planned: TASK-14]
+    readiness.ts    selectReady(): which tasks start now                      (built: TASK-03)
+    transitions.ts  nextTaskState(): task status after an event               (built: TASK-03)
+    prpoll.ts       decidePrAction(): what to do with a PR observation        (built: TASK-03)
+    ownership.ts    ownedOverlap(): do two owned-file lists overlap           [stub returns false; planned: TASK-14]
     phases.ts       phasesToValidate(), fixup planning                        [planned: TASK-15]
     graph.ts        cycle detection over depends_on                           [planned: TASK-13]
   prfeedback.ts     PURE: gh JSON → checks/feedback; worker feedback text (built, R1)
@@ -137,7 +137,9 @@ Prompt `prompts/planner.md` receives title, spec files (except tasks.md, clipped
 ## 7. Scheduler
 ### 7.1 Readiness
 `selectReady(input) → ReadinessResult`
-_(→ code: `src/core/readiness.ts`, [planned: TASK-03, extended TASK-09/12/13])_
+_(→ code: `src/core/readiness.ts`; built in TASK-03 including fairness and plan questions; inputs filled by the orchestrator from TASK-09/13; overlap needs TASK-14)_
+
+Until TASK-09 the orchestrator passes one project (`id: "default"`) with `maxAgents = maxParallel`, `busyAgents = 0`, `planQuestionsOpen = 0`, `lastStartAt = null` and empty `filesOwned`, so single-project behaviour is unchanged.
 Input:
 ```ts
 interface ReadinessInput {
@@ -162,7 +164,7 @@ Algorithm:
 5. `resume = resumeOnRetry && hasSession && adapterSupportsResume && (attempt > 0 || fixRounds > 0)`.
 
 ### 7.2 Ownership overlap
-_(→ code: `src/core/ownership.ts`, [planned: TASK-14])_
+_(→ code: `src/core/ownership.ts`; a stub returning `false` since TASK-03, [planned: TASK-14])_
 `ownedOverlap(a, b)`: false if either list is empty (unknown ownership = unconstrained, preserves today's behaviour). Otherwise, for each pattern compute its **static prefix**: path segments (split on `/`, normalized, no leading `./`) up to but excluding the first segment containing any of `* ? [ {`; a pattern without wildcards is its own prefix. Two patterns overlap if one prefix's segments are a prefix of the other's (equal included; empty prefix overlaps everything). Conservative by design: may serialize tasks that would not actually collide, never runs colliding ones together ([0017](decisions/0017-file-ownership.md)).
 
 ### 7.3 Tick
@@ -175,10 +177,10 @@ Per tick: (1) resume `needs_input` tasks with no open questions; (2) PR polls (�
 - `recover()` on daemon start: active tasks → `pending` (worktree kept, activity event), `planning` runs → `plan_pending`, kill leftover UI-mode apps from `run/*.pid` [TASK-16].
 
 ## 8. Task State Machine
-_(→ code: `src/core/transitions.ts`, [planned: TASK-03])_
+_(→ code: `src/core/transitions.ts`; built in TASK-03, T17 [TASK-06] and T19 [TASK-16] not yet)_
 States: `pending, running, validating, needs_input, pr_checks, pr_open, failed, done, skipped`. Active = `running|validating`. Watched (PR polled) = `pr_checks|pr_open`.
 
-`nextTaskState(task, event, cfg) → { status, patch, decision?, notify?, effect?, rejected? }` where `effect` is the ordered list of side effects the shell must perform (`merge_local | push_and_pr | merge_pr | kill_agent | remove_worktree`; empty = none) and `rejected` marks an event not allowed from the current state (status unchanged). The patch holds only what the transition decides; values produced by an effect (`pr_url`, `pr_head`, `pr_pushed_at`, new branch/worktree) are written by the shell after the effect succeeds. If an effect fails (merge), the shell sends `merge_failed` (T9) instead. Fixture semantics: [test/fixtures/README.md](../test/fixtures/README.md).
+`nextTaskState(task, event, cfg) → { status, patch, decision?, notify?, effect?, rejected? }` where `effect` is the ordered list of side effects the shell must perform (`merge_local | push_and_pr | merge_pr | kill_agent | remove_worktree`; empty = none) and `rejected` marks an event not allowed from the current state (status unchanged). The patch holds only what the transition decides; values produced by an effect (`pr_url`, `pr_head`, `pr_pushed_at`, new branch/worktree) are written by the shell after the effect succeeds. If an effect fails (merge), the shell sends `merge_failed` (T9) instead, except for T15 (`human_merge`), where the error goes back to the owner and the task stays. The shell (`Orchestrator.fire`/`applyTransition`) runs merge effects (`merge_local`, `push_and_pr`, `merge_pr`) before the state change and the others (`kill_agent`, `remove_worktree`) after it, so a transition without merge effects is applied synchronously. Owner actions on a state that does not allow them are rejected with an error (e.g. stopping a task that is not active). Fixture semantics: [test/fixtures/README.md](../test/fixtures/README.md).
 
 | # | From | Event | Guard | To | Patch / decision / notify |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -242,7 +244,7 @@ _(→ code: `src/git.ts`)_
 - **Diff for review** [planned: TASK-06]: `diffFiles(worktree)` → `git diff --numstat` + `--name-status` + per-file `git diff <base>...HEAD -- <file>`; binary files (`-\t-` in numstat) have no patch; total patch text capped at 200k chars (`truncated: true`). When the worktree is gone (done tasks), the diff is unavailable (404 with reason).
 
 ## 12. PR Feedback Loop
-_(→ code: `src/orchestrator.ts` pollPr/startFixRound/toInbox, `src/prfeedback.ts`; decision logic moves to `src/core/prpoll.ts` in TASK-03)_
+_(→ code: decision in `src/core/prpoll.ts` (`decidePrAction`), applied as transition T18 in `src/core/transitions.ts`; I/O in `src/orchestrator.ts` pollPr/startFixRound and `src/git.ts`; helpers in `src/prfeedback.ts`)_
 ### 12.1 Observation
 `Git.prStatus(cwd, prUrl)`: `gh pr view <url> --json number,url,state,headRefOid,reviewDecision,reviews,comments,statusCheckRollup` + `gh api repos/{owner}/{repo}/pulls/<n>/comments?per_page=100` (best effort). Normalized to `PrStatus` (checks pass/fail/pending; feedback items review/comment/inline with author, body, ts, state, path, line, isBot).
 
@@ -269,7 +271,7 @@ _(→ code: `src/adapters/types.ts`)_
 
 ### 13.2 JSON contracts
 _(→ code: `prompts/*.md`)_
-All roles end with one fenced ```json block; `extractJson` takes the last parseable fenced block, else the last parseable trailing `{…}`.
+All roles end with one fenced ```json block; `extractJson` takes the last parseable fenced block tagged `json` or untagged (blocks in other languages are skipped; fences may be indented), else the last parseable trailing `{…}`.
 - Planner: `{tasks:[{key, acceptance[], depends_on[], merge_policy, validate_cmd, validate_mode?, files_owned?}], decisions:[{text, rationale}], questions:[{text, options[]}]}`
 - Worker: `{status: done|blocked|failed, summary, files[], decisions[], follow_ups[], reason?}`
 - Validator: `{verdict: PASS|FAIL|BLOCKED, criteria:[{criterion, met, evidence}], reasons[], suggestions[], findings?[]}` (`BLOCKED` only in UI mode)
@@ -415,7 +417,8 @@ _(→ code: `src/db.ts`)_
   - `ownership.json` [TASK-14 extends], `phases.json` [TASK-15 extends].
 - **E2E** (`scripts/e2e*.mjs`, Linux/macOS or `node:22` container): throwaway repos, real git, the daemon via `dist/cli.js serve`, fakes: `fake-agent.mjs` (Claude and Gemini dialects, scripted by task key/prompt markers), `fake-gh.mjs` (PR state files + local bare `origin`), `fake-app.mjs` [TASK-16] (HTTP server on `PORT`). Notifications captured with a local HTTP sink when asserted.
 - **E2E helpers** (`scripts/lib/e2e.mjs`): `makeRepo({files, origin?, prefix?})` (throwaway repo on `main` with a local git identity, optional bare `origin`), `writeConfig(repo, cfg)`, `startDaemon({cwd, env, port})` (prefixed logs, resolves when `/api/state` answers), `api(port)` → `(method, path, body)`, `waitFor(fn, {timeoutMs, intervalMs})`, `cleanup({ok})` (kills daemons; keeps temp repos on failure). New scenarios should be a config, a loop and assertions.
-- **Invariants** (`scripts/check-invariants.mjs`, `npm run check`): `dependencies` is exactly `better-sqlite3` (REQ-NFR-02); `/claude|gemini|anthropic/i` in `src/**/*.ts` outside `src/adapters/` fails unless the line matches the allowlist in the script (built-in adapter defaults and legacy migration in `src/config.ts`) (REQ-NFR-04).
+- **Invariants** (`scripts/check-invariants.mjs`, `npm run check`): `dependencies` is exactly `better-sqlite3` (REQ-NFR-02); `/claude|gemini|anthropic/i` in `src/**/*.ts` outside `src/adapters/` fails unless the line matches the allowlist in the script (built-in adapter defaults and legacy migration in `src/config.ts`) (REQ-NFR-04); files in `src/core/` must not import `node:fs`, `node:child_process` or `../db`, nor call `Date.now()` / `new Date()` without arguments (REQ-NFR-05, [0020](decisions/0020-pure-core-and-fixtures.md)).
+- **Fixture runner** (`test/unit/core.test.mjs`): loads every file in `test/fixtures/`, runs `parseTasksMd`, `extractJson`, `selectReady`, `nextTaskState` and `decidePrAction`, and reports cases with `pending` as skipped.
 - **Manual**: first live Gemini run; first real GitHub repo with Actions; visual dashboard review (dark + light, phone width).
 
 ## 22. Design Assumptions
