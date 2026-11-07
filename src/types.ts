@@ -51,7 +51,7 @@ export interface Task {
   worktree: string | null;
   branch: string | null;
   pr_url: string | null;
-  session_id: string | null;   // worker's claude session id (for --resume)
+  session_id: string | null;   // worker's agent CLI session id (for resume)
   summary: string | null;      // worker's final summary (used in hand-offs)
   files: string[];             // files the worker reported touching
   last_feedback: string | null;

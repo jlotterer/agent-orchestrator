@@ -12,7 +12,7 @@ Short records of significant decisions and **why** they were made. Agents: read 
 | [0006](0006-worktree-branch-pr-per-task.md) | One worktree, one branch, one PR per task; risky work waits for the owner | Accepted |
 | [0007](0007-agent-adapters.md) | Adapters per agent CLI; vendor code only in adapters | Accepted |
 | [0008](0008-speckit-input-contract.md) | Spec Kit tasks.md is the input contract, not a dependency | Accepted |
-| [0009](0009-locked-stack.md) | Locked stack: TypeScript, Node ≥ 20, one runtime dependency, no-build dashboard | Accepted |
+| [0009](0009-locked-stack.md) | Locked stack: TypeScript, Node ≥ 20, one runtime dependency, no-build dashboard | Node floor superseded by 0022 |
 | [0010](0010-pr-feedback-loop.md) | PR feedback loop with a comment trigger and its own round budget | Accepted |
 | [0011](0011-multi-project-daemon.md) | One daemon manages many projects | Accepted |
 | [0012](0012-global-agent-cap.md) | One unfinished run per project; a global cap on concurrent agents | Accepted |
@@ -25,6 +25,7 @@ Short records of significant decisions and **why** they were made. Agents: read 
 | [0019](0019-event-archive-retention.md) | Archive event logs to compressed files, then delete | Accepted |
 | [0020](0020-pure-core-and-fixtures.md) | Pure decision functions pinned by owner-reviewed fixtures | Accepted |
 | [0021](0021-docs-split-and-dogfooding.md) | Split the handoff doc; orch builds its own roadmap | Accepted |
+| [0022](0022-node-22-floor.md) | Raise the Node floor to 22 (better-sqlite3 13 needs it) | Accepted |
 
 New records use [the template](#template).
 

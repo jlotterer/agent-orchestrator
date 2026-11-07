@@ -403,6 +403,7 @@ _(→ code: `src/db.ts`)_
 - Tool inputs clipped to 400 chars per string field; tool outputs to 1500; never log secrets (§16).
 
 ### 21.2 Testing architecture
+- **One command:** `npm test` = build → `test:unit` → `check` → `test:e2e`. CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm run typecheck`, `npm test` on ubuntu-latest with Node 22 and 24 ([0022](decisions/0022-node-22-floor.md)).
 - **Unit** (`test/unit/*.test.mjs`, `node --test`, against `dist/`): pure modules, driven by fixtures.
 - **Fixtures** (`test/fixtures/`, spec-first, owner-reviewed, [TASK-01]):
   - `tasks-md/<case>.md` + `<case>.expected.json`: `[{key, phase, parallel, done, depends_on}]` (depends_on sorted).
@@ -413,12 +414,14 @@ _(→ code: `src/db.ts`)_
   - Any case may carry `"pending": "TASK-NN"`: runners skip it until that task removes the marker. Field semantics, row/step mapping and the Behaviour changes list: `test/fixtures/README.md`.
   - `ownership.json` [TASK-14 extends], `phases.json` [TASK-15 extends].
 - **E2E** (`scripts/e2e*.mjs`, Linux/macOS or `node:22` container): throwaway repos, real git, the daemon via `dist/cli.js serve`, fakes: `fake-agent.mjs` (Claude and Gemini dialects, scripted by task key/prompt markers), `fake-gh.mjs` (PR state files + local bare `origin`), `fake-app.mjs` [TASK-16] (HTTP server on `PORT`). Notifications captured with a local HTTP sink when asserted.
+- **E2E helpers** (`scripts/lib/e2e.mjs`): `makeRepo({files, origin?, prefix?})` (throwaway repo on `main` with a local git identity, optional bare `origin`), `writeConfig(repo, cfg)`, `startDaemon({cwd, env, port})` (prefixed logs, resolves when `/api/state` answers), `api(port)` → `(method, path, body)`, `waitFor(fn, {timeoutMs, intervalMs})`, `cleanup({ok})` (kills daemons; keeps temp repos on failure). New scenarios should be a config, a loop and assertions.
+- **Invariants** (`scripts/check-invariants.mjs`, `npm run check`): `dependencies` is exactly `better-sqlite3` (REQ-NFR-02); `/claude|gemini|anthropic/i` in `src/**/*.ts` outside `src/adapters/` fails unless the line matches the allowlist in the script (built-in adapter defaults and legacy migration in `src/config.ts`) (REQ-NFR-04).
 - **Manual**: first live Gemini run; first real GitHub repo with Actions; visual dashboard review (dark + light, phone width).
 
 ## 22. Design Assumptions
 | ID | Statement | Impact if wrong | Resolved by (task) |
 | :--- | :--- | :--- | :--- |
-| DA1 | `path.matchesGlob` (Node ≥ 20.17/22.5) is available for out-of-scope detection. | Need a tiny glob matcher. | TASK-14 |
+| DA1 | `path.matchesGlob` (Node ≥ 22.5) is available for out-of-scope detection. Node floor is 22 ([0022](decisions/0022-node-22-floor.md)). | Need a tiny glob matcher. | TASK-14 |
 | DA2 | Static-prefix overlap is precise enough; over-serialization is acceptable. | Lost parallelism; refine to glob intersection. | TASK-14 |
 | DA3 | One detached worktree per phase validation is cheap enough (setup command reruns). | Slow phase checks; reuse a cached base worktree. | TASK-15 |
 | DA4 | Validator CLIs can drive a browser when configured (e.g. Playwright MCP for Claude Code). | UI mode returns BLOCKED; owner configures tooling. | TASK-16 |

@@ -6,25 +6,19 @@
  *   node scripts/e2e.mjs
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn, execSync } from "node:child_process";
+import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, FAKE_AGENT } from "./lib/e2e.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 4811;
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "orch-e2e-"));
-const repo = path.join(tmp, "repo");
-fs.mkdirSync(repo);
-const sh = (c, cwd = repo) => execSync(c, { cwd, stdio: "pipe", encoding: "utf8" });
-
-sh("git init -q -b main");
-fs.writeFileSync(path.join(repo, "README.md"), "# demo\n");
-fs.writeFileSync(path.join(repo, "check.sh"), "#!/bin/sh\nfor f in impl/*.txt; do [ -f \"$f\" ] || continue; grep -q OK \"$f\" || { echo \"$f is not OK\"; exit 1; }; done\necho checks passed\n");
-fs.mkdirSync(path.join(repo, "specs/001-demo"), { recursive: true });
-fs.writeFileSync(path.join(repo, "specs/001-demo/spec.md"), "# Feature Specification: Demo greeting\n\nUsers get greeted.\n");
-fs.writeFileSync(path.join(repo, "specs/001-demo/plan.md"), "# Implementation Plan: Demo greeting\n\nPlain text files in impl/.\n");
-fs.writeFileSync(path.join(repo, "specs/001-demo/tasks.md"), `# Tasks
+const CHECK_SH = "#!/bin/sh\nfor f in impl/*.txt; do [ -f \"$f\" ] || continue; grep -q OK \"$f\" || { echo \"$f is not OK\"; exit 1; }; done\necho checks passed\n";
+const { repo, sh } = makeRepo({
+  prefix: "orch-e2e-",
+  files: {
+    "README.md": "# demo\n",
+    "check.sh": CHECK_SH,
+    "specs/001-demo/spec.md": "# Feature Specification: Demo greeting\n\nUsers get greeted.\n",
+    "specs/001-demo/plan.md": "# Implementation Plan: Demo greeting\n\nPlain text files in impl/.\n",
+    "specs/001-demo/tasks.md": `# Tasks
 
 ## Phase 1: Setup
 - [ ] T001 Create base greeting file in impl/T001.txt
@@ -33,15 +27,16 @@ fs.writeFileSync(path.join(repo, "specs/001-demo/tasks.md"), `# Tasks
 - [ ] T002 [P] Add localized greeting (depends on T001)
 - [ ] T003 [P] Add farewell file
 - [ ] T004 Expose greeting through the public API
-`);
-sh("git add -A && git -c user.name=t -c user.email=t@x commit -q -m init");
-fs.writeFileSync(path.join(repo, "orch.config.json"), JSON.stringify({
+`,
+  },
+});
+writeConfig(repo, {
   repo: ".", baseBranch: "main", worktreeDir: "../wt", dbPath: ".orch/orch.db", port: PORT, publicUrl: `http://localhost:${PORT}`,
   agents: {
     timeoutMinutes: 2,
     adapters: {
-      claude: { type: "claude", command: path.join(ROOT, "scripts/fake-agent.mjs"), extraArgs: [], env: {} },
-      gemini: { type: "gemini", command: path.join(ROOT, "scripts/fake-agent.mjs"), extraArgs: ["--yolo", "--skip-trust"], env: { FAKE_FLAVOR: "gemini" } },
+      claude: { type: "claude", command: FAKE_AGENT, extraArgs: [], env: {} },
+      gemini: { type: "gemini", command: FAKE_AGENT, extraArgs: ["--yolo", "--skip-trust"], env: { FAKE_FLAVOR: "gemini" } },
     },
     // Workers on one adapter, validation on another: the mixed setup this test exists to exercise.
     roles: { planner: { adapter: "claude", model: "" }, worker: { adapter: "claude", model: "" }, validator: { adapter: "gemini", model: "pro" } },
@@ -49,21 +44,12 @@ fs.writeFileSync(path.join(repo, "orch.config.json"), JSON.stringify({
   scheduler: { maxParallel: 2, tickSeconds: 1, maxAttempts: 2, resumeOnRetry: true },
   validation: { command: "sh check.sh", agent: true },
   git: { pr: false, mergePolicy: "auto", squash: true, copyFiles: [], setupCommand: "" },
-}, null, 2));
+});
 
-const daemon = spawn("node", [path.join(ROOT, "dist/cli.js"), "serve"], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
-daemon.stdout.on("data", (d) => process.stdout.write("[daemon] " + d));
-daemon.stderr.on("data", (d) => process.stdout.write("[daemon!] " + d));
-const api = async (method, p, body) => {
-  const r = await fetch(`http://127.0.0.1:${PORT}${p}`, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-  const j = await r.json();
-  if (!r.ok) throw new Error(`${p}: ${j.error}`);
-  return j;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const api = apiFor(PORT);
 let ok = false;
 try {
-  for (let i = 0; i < 50; i++) { try { await api("GET", "/api/state"); break; } catch { await sleep(200); } }
+  await startDaemon({ cwd: repo, port: PORT });
   const html = await (await fetch(`http://127.0.0.1:${PORT}/`)).text();
   if (!html.includes("<title>orch</title>")) throw new Error("dashboard did not serve");
 
@@ -79,9 +65,7 @@ try {
   await api("POST", `/api/runs/${run.id}/start`);
 
   const seen = new Set();
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    await sleep(700);
+  await waitFor(async () => {
     s = await api("GET", "/api/state");
     for (const i of s.inbox) {
       const k = `${i.type}:${i.id ?? i.task_id}`;
@@ -90,8 +74,8 @@ try {
       if (i.type === "merge") { seen.add(k); console.log("merging:", i.task_key); await api("POST", `/api/tasks/${i.task_id}/merge`); }
       if (i.type === "failed") throw new Error(`task failed: ${i.title}\n${i.detail}`);
     }
-    if (s.run.status === "done") break;
-  }
+    return s.run.status === "done";
+  }, { timeoutMs: 120_000, intervalMs: 700, label: "run to finish" }).catch((e) => { if (!/^timed out/.test(e.message)) throw e; });
   s = await api("GET", "/api/state");
   console.log("final:", s.run.status, s.tasks.map((t) => `${t.key}=${t.status}(${t.attempt})`).join(" "));
   if (s.run.status !== "done") throw new Error("run did not finish");
@@ -119,9 +103,7 @@ try {
 } catch (e) {
   console.error("E2E FAILED:", e.message);
 } finally {
-  daemon.kill("SIGTERM");
-  await sleep(300);
-  if (ok) { fs.rmSync(tmp, { recursive: true, force: true }); console.log("E2E PASSED"); }
-  else console.log("repo kept at", repo);
+  await cleanup({ ok });
+  if (ok) console.log("E2E PASSED");
   process.exit(ok ? 0 : 1);
 }

@@ -15,7 +15,7 @@ orch is a self-hosted orchestrator for AI coding agents, used by one owner acros
 **Code is the source of truth for contracts:** `src/types.ts`, `src/db.ts` (schema), `src/config.ts` (settings), `src/server.ts` (HTTP API), `prompts/*.md` (agent JSON contracts), `src/core/*` (decision logic). If code and architecture.md disagree, follow the code and fix the doc in the same PR.
 
 ## Stack (locked; see [0009](docs/decisions/0009-locked-stack.md))
-- TypeScript (strict, NodeNext ESM), compiled with `tsc` to `dist/`; Node ≥ 20
+- TypeScript (strict, NodeNext ESM), compiled with `tsc` to `dist/`; Node ≥ 22 ([0022](docs/decisions/0022-node-22-floor.md))
 - Runtime dependency: `better-sqlite3` only. HTTP via `node:http`, no framework
 - Dashboard: single `dashboard/index.html`, vanilla JS, no build step
 - Tests: `node:test` (unit, against `dist/`), `scripts/e2e*.mjs` (end-to-end with fake agents and a fake `gh`)
@@ -24,9 +24,11 @@ orch is a self-hosted orchestrator for AI coding agents, used by one owner acros
 - Install: `npm ci`
 - Build: `npm run build` · Typecheck: `npm run typecheck`
 - Run: `node dist/cli.js serve` (dashboard on :4800)
-- Unit tests: `npm run test:unit` (needs a build first)
-- E2E: `npm run test:e2e`. It needs Linux/macOS. On Windows, run it in Docker (`node:22`); see README "Testing".
-- Before finishing any change: `npm run typecheck && npm run build && npm run test:unit && npm run test:e2e` (TASK-02 folds this into `npm test`).
+- All tests: `npm test` (build → unit → invariants check → e2e). CI runs `npm run typecheck && npm test` on Node 22 and 24.
+- Unit tests: `npm run test:unit` (`test/unit/*.test.mjs`, against `dist/`; needs a build first)
+- Invariants: `npm run check` (one runtime dependency; vendor names only in `src/adapters/`)
+- E2E: `npm run test:e2e`. It needs Linux/macOS. On Windows, run it in Docker (`node:22`); see README "Testing". New scenarios use `scripts/lib/e2e.mjs`.
+- Before finishing any change: `npm run typecheck && npm test`.
 
 ## Conventions
 - `src/core/` is pure: no `node:fs`, `node:child_process`, DB access, or clock reads. Time and facts are passed in. `orchestrator.ts` gathers facts, calls core, performs side effects.

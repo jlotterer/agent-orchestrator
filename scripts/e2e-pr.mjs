@@ -9,66 +9,52 @@
  *   node scripts/e2e-pr.mjs
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn, execSync } from "node:child_process";
+import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, FAKE_AGENT, FAKE_GH } from "./lib/e2e.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 4812;
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "orch-e2e-pr-"));
-const repo = path.join(tmp, "repo"), origin = path.join(tmp, "origin.git"), ghDir = path.join(tmp, "gh");
-fs.mkdirSync(repo);
-const sh = (c, cwd = repo) => execSync(c, { cwd, stdio: "pipe", encoding: "utf8" });
-
-sh(`git init -q --bare -b main "${origin}"`, tmp);
-sh("git init -q -b main");
-fs.writeFileSync(path.join(repo, "README.md"), "# demo\n");
-fs.writeFileSync(path.join(repo, "check.sh"), "#!/bin/sh\nfor f in impl/*.txt; do [ -f \"$f\" ] || continue; grep -q OK \"$f\" || { echo \"$f is not OK\"; exit 1; }; done\necho checks passed\n");
-fs.mkdirSync(path.join(repo, "specs/002-pr"), { recursive: true });
-fs.writeFileSync(path.join(repo, "specs/002-pr/spec.md"), "# Feature Specification: PR loop\n\nFiles in impl/.\n");
-fs.writeFileSync(path.join(repo, "specs/002-pr/tasks.md"), `# Tasks
+const CHECK_SH = "#!/bin/sh\nfor f in impl/*.txt; do [ -f \"$f\" ] || continue; grep -q OK \"$f\" || { echo \"$f is not OK\"; exit 1; }; done\necho checks passed\n";
+const { tmp, repo, sh } = makeRepo({
+  prefix: "orch-e2e-pr-",
+  origin: true,
+  files: {
+    "README.md": "# demo\n",
+    "check.sh": CHECK_SH,
+    "specs/002-pr/spec.md": "# Feature Specification: PR loop\n\nFiles in impl/.\n",
+    "specs/002-pr/tasks.md": `# Tasks
 
 ## Phase 1: Core
 - [ ] T101 [P] Create greeting file CI_TRAP
 - [ ] T102 [P] Add farewell file (manual)
 - [ ] T103 [P] Add docs file (manual)
-`);
-fs.writeFileSync(path.join(repo, ".gitignore"), ".orch/\norch.config.json\n");
-sh("git add -A && git -c user.name=t -c user.email=t@x commit -q -m init");
-sh(`git remote add origin "${origin}" && git push -q -u origin main`);
-fs.writeFileSync(path.join(repo, "orch.config.json"), JSON.stringify({
+`,
+    ".gitignore": ".orch/\norch.config.json\n",
+  },
+});
+const ghDir = path.join(tmp, "gh");
+writeConfig(repo, {
   repo: ".", baseBranch: "main", worktreeDir: "../wt", dbPath: ".orch/orch.db", port: PORT, publicUrl: `http://localhost:${PORT}`,
   agents: {
     timeoutMinutes: 2,
-    adapters: { claude: { type: "claude", command: path.join(ROOT, "scripts/fake-agent.mjs"), extraArgs: [], env: {} } },
+    adapters: { claude: { type: "claude", command: FAKE_AGENT, extraArgs: [], env: {} } },
     roles: { planner: { adapter: "claude", model: "" }, worker: { adapter: "claude", model: "" }, validator: { adapter: "claude", model: "" } },
   },
   scheduler: { maxParallel: 3, tickSeconds: 1, maxAttempts: 2, resumeOnRetry: true },
   validation: { command: "sh check.sh", agent: true },
   git: {
-    pr: true, mergePolicy: "auto", squash: true, ghCommand: path.join(ROOT, "scripts/fake-gh.mjs"),
+    pr: true, mergePolicy: "auto", squash: true, ghCommand: FAKE_GH,
     feedback: { enabled: true, waitForChecks: true, pollSeconds: 1, maxRounds: 2, noChecksGraceSeconds: 0, trigger: "/orch" },
   },
-}, null, 2));
+});
 
-const daemon = spawn("node", [path.join(ROOT, "dist/cli.js"), "serve"], { cwd: repo, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FAKE_GH_DIR: ghDir } });
-daemon.stdout.on("data", (d) => process.stdout.write("[daemon] " + d));
-daemon.stderr.on("data", (d) => process.stdout.write("[daemon!] " + d));
-const api = async (method, p, body) => {
-  const r = await fetch(`http://127.0.0.1:${PORT}${p}`, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-  const j = await r.json();
-  if (!r.ok) throw new Error(`${p}: ${j.error}`);
-  return j;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const api = apiFor(PORT);
 const prFile = (branch) => path.join(ghDir, branch.replace(/[^\w.-]+/g, "_") + ".json");
 const editPr = (branch, fn) => { const f = prFile(branch); const pr = JSON.parse(fs.readFileSync(f, "utf8")); fn(pr); fs.writeFileSync(f + ".tmp", JSON.stringify(pr, null, 2)); fs.renameSync(f + ".tmp", f); };
 const readPr = (branch) => JSON.parse(fs.readFileSync(prFile(branch), "utf8"));
 
 let ok = false;
 try {
-  for (let i = 0; i < 50; i++) { try { await api("GET", "/api/state"); break; } catch { await sleep(200); } }
+  await startDaemon({ cwd: repo, port: PORT, env: { FAKE_GH_DIR: ghDir } });
   const run = await api("POST", "/api/plan", { specDir: path.join(repo, "specs/002-pr"), llm: true });
   let s = await api("GET", "/api/state");
   const policy = Object.fromEntries(s.tasks.map((t) => [t.key, t.merge_policy]));
@@ -78,9 +64,7 @@ try {
 
   const handled = new Set();
   let sawChecksLane = false;
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    await sleep(500);
+  await waitFor(async () => {
     s = await api("GET", "/api/state");
     if (s.tasks.some((t) => t.status === "pr_checks")) sawChecksLane = true;
     for (const i of s.inbox) {
@@ -109,8 +93,8 @@ try {
         editPr(t.branch, (pr) => { pr.state = "MERGED"; pr.mergedBy = "human"; });
       }
     }
-    if (s.run.status === "done") break;
-  }
+    return s.run.status === "done";
+  }, { timeoutMs: 120_000, intervalMs: 500, label: "run to finish" }).catch((e) => { if (!/^timed out/.test(e.message)) throw e; });
   s = await api("GET", "/api/state");
   console.log("final:", s.run.status, s.tasks.map((t) => `${t.key}=${t.status}(attempt ${t.attempt}, rounds ${t.fix_rounds})`).join(" "));
   if (s.run.status !== "done") throw new Error("run did not finish");
@@ -143,9 +127,7 @@ try {
 } catch (e) {
   console.error("E2E-PR FAILED:", e.message);
 } finally {
-  daemon.kill("SIGTERM");
-  await sleep(300);
-  if (ok) { fs.rmSync(tmp, { recursive: true, force: true }); console.log("E2E-PR PASSED"); }
-  else console.log("repo kept at", repo);
+  await cleanup({ ok });
+  if (ok) console.log("E2E-PR PASSED");
   process.exit(ok ? 0 : 1);
 }
