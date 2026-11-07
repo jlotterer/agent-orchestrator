@@ -1,8 +1,7 @@
-#!/usr/bin/env node
-/** Unit tests for pure helpers (run after `npm run build`): node scripts/unit.mjs */
+/** Unit tests for the PR feedback helpers (run after `npm run build`): npm run test:unit */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeChecks, summarizeChecks, collectFeedback, freshFeedback, isTrigger, formatReviewFeedback, tail } from "../dist/prfeedback.js";
+import { normalizeChecks, summarizeChecks, collectFeedback, freshFeedback, isTrigger, formatReviewFeedback, tail } from "../../dist/prfeedback.js";
 
 // Shapes as returned by gh 2.83 (`gh pr view --json statusCheckRollup,reviews,comments` and the REST comments API).
 const rollup = [

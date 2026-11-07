@@ -11,11 +11,13 @@
     "dev": "tsx src/cli.ts",
     "serve": "node dist/cli.js serve",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:unit": "node --test scripts/unit.mjs",
-    "test:e2e": "node scripts/e2e.mjs && node scripts/e2e-pr.mjs"
+    "test": "npm run build && npm run test:unit && npm run check && npm run test:e2e",
+    "test:unit": "node --test test/unit/*.test.mjs",
+    "test:e2e": "node scripts/e2e.mjs && node scripts/e2e-pr.mjs",
+    "check": "node scripts/check-invariants.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "license": "MIT",
   "dependencies": {

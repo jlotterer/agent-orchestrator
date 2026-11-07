@@ -1,5 +1,6 @@
 # TASK-02: Test harness, invariants check and CI
-**Status:** todo · **Wave:** 1 · **Depends on:** — · **Parallel:** Yes (with TASK-01)
+**Status:** done · **Wave:** 1 · **Depends on:** — · **Parallel:** Yes (with TASK-01)
+> **As built:** CI runs Node 22 and 24, not 20 and 22: `better-sqlite3@13` requires Node ≥ 22 and segfaults on 20 ([0022](../decisions/0022-node-22-floor.md)). `test:unit` is `node --test test/unit/*.test.mjs` because Node ≥ 21 no longer accepts a directory argument.
 
 ## Goal
 Give every later task one way to run all tests (`npm test`), shared helpers so new end-to-end scenarios are short, an automated check of the stack invariants (one runtime dependency, vendor names only in adapters), and CI on Linux.

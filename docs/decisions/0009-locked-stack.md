@@ -1,6 +1,6 @@
 # 0009: Locked stack: TypeScript, Node ≥ 20, one runtime dependency, no-build dashboard
 
-- **Status:** Accepted, 2026-11-07
+- **Status:** Superseded by [0022](0022-node-22-floor.md) for the Node version (≥ 22); otherwise Accepted, 2026-11-07
 - **Requirements affected:** REQ-NFR-02, REQ-NFR-03
 
 ## Context

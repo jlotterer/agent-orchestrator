@@ -35,7 +35,7 @@ spec.md / plan.md / tasks.md  ──►  orch plan  ──►  [you approve]  �
 
 ## Install
 
-Requirements: Node 20+, git, [Claude Code](https://docs.claude.com/en/docs/claude-code) logged in,
+Requirements: Node 22+, git, [Claude Code](https://docs.claude.com/en/docs/claude-code) logged in,
 and `gh` (GitHub CLI) if you want PRs. Linux or WSL2.
 
 ```bash
@@ -228,8 +228,15 @@ first few runs; the JSON extractor is forgiving (last fenced block, else last ob
 ## Testing
 
 ```bash
-npm run build && npm run test:unit && npm run test:e2e
+npm test            # build, unit tests, invariants check, both e2e scenarios
+npm run test:unit   # node --test test/unit/*.test.mjs (against dist/, so build first)
+npm run check       # invariants: one runtime dependency; vendor names only in src/adapters/
 ```
+
+CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm run typecheck` and `npm test` on Ubuntu with
+Node 22 and 24 for every push to `main` and every pull request.
+
+`test/unit/` holds the `node:test` unit tests. They import the compiled modules from `dist/`.
 
 `scripts/e2e.mjs` runs the whole loop against a fake agent (`scripts/fake-agent.mjs`) in a throwaway
 repo, with workers on the Claude adapter and the validator on the Gemini adapter: planning,
@@ -240,13 +247,22 @@ retried, a validator rejection retried, a manual-merge approval, and tasks.md ti
 `origin`: a CI failure fed back and fixed before auto-merge, a `/orch` review comment fixed before a
 manual merge (with a bot comment that must be ignored), and a PR merged by hand on "GitHub".
 
+Both scenarios use the shared helpers in `scripts/lib/e2e.mjs` (`makeRepo`, `writeConfig`, `startDaemon`,
+`api`, `waitFor`, `cleanup`), so a new scenario is mostly its config, a polling loop and its assertions.
+A failed run keeps its throwaway repo and prints its path.
+
+`scripts/check-invariants.mjs` fails if `package.json` has any runtime dependency besides
+`better-sqlite3`, or if `claude`, `gemini` or `anthropic` appears in `src/**/*.ts` outside
+`src/adapters/` (the built-in adapter defaults in `src/config.ts` are allowlisted in the script).
+
 `test/fixtures/` holds the spec-first fixture tables for the risky logic (tasks.md parser, JSON
 extraction, readiness, task transitions, PR-poll decisions). Their expected outputs are owner-reviewed;
 see [test/fixtures/README.md](test/fixtures/README.md) for the formats and the `pending` marker. The
 unit tests that run them arrive with TASK-03.
 
 The e2e tests need Linux or macOS (they spawn `.mjs` files and `sh`). On Windows, run them in a
-container: `docker run --rm -v "$PWD:/src" -w /src node:22 sh -c "npm ci && npm run build && npm run test:e2e"`.
+container. Copy the source in so the container's `npm ci` does not replace your Windows `node_modules`:
+`docker run --rm -v "$PWD:/src:ro" node:22 sh -c "mkdir /w && cd /src && tar --exclude=./node_modules --exclude=./dist --exclude=./.git -cf - . | tar -xf - -C /w && cd /w && npm ci && npm test"`.
 
 ## Layout
 
