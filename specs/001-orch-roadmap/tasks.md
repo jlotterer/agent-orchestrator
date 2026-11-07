@@ -3,7 +3,7 @@
 Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within the wave.
 
 ## Phase 1: Wave 1
-- [ ] T001 [P] Spec-first fixtures for the risky logic. Brief: docs/tasks/TASK-01.md. Owner review required before merge.
+- [x] T001 [P] Spec-first fixtures for the risky logic. Brief: docs/tasks/TASK-01.md. Owner review required before merge.
 - [ ] T002 [P] Test harness, invariants check and CI. Brief: docs/tasks/TASK-02.md.
 
 ## Phase 2: Wave 2

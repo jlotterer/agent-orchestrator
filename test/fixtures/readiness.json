@@ -1,0 +1,2598 @@
+[
+  {
+    "name": "dependency done: the dependent task starts",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "done",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [
+            "T001"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t002",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "dependency skipped counts as met",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "skipped",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [
+            "T001"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t002",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "dependency still running: the dependent task waits even with free slots (REQ-SCHED-01 acceptance)",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [
+            "T001"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "dependencies in failed, needs_input, pr_open or pr_checks are unmet",
+    "input": {
+      "maxAgents": 8,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 8,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "failed",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 3,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "needs_input",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pr_open",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t004",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T004",
+          "orderIdx": 3,
+          "status": "pr_checks",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t005",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T005",
+          "orderIdx": 4,
+          "status": "pending",
+          "dependsOn": [
+            "T001"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t006",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T006",
+          "orderIdx": 5,
+          "status": "pending",
+          "dependsOn": [
+            "T002"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t007",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T007",
+          "orderIdx": 6,
+          "status": "pending",
+          "dependsOn": [
+            "T003"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t008",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T008",
+          "orderIdx": 7,
+          "status": "pending",
+          "dependsOn": [
+            "T004"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "all of several dependencies must be met",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "done",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [
+            "T009"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [
+            "T001",
+            "T002"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "a dependency on a key that is not in the run is unmet",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [
+            "T404"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t002",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "a dependency is looked up in the task's own run only",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "done",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [
+            "T001"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "a task with an open question does not start; the next candidate does",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 1,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 1,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t002",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "an open plan question blocks every start in that project only",
+    "pending": "TASK-13",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 1,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "b-t001",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "maxParallel caps starts; candidates start in orderIdx order",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t001",
+          "resume": false
+        },
+        {
+          "taskId": "a-t002",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "active tasks (running and validating) count against maxParallel",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "validating",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t004",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T004",
+          "orderIdx": 3,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t003",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "tasks waiting on a human (needs_input, pr_open, pr_checks, failed) do not use a slot",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 1,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "needs_input",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pr_open",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pr_checks",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t004",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T004",
+          "orderIdx": 3,
+          "status": "failed",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 3,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t005",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T005",
+          "orderIdx": 4,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t005",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "global maxAgents across two projects: both full, nothing starts (REQ-PROJ-08)",
+    "input": {
+      "maxAgents": 2,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 2,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t002",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T002",
+          "orderIdx": 3,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "global maxAgents leaves one slot: only one task starts although its project allows more",
+    "input": {
+      "maxAgents": 3,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "validating",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t002",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T002",
+          "orderIdx": 3,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "b-t001",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "busyAgents (planners, phase validators) reduce the free slots",
+    "input": {
+      "maxAgents": 2,
+      "busyAgents": 1,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t001",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "busyAgents can use up every slot",
+    "input": {
+      "maxAgents": 2,
+      "busyAgents": 2,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "free slots never go negative when active + busy exceed maxAgents",
+    "input": {
+      "maxAgents": 1,
+      "busyAgents": 1,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "fairness: the project that started least recently goes first (REQ-PROJ-09 acceptance)",
+    "pending": "TASK-09",
+    "input": {
+      "maxAgents": 1,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 5,
+          "lastStartAt": "2026-11-07T10:05:00.000Z",
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 5,
+          "lastStartAt": "2026-11-07T10:01:00.000Z",
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t004",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T004",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t005",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T005",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 3,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "b-t001",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "fairness: a project that never started (lastStartAt null) goes first",
+    "pending": "TASK-09",
+    "input": {
+      "maxAgents": 1,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": "2026-11-07T09:00:00.000Z",
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "b-t001",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "fairness: ties on lastStartAt are broken by project id",
+    "pending": "TASK-09",
+    "input": {
+      "maxAgents": 1,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t001",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "fairness: round-robin, one task per project per pass",
+    "pending": "TASK-09",
+    "input": {
+      "maxAgents": 3,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 5,
+          "lastStartAt": "2026-11-07T10:05:00.000Z",
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 5,
+          "lastStartAt": "2026-11-07T10:01:00.000Z",
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t004",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T004",
+          "orderIdx": 3,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 4,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "b-t001",
+          "resume": false
+        },
+        {
+          "taskId": "a-t001",
+          "resume": false
+        },
+        {
+          "taskId": "a-t002",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "a paused run starts nothing, but its active agents still count against maxAgents",
+    "input": {
+      "maxAgents": 2,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "paused",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t002",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T002",
+          "orderIdx": 3,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "b-t001",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "projects without a running run (ready, plan_pending, stopped, none) start nothing",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "ready",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "plan_pending",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "C",
+          "runId": "run-C",
+          "runStatus": "stopped",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "D",
+          "runId": null,
+          "runStatus": null,
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "c-t001",
+          "projectId": "C",
+          "runId": "run-C",
+          "key": "T001",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "tasks of another run of the same project are not candidates",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 2,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-old-t001",
+          "projectId": "A",
+          "runId": "run-A-old",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t001",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "only pending tasks are candidates",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 10,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "done",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "skipped",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "failed",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 3,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t004",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T004",
+          "orderIdx": 3,
+          "status": "needs_input",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t005",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T005",
+          "orderIdx": 4,
+          "status": "pr_open",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t006",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T006",
+          "orderIdx": 5,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t006",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "resume flag combinations with resumeOnRetry on",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 10,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": true,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 1,
+          "hasSession": true,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": true,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t004",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T004",
+          "orderIdx": 3,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 2,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t005",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T005",
+          "orderIdx": 4,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": true,
+          "adapterSupportsResume": false
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t001",
+          "resume": true
+        },
+        {
+          "taskId": "a-t002",
+          "resume": true
+        },
+        {
+          "taskId": "a-t003",
+          "resume": false
+        },
+        {
+          "taskId": "a-t004",
+          "resume": false
+        },
+        {
+          "taskId": "a-t005",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "resume is always false with resumeOnRetry off",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 10,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": false
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": true,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 2,
+          "hasSession": true,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t001",
+          "resume": false
+        },
+        {
+          "taskId": "a-t002",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "empty filesOwned never blocks, even next to tasks that own files",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 10,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [
+            "src/**"
+          ],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t002",
+          "resume": false
+        },
+        {
+          "taskId": "a-t003",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "tasks with disjoint filesOwned run together",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 10,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [
+            "src/api/**"
+          ],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [
+            "src/ui/**"
+          ],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [
+            "docs/readme.md"
+          ],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t002",
+          "resume": false
+        },
+        {
+          "taskId": "a-t003",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "overlap with an active task holds the candidate; the next candidate starts",
+    "pending": "TASK-14",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 10,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [
+            "src/api/**"
+          ],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [
+            "src/api/users.ts"
+          ],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [
+            "docs/**"
+          ],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t003",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": [
+        {
+          "taskId": "a-t002",
+          "blockedByTaskId": "a-t001"
+        }
+      ]
+    }
+  },
+  {
+    "name": "overlap with a task chosen earlier in the same tick holds the later one",
+    "pending": "TASK-14",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 10,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [
+            "src/**"
+          ],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t002",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [
+            "src/core/x.ts"
+          ],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "a-t003",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t001",
+          "resume": false
+        },
+        {
+          "taskId": "a-t003",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": [
+        {
+          "taskId": "a-t002",
+          "blockedByTaskId": "a-t001"
+        }
+      ]
+    }
+  },
+  {
+    "name": "overlap across different projects never blocks",
+    "input": {
+      "maxAgents": 10,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 10,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        },
+        {
+          "id": "B",
+          "runId": "run-B",
+          "runStatus": "running",
+          "maxParallel": 10,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t001",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "running",
+          "dependsOn": [],
+          "filesOwned": [
+            "src/**"
+          ],
+          "openQuestions": 0,
+          "attempt": 1,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        },
+        {
+          "id": "b-t001",
+          "projectId": "B",
+          "runId": "run-B",
+          "key": "T001",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [
+            "src/**"
+          ],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "b-t001",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  }
+]

@@ -1,0 +1,7 @@
+[
+  {"key": "T001", "phase": "Phase 1: Setup", "parallel": false, "done": false, "depends_on": []},
+  {"key": "T002", "phase": "Phase 1: Setup", "parallel": false, "done": false, "depends_on": ["T001"]},
+  {"key": "T003", "phase": "Phase 2: Stories", "parallel": true, "done": false, "depends_on": ["T001", "T002"]},
+  {"key": "T004", "phase": "Phase 2: Stories", "parallel": true, "done": false, "depends_on": ["T001", "T002"]},
+  {"key": "T005", "phase": "Phase 3: Wrap-up", "parallel": false, "done": false, "depends_on": ["T001", "T002", "T003", "T004"]}
+]

@@ -1,0 +1,7 @@
+[
+  {"key": "T001", "phase": "Setup", "parallel": false, "done": false, "depends_on": []},
+  {"key": "T002", "phase": "Core", "parallel": true, "done": false, "depends_on": ["T001"]},
+  {"key": "T003", "phase": "Core", "parallel": true, "done": false, "depends_on": ["T001"]},
+  {"key": "T004", "phase": "Core", "parallel": false, "done": false, "depends_on": ["T001", "T003"]},
+  {"key": "T005", "phase": "Polish", "parallel": false, "done": true, "depends_on": ["T001", "T002", "T003", "T004"]}
+]

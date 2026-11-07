@@ -1,0 +1,129 @@
+[
+  {
+    "name": "single json fence",
+    "input": "Done.\n\n```json\n{\"status\": \"done\", \"summary\": \"added parser\"}\n```\n",
+    "expected": {
+      "status": "done",
+      "summary": "added parser"
+    }
+  },
+  {
+    "name": "last fenced block wins",
+    "input": "Plan:\n```json\n{\"status\": \"draft\"}\n```\n\nFinal:\n```json\n{\"status\": \"done\"}\n```",
+    "expected": {
+      "status": "done"
+    }
+  },
+  {
+    "name": "invalid last block falls back to the earlier block",
+    "input": "```json\n{\"verdict\": \"PASS\", \"reasons\": []}\n```\n\nNote:\n```json\n{\"verdict\": PASS oops\n```",
+    "expected": {
+      "verdict": "PASS",
+      "reasons": []
+    }
+  },
+  {
+    "name": "fence without the json tag",
+    "input": "Result:\n```\n{\"status\": \"failed\", \"reason\": \"tests red\"}\n```",
+    "expected": {
+      "status": "failed",
+      "reason": "tests red"
+    }
+  },
+  {
+    "name": "fence of another language is not JSON; the json fence after it wins",
+    "input": "Changed:\n```ts\nconst x = { a: 1 };\n```\n\n```json\n{\"status\": \"done\"}\n```",
+    "expected": {
+      "status": "done"
+    }
+  },
+  {
+    "name": "trailing object without a fence",
+    "input": "All tests pass. Final answer:\n{\"status\": \"done\", \"files\": [\"src/a.ts\"]}",
+    "expected": {
+      "status": "done",
+      "files": [
+        "src/a.ts"
+      ]
+    }
+  },
+  {
+    "name": "trailing object with nested braces",
+    "input": "Summary below.\n{\"verdict\": \"FAIL\", \"criteria\": [{\"text\": \"parses\", \"met\": false, \"detail\": {\"line\": 3}}]}",
+    "expected": {
+      "verdict": "FAIL",
+      "criteria": [
+        {
+          "text": "parses",
+          "met": false,
+          "detail": {
+            "line": 3
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "braces in prose before an unfenced object",
+    "input": "I replaced the {name} and {id} placeholders in the template.\n{\"status\": \"done\"}",
+    "expected": {
+      "status": "done"
+    }
+  },
+  {
+    "name": "braces in prose before a fenced object",
+    "input": "The config uses {\"port\": 80} style objects, see {docs}.\n```json\n{\"status\": \"done\", \"decisions\": [{\"text\": \"use port 80\"}]}\n```",
+    "expected": {
+      "status": "done",
+      "decisions": [
+        {
+          "text": "use port 80"
+        }
+      ]
+    }
+  },
+  {
+    "name": "string values containing braces and fences",
+    "input": "```json\n{\"summary\": \"wrapped {x} in braces\", \"question\": {\"text\": \"ok?\", \"options\": [\"a}\", \"{b\"]}}\n```",
+    "expected": {
+      "summary": "wrapped {x} in braces",
+      "question": {
+        "text": "ok?",
+        "options": [
+          "a}",
+          "{b"
+        ]
+      }
+    }
+  },
+  {
+    "name": "no JSON at all",
+    "input": "I could not finish the task because the build is broken.",
+    "expected": null
+  },
+  {
+    "name": "unparseable object-like text",
+    "input": "Result: {status: done, summary: 'nope'}",
+    "expected": null
+  },
+  {
+    "name": "empty input",
+    "input": "",
+    "expected": null
+  },
+  {
+    "name": "CRLF inside the fence",
+    "input": "Done.\r\n\r\n```json\r\n{\r\n  \"status\": \"done\",\r\n  \"summary\": \"windows output\"\r\n}\r\n```\r\n",
+    "expected": {
+      "status": "done",
+      "summary": "windows output"
+    }
+  },
+  {
+    "name": "indented fence",
+    "input": "Final:\n    ```json\n    {\"status\": \"done\"}\n    ```",
+    "expected": {
+      "status": "done"
+    }
+  }
+]

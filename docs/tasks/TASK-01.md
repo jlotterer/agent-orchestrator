@@ -1,5 +1,5 @@
 # TASK-01: Spec-first fixtures for the risky logic
-**Status:** todo · **Wave:** 1 · **Depends on:** — · **Parallel:** Yes (with TASK-02)
+**Status:** done · **Wave:** 1 · **Depends on:** — · **Parallel:** Yes (with TASK-02)
 
 ## Goal
 Write the fixture tables that define correct behaviour for the riskiest logic: the tasks.md parser, JSON extraction from agent output, task readiness, the task state machine, and the PR-poll decision. There is no implementation in this task. Once the owner approves these tables they are the executable spec that TASK-03 implements against, and later tasks extend.

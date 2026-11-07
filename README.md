@@ -240,6 +240,11 @@ retried, a validator rejection retried, a manual-merge approval, and tasks.md ti
 `origin`: a CI failure fed back and fixed before auto-merge, a `/orch` review comment fixed before a
 manual merge (with a bot comment that must be ignored), and a PR merged by hand on "GitHub".
 
+`test/fixtures/` holds the spec-first fixture tables for the risky logic (tasks.md parser, JSON
+extraction, readiness, task transitions, PR-poll decisions). Their expected outputs are owner-reviewed;
+see [test/fixtures/README.md](test/fixtures/README.md) for the formats and the `pending` marker. The
+unit tests that run them arrive with TASK-03.
+
 The e2e tests need Linux or macOS (they spawn `.mjs` files and `sh`). On Windows, run them in a
 container: `docker run --rm -v "$PWD:/src" -w /src node:22 sh -c "npm ci && npm run build && npm run test:e2e"`.
 
