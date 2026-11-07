@@ -1,0 +1,2 @@
+# The CRLF parser fixture must keep its CRLF line endings in every checkout.
+tasks-md/crlf-line-endings.md -text

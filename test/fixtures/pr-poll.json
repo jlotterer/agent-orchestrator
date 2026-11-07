@@ -1,0 +1,1895 @@
+[
+  {
+    "name": "step 1: PR merged on GitHub: done, even with failing checks and a fresh trigger",
+    "step": 1,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "MERGED",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "fail",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "alice",
+          "body": "/orch fix it",
+          "ts": "2026-11-07T11:55:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "mark_done",
+      "reasonContains": "merged on GitHub"
+    }
+  },
+  {
+    "name": "step 1: manual task merged by the owner on GitHub (REQ-PRFB-04 acceptance)",
+    "step": 1,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "MERGED",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "mark_done",
+      "reasonContains": "merged on GitHub"
+    }
+  },
+  {
+    "name": "step 2: PR closed without merging: failed",
+    "step": 2,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "CLOSED",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "mark_failed",
+      "reasonContains": "closed without merging"
+    }
+  },
+  {
+    "name": "step 3: fresh changes-requested review starts a review fix round",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "review",
+          "author": "alice",
+          "body": "Please handle the empty list.",
+          "ts": "2026-11-07T11:55:00Z",
+          "state": "CHANGES_REQUESTED"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "fix_round",
+      "kind": "review",
+      "itemBodies": [
+        "Please handle the empty list."
+      ],
+      "patch": {
+        "pr_feedback_at": "2026-11-07T11:55:00.000Z"
+      }
+    }
+  },
+  {
+    "name": "step 3: trigger comment carries all fresh human feedback, bots excluded (REQ-PRFB-03 acceptance)",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "alice",
+          "body": "/orch mention the reviewer",
+          "ts": "2026-11-07T11:52:00Z"
+        },
+        {
+          "kind": "inline",
+          "author": "bob",
+          "body": "typo here",
+          "ts": "2026-11-07T11:53:00Z",
+          "path": "impl/x.txt",
+          "line": 1
+        },
+        {
+          "kind": "comment",
+          "author": "github-actions[bot]",
+          "body": "/orch ignore me",
+          "ts": "2026-11-07T11:58:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "fix_round",
+      "kind": "review",
+      "itemBodies": [
+        "/orch mention the reviewer",
+        "typo here"
+      ],
+      "patch": {
+        "pr_feedback_at": "2026-11-07T11:53:00.000Z"
+      }
+    }
+  },
+  {
+    "name": "step 3: the watermark covers fresh non-trigger comments too",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "alice",
+          "body": "/orch rename the flag",
+          "ts": "2026-11-07T11:51:00Z"
+        },
+        {
+          "kind": "comment",
+          "author": "carol",
+          "body": "Also check the docs.",
+          "ts": "2026-11-07T11:56:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "fix_round",
+      "kind": "review",
+      "itemBodies": [
+        "/orch rename the flag",
+        "Also check the docs."
+      ],
+      "patch": {
+        "pr_feedback_at": "2026-11-07T11:56:00.000Z"
+      }
+    }
+  },
+  {
+    "name": "step 3: a bot's trigger comment is ignored",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "dependabot[bot]",
+          "body": "/orch bump it",
+          "ts": "2026-11-07T11:55:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 3: an inline comment flagged isBot is ignored",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "inline",
+          "author": "renovate",
+          "body": "/orch pin this",
+          "ts": "2026-11-07T11:55:00Z",
+          "path": "package.json",
+          "line": 4,
+          "isBot": true
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 3: ignored authors are matched case-insensitively",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "deploy-preview",
+          "body": "/orch redeploy",
+          "ts": "2026-11-07T11:55:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [
+        "Deploy-Preview"
+      ],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 3: a comment whose ts equals the watermark is not fresh",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:55:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "alice",
+          "body": "/orch fix it",
+          "ts": "2026-11-07T11:55:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 3: comments older than the watermark are not fresh",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:55:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "review",
+          "author": "alice",
+          "body": "old",
+          "ts": "2026-11-07T11:40:00Z",
+          "state": "CHANGES_REQUESTED"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 3: fresh comments without a trigger at a line start do not start a round",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "alice",
+          "body": "Looks good, but please /orch fix this",
+          "ts": "2026-11-07T11:52:00Z"
+        },
+        {
+          "kind": "comment",
+          "author": "bob",
+          "body": "/orchestrate the thing",
+          "ts": "2026-11-07T11:53:00Z"
+        },
+        {
+          "kind": "review",
+          "author": "carol",
+          "body": "nice",
+          "ts": "2026-11-07T11:54:00Z",
+          "state": "APPROVED"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 3: a trigger on a later line of a multi-line comment counts",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "alice",
+          "body": "Thanks!\n  /orch also log the error",
+          "ts": "2026-11-07T11:55:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "fix_round",
+      "kind": "review",
+      "itemBodies": [
+        "Thanks!\n  /orch also log the error"
+      ],
+      "patch": {
+        "pr_feedback_at": "2026-11-07T11:55:00.000Z"
+      }
+    }
+  },
+  {
+    "name": "step 3: a changes-requested review with no text still triggers; empty plain reviews are dropped",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "review",
+          "author": "bob",
+          "body": "",
+          "ts": "2026-11-07T11:51:00Z",
+          "state": "COMMENTED"
+        },
+        {
+          "kind": "review",
+          "author": "alice",
+          "body": "",
+          "ts": "2026-11-07T11:55:00Z",
+          "state": "CHANGES_REQUESTED"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "fix_round",
+      "kind": "review",
+      "itemBodies": [
+        ""
+      ],
+      "patch": {
+        "pr_feedback_at": "2026-11-07T11:55:00.000Z"
+      }
+    }
+  },
+  {
+    "name": "step 3: with an empty trigger only changes-requested reviews start a round",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "alice",
+          "body": "/orch fix it",
+          "ts": "2026-11-07T11:55:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 3: fresh review feedback wins over failing checks",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "fail",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "alice",
+          "body": "/orch use a map",
+          "ts": "2026-11-07T11:55:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "fix_round",
+      "kind": "review",
+      "itemBodies": [
+        "/orch use a map"
+      ],
+      "patch": {
+        "pr_feedback_at": "2026-11-07T11:55:00.000Z"
+      }
+    }
+  },
+  {
+    "name": "step 3: review feedback with every round used is still fix_round here; the cap is applied by transition T18",
+    "step": 3,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 3,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": [
+        {
+          "kind": "comment",
+          "author": "alice",
+          "body": "/orch one more thing",
+          "ts": "2026-11-07T11:55:00Z"
+        }
+      ]
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "fix_round",
+      "kind": "review",
+      "itemBodies": [
+        "/orch one more thing"
+      ],
+      "patch": {
+        "pr_feedback_at": "2026-11-07T11:55:00.000Z"
+      }
+    }
+  },
+  {
+    "name": "step 4: PR head differs from the local branch: checks are pending",
+    "step": 4,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "0ld0000000",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "fail",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pending"
+      }
+    }
+  },
+  {
+    "name": "step 4: head mismatch while waiting for checks: wait, not merge",
+    "step": 4,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "0ld0000000",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pending"
+      }
+    }
+  },
+  {
+    "name": "step 4: unknown local sha: trust the PR head",
+    "step": 4,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": null,
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "merge",
+      "reasonContains": "checks passed",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 4: no checks within the grace period counts as pending",
+    "step": 4,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:59:30.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pending"
+      }
+    }
+  },
+  {
+    "name": "step 4: no checks after the grace period: auto task merges",
+    "step": 4,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "merge",
+      "reasonContains": "checks passed",
+      "patch": {
+        "ci_status": "none"
+      }
+    }
+  },
+  {
+    "name": "step 4: ci_status unchanged produces no patch",
+    "step": 4,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": "pass"
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait"
+    }
+  },
+  {
+    "name": "step 5: checks pending within the timeout: wait",
+    "step": 5,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": "pending"
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pending",
+          "conclusion": "IN_PROGRESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait"
+    }
+  },
+  {
+    "name": "step 5: checks pending past checksTimeoutMinutes while in pr_checks: inbox",
+    "step": 5,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T10:59:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": "pending"
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pending",
+          "conclusion": "IN_PROGRESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "inbox",
+      "reasonContains": "did not finish within 60 minutes"
+    }
+  },
+  {
+    "name": "step 5: the timeout falls back to updated_at when pr_pushed_at is missing",
+    "step": 5,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": null,
+      "updated_at": "2026-11-07T10:00:00.000Z",
+      "ci_head": null,
+      "ci_status": "pending"
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pending",
+          "conclusion": "IN_PROGRESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "inbox",
+      "reasonContains": "did not finish within 60 minutes"
+    }
+  },
+  {
+    "name": "step 5: checks pending for a long time on a manual task: just wait",
+    "step": 5,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T08:00:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": "pending"
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pending",
+          "conclusion": "IN_PROGRESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait"
+    }
+  },
+  {
+    "name": "step 6: failing checks on a new head start a CI fix round (once per commit)",
+    "step": 6,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / lint",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        },
+        {
+          "name": "CI / test",
+          "state": "fail",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "fix_round",
+      "kind": "ci",
+      "failedChecks": [
+        "CI / test"
+      ],
+      "patch": {
+        "ci_status": "fail",
+        "ci_head": "aaa1111111"
+      }
+    }
+  },
+  {
+    "name": "step 6: a failure wins over pending checks",
+    "step": 6,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / build",
+          "state": "pending",
+          "conclusion": "IN_PROGRESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/10",
+          "jobId": "10"
+        },
+        {
+          "name": "CI / test",
+          "state": "fail",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "fix_round",
+      "kind": "ci",
+      "failedChecks": [
+        "CI / test"
+      ],
+      "patch": {
+        "ci_status": "fail",
+        "ci_head": "aaa1111111"
+      }
+    }
+  },
+  {
+    "name": "step 6: ci_head already acted on while in pr_checks: inbox",
+    "step": 6,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": "aaa1111111",
+      "ci_status": "fail"
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "fail",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "inbox",
+      "reasonContains": "still failing"
+    }
+  },
+  {
+    "name": "step 6: ci_head already acted on while in pr_open: wait (REQ-PRFB-02: no second round)",
+    "step": 6,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": "aaa1111111",
+      "ci_status": "fail"
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "fail",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait"
+    }
+  },
+  {
+    "name": "step 6: fix rounds exhausted: inbox, head still recorded (REQ-PRFB-05 acceptance)",
+    "step": 6,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 3,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": "pending"
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "fail",
+          "conclusion": "FAILURE",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "inbox",
+      "reasonContains": "fix rounds are used",
+      "patch": {
+        "ci_status": "fail",
+        "ci_head": "aaa1111111"
+      }
+    }
+  },
+  {
+    "name": "step 7: checks pass on an auto task: merge (REQ-PRFB-01)",
+    "step": 7,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "merge",
+      "reasonContains": "checks passed",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 7: checks pass but changes requested is still open: inbox",
+    "step": 7,
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "CHANGES_REQUESTED",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "inbox",
+      "reasonContains": "changes requested",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 7: checks pass on a manual task (pr_open): wait for the owner",
+    "step": 7,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [
+        {
+          "name": "CI / test",
+          "state": "pass",
+          "conclusion": "SUCCESS",
+          "url": "https://github.com/acme/app/actions/runs/1/job/9",
+          "jobId": "9"
+        }
+      ],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "pass"
+      }
+    }
+  },
+  {
+    "name": "step 7: no checks after the grace period on a manual task: wait",
+    "step": 7,
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "fix_rounds": 0,
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "branch": "orch/t003-build-it",
+      "pr_feedback_at": "2026-11-07T11:50:00.000Z",
+      "pr_pushed_at": "2026-11-07T11:50:00.000Z",
+      "updated_at": "2026-11-07T11:50:00.000Z",
+      "ci_head": null,
+      "ci_status": null
+    },
+    "pr": {
+      "number": 7,
+      "url": "https://github.com/acme/app/pull/7",
+      "state": "OPEN",
+      "headSha": "aaa1111111",
+      "reviewDecision": "",
+      "checks": [],
+      "feedback": []
+    },
+    "localSha": "aaa1111111",
+    "now": "2026-11-07T12:00:00.000Z",
+    "config": {
+      "trigger": "/orch",
+      "ignoreAuthors": [],
+      "maxRounds": 3,
+      "noChecksGraceSeconds": 90,
+      "checksTimeoutMinutes": 60
+    },
+    "expected": {
+      "action": "wait",
+      "patch": {
+        "ci_status": "none"
+      }
+    }
+  }
+]

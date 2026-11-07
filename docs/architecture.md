@@ -178,7 +178,7 @@ Per tick: (1) resume `needs_input` tasks with no open questions; (2) PR polls (�
 _(→ code: `src/core/transitions.ts`, [planned: TASK-03])_
 States: `pending, running, validating, needs_input, pr_checks, pr_open, failed, done, skipped`. Active = `running|validating`. Watched (PR polled) = `pr_checks|pr_open`.
 
-`nextTaskState(task, event, cfg) → { status, patch, decision?, notify?, effect? }` where `effect` names the side effect the shell must perform (`merge_local | push_and_pr | merge_pr | kill_agent | remove_worktree | none`).
+`nextTaskState(task, event, cfg) → { status, patch, decision?, notify?, effect?, rejected? }` where `effect` is the ordered list of side effects the shell must perform (`merge_local | push_and_pr | merge_pr | kill_agent | remove_worktree`; empty = none) and `rejected` marks an event not allowed from the current state (status unchanged). The patch holds only what the transition decides; values produced by an effect (`pr_url`, `pr_head`, `pr_pushed_at`, new branch/worktree) are written by the shell after the effect succeeds. If an effect fails (merge), the shell sends `merge_failed` (T9) instead. Fixture semantics: [test/fixtures/README.md](../test/fixtures/README.md).
 
 | # | From | Event | Guard | To | Patch / decision / notify |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -408,8 +408,9 @@ _(→ code: `src/db.ts`)_
   - `tasks-md/<case>.md` + `<case>.expected.json`: `[{key, phase, parallel, done, depends_on}]` (depends_on sorted).
   - `extract-json.json`: `[{name, input, expected}]` (`expected: null` when nothing parses).
   - `readiness.json`: `[{name, input: ReadinessInput, expected: ReadinessResult}]` (order of `start` significant).
-  - `transitions.json`: `[{name, task: {status, attempt, max_attempts, fix_rounds, merge_policy, …}, event, config, expected: {status, patch?, decisionPrefix?, notify?: bool, effect?}}]`, at least one case per row of §8.
-  - `pr-poll.json`: `[{name, task, pr, localSha, now, config, expected: {action, kind?, reasonContains?, patch?}}]`, at least one case per step of §12.2.
+  - `transitions.json`: `[{name, row, task: {status, attempt, max_attempts, fix_rounds, merge_policy, …}, event, config, expected: {status, patch?, decisionPrefix?, notify?: bool, effect?: string[], rejected?: bool}}]`, at least one case per row of §8.
+  - `pr-poll.json`: `[{name, step, task, pr, localSha, now, config, expected: {action, kind?, reasonContains?, patch?, itemBodies?, failedChecks?}}]`, at least one case per step of §12.2.
+  - Any case may carry `"pending": "TASK-NN"`: runners skip it until that task removes the marker. Field semantics, row/step mapping and the Behaviour changes list: `test/fixtures/README.md`.
   - `ownership.json` [TASK-14 extends], `phases.json` [TASK-15 extends].
 - **E2E** (`scripts/e2e*.mjs`, Linux/macOS or `node:22` container): throwaway repos, real git, the daemon via `dist/cli.js serve`, fakes: `fake-agent.mjs` (Claude and Gemini dialects, scripted by task key/prompt markers), `fake-gh.mjs` (PR state files + local bare `origin`), `fake-app.mjs` [TASK-16] (HTTP server on `PORT`). Notifications captured with a local HTTP sink when asserted.
 - **Manual**: first live Gemini run; first real GitHub repo with Actions; visual dashboard review (dark + light, phone width).

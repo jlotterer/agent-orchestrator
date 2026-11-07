@@ -1,0 +1,2003 @@
+[
+  {
+    "name": "T1: pending task selected by the scheduler starts",
+    "row": "T1",
+    "task": {
+      "key": "T003",
+      "status": "pending",
+      "attempt": 0,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "start"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "running",
+      "patch": {
+        "attempt": 1
+      }
+    }
+  },
+  {
+    "name": "T1: a retry starts the next attempt",
+    "row": "T1",
+    "task": {
+      "key": "T003",
+      "status": "pending",
+      "attempt": 2,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": "tests failed"
+    },
+    "event": {
+      "type": "start"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "running",
+      "patch": {
+        "attempt": 3
+      }
+    }
+  },
+  {
+    "name": "T1: start is rejected for a task that is not pending",
+    "row": "T1",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "start"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "running",
+      "rejected": true
+    }
+  },
+  {
+    "name": "T2: worker blocked on a question waits for the owner",
+    "row": "T2",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "worker_blocked"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "needs_input",
+      "notify": true
+    }
+  },
+  {
+    "name": "T3: worker failure with attempts left retries",
+    "row": "T3",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "attempt_failed",
+      "feedback": "Worker reported failure: tests red"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "last_feedback": "Worker reported failure: tests red"
+      },
+      "decisionPrefix": "Retrying T003 (attempt 2/3)"
+    }
+  },
+  {
+    "name": "T3: validator FAIL with attempts left retries",
+    "row": "T3",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 2,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "attempt_failed",
+      "feedback": "Validator: FAIL\n- criterion 2 unmet"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "last_feedback": "Validator: FAIL\n- criterion 2 unmet"
+      },
+      "decisionPrefix": "Retrying T003 (attempt 3/3)"
+    }
+  },
+  {
+    "name": "T4: last attempt failed: the task fails and the owner is notified",
+    "row": "T4",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 3,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "attempt_failed",
+      "feedback": "Gate failed: npm test exit 1"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "failed",
+      "patch": {
+        "last_feedback": "Gate failed: npm test exit 1"
+      },
+      "notify": true
+    }
+  },
+  {
+    "name": "T4: max_attempts 1 fails on the first failure",
+    "row": "T4",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 1,
+      "max_attempts": 1,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "attempt_failed",
+      "feedback": "Error: setup command failed"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "failed",
+      "patch": {
+        "last_feedback": "Error: setup command failed"
+      },
+      "notify": true
+    }
+  },
+  {
+    "name": "T5: worker done moves to validation",
+    "row": "T5",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "worker_done"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "validating"
+    }
+  },
+  {
+    "name": "T6: local mode, auto policy: merge locally and finish",
+    "row": "T6",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "aaa111"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "merge_local",
+        "remove_worktree"
+      ]
+    }
+  },
+  {
+    "name": "T6: local mode ignores the no-new-commits check (no PR)",
+    "row": "T6",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 1,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": "aaa111",
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "aaa111"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "merge_local",
+        "remove_worktree"
+      ]
+    }
+  },
+  {
+    "name": "T7: local mode, manual policy: wait for the owner, no push",
+    "row": "T7",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "manual",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "aaa111"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open",
+      "notify": true
+    }
+  },
+  {
+    "name": "T7: PR mode, manual policy: push, open the PR, wait for the owner",
+    "row": "T7",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "manual",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "aaa111"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open",
+      "patch": {
+        "ci_status": null
+      },
+      "effect": [
+        "push_and_pr"
+      ],
+      "notify": true
+    }
+  },
+  {
+    "name": "T8: PR mode, auto policy, waiting for checks",
+    "row": "T8",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "aaa111"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_checks",
+      "patch": {
+        "ci_status": null
+      },
+      "effect": [
+        "push_and_pr"
+      ]
+    }
+  },
+  {
+    "name": "T8: PR mode, auto policy, not waiting for checks: push and merge",
+    "row": "T8",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "aaa111"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": false,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "ci_status": null,
+        "worktree": null
+      },
+      "effect": [
+        "push_and_pr",
+        "merge_pr",
+        "remove_worktree"
+      ]
+    }
+  },
+  {
+    "name": "T8: PR mode, feedback loop disabled: push and merge",
+    "row": "T8",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "aaa111"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": false,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "ci_status": null,
+        "worktree": null
+      },
+      "effect": [
+        "push_and_pr",
+        "merge_pr",
+        "remove_worktree"
+      ]
+    }
+  },
+  {
+    "name": "T8: fix round with new commits goes back to waiting for checks",
+    "row": "T8",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 1,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": "aaa111",
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "bbb222"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_checks",
+      "patch": {
+        "ci_status": null
+      },
+      "effect": [
+        "push_and_pr"
+      ]
+    }
+  },
+  {
+    "name": "T8a: fix round produced no new commits: inbox",
+    "row": "T8a",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 1,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": "aaa111",
+      "last_feedback": "## CI failed"
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "aaa111"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open",
+      "patch": {
+        "ci_status": null,
+        "last_feedback": "Fix round 1 produced no new commits.\n\n## CI failed"
+      },
+      "effect": [
+        "push_and_pr"
+      ],
+      "notify": true
+    }
+  },
+  {
+    "name": "T8a: no-new-commits check wins over the manual policy",
+    "row": "T8a",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 2,
+      "merge_policy": "manual",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": "aaa111",
+      "last_feedback": "## Review feedback"
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "aaa111"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open",
+      "patch": {
+        "ci_status": null,
+        "last_feedback": "Fix round 2 produced no new commits.\n\n## Review feedback"
+      },
+      "effect": [
+        "push_and_pr"
+      ],
+      "notify": true
+    }
+  },
+  {
+    "name": "T9: merge failure after validation goes to the owner, attempt unchanged",
+    "row": "T9",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "merge_failed",
+      "error": "CONFLICT in src/a.ts"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open",
+      "patch": {
+        "last_feedback": "Merge step failed: CONFLICT in src/a.ts"
+      },
+      "notify": true
+    }
+  },
+  {
+    "name": "T9: merge failure while waiting for checks goes to the owner",
+    "row": "T9",
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "merge_failed",
+      "error": "gh: merge blocked"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open",
+      "patch": {
+        "last_feedback": "Merge step failed: gh: merge blocked"
+      },
+      "notify": true
+    }
+  },
+  {
+    "name": "T10: all questions answered while the run is running: resume",
+    "row": "T10",
+    "task": {
+      "key": "T003",
+      "status": "needs_input",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "answered",
+      "openQuestions": 0,
+      "runStatus": "running"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "running"
+    }
+  },
+  {
+    "name": "T10: answered but another question is still open: keep waiting",
+    "row": "T10",
+    "task": {
+      "key": "T003",
+      "status": "needs_input",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "answered",
+      "openQuestions": 1,
+      "runStatus": "running"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "needs_input"
+    }
+  },
+  {
+    "name": "T11: answered while the run is paused: back to pending",
+    "row": "T11",
+    "task": {
+      "key": "T003",
+      "status": "needs_input",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "answered",
+      "openQuestions": 0,
+      "runStatus": "paused"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending"
+    }
+  },
+  {
+    "name": "T12: owner retries a failed task: budgets reset",
+    "row": "T12",
+    "task": {
+      "key": "T003",
+      "status": "failed",
+      "attempt": 3,
+      "max_attempts": 3,
+      "fix_rounds": 2,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_retry"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "attempt": 0,
+        "fix_rounds": 0,
+        "ci_head": null,
+        "ci_status": null
+      },
+      "decisionPrefix": "Retry requested for T003"
+    }
+  },
+  {
+    "name": "T12: owner retries a task in the inbox",
+    "row": "T12",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 3,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_retry"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "attempt": 0,
+        "fix_rounds": 0,
+        "ci_head": null,
+        "ci_status": null
+      },
+      "decisionPrefix": "Retry requested for T003"
+    }
+  },
+  {
+    "name": "T12: retry is rejected while the task is active",
+    "row": "T12",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_retry"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "running",
+      "rejected": true
+    }
+  },
+  {
+    "name": "T13: owner skips a failed task: worktree removed",
+    "row": "T13",
+    "task": {
+      "key": "T003",
+      "status": "failed",
+      "attempt": 3,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_skip"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "skipped",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "remove_worktree"
+      ],
+      "decisionPrefix": "Skipped T003"
+    }
+  },
+  {
+    "name": "T13: skipping a task that never started has no worktree to remove",
+    "row": "T13",
+    "task": {
+      "key": "T003",
+      "status": "pending",
+      "attempt": 0,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": null,
+      "worktree": null,
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_skip"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "skipped",
+      "decisionPrefix": "Skipped T003"
+    }
+  },
+  {
+    "name": "T13: skip is rejected while the task is active",
+    "row": "T13",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_skip"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "validating",
+      "rejected": true
+    }
+  },
+  {
+    "name": "T14: owner stops a running task",
+    "row": "T14",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_stop"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "effect": [
+        "kill_agent"
+      ],
+      "decisionPrefix": "Stopped T003"
+    }
+  },
+  {
+    "name": "T14: run stop resets a validating task",
+    "row": "T14",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "run_stop"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "effect": [
+        "kill_agent"
+      ]
+    }
+  },
+  {
+    "name": "T14: daemon restart resets an active task without killing anything",
+    "row": "T14",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 2,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "daemon_restart"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending"
+    }
+  },
+  {
+    "name": "T14: stop is rejected for a task that is not active",
+    "row": "T14",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_stop"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open",
+      "rejected": true
+    }
+  },
+  {
+    "name": "T15: owner approves a PR: merge on GitHub",
+    "row": "T15",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_merge"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "merge_pr",
+        "remove_worktree"
+      ],
+      "decisionPrefix": "Approved merge of T003"
+    }
+  },
+  {
+    "name": "T15: owner approves a local branch: merge locally",
+    "row": "T15",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_merge"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "merge_local",
+        "remove_worktree"
+      ],
+      "decisionPrefix": "Approved merge of T003"
+    }
+  },
+  {
+    "name": "T15: owner merges while checks are still running",
+    "row": "T15",
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_merge"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "merge_pr",
+        "remove_worktree"
+      ],
+      "decisionPrefix": "Approved merge of T003"
+    }
+  },
+  {
+    "name": "T15: merge is rejected for a task that is not waiting for review",
+    "row": "T15",
+    "task": {
+      "key": "T003",
+      "status": "pending",
+      "attempt": 0,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_merge"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "rejected": true
+    }
+  },
+  {
+    "name": "T16: owner marks a PR as merged elsewhere",
+    "row": "T16",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_mark_merged"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "remove_worktree"
+      ],
+      "decisionPrefix": "Marked T003 as merged externally"
+    }
+  },
+  {
+    "name": "T16: a failed task can be marked merged",
+    "row": "T16",
+    "task": {
+      "key": "T003",
+      "status": "failed",
+      "attempt": 3,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": null,
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_mark_merged"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "decisionPrefix": "Marked T003 as merged externally"
+    }
+  },
+  {
+    "name": "T17: owner requests changes on a PR: fix round of kind human",
+    "row": "T17",
+    "pending": "TASK-06",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_request_changes",
+      "feedback": "Rename the flag to --dry-run."
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "attempt": 0,
+        "fix_rounds": 1,
+        "last_feedback": "## Feedback from the owner\n\nRename the flag to --dry-run.",
+        "ci_status": null
+      },
+      "decisionPrefix": "Sending owner feedback on T003's PR back to the worker"
+    }
+  },
+  {
+    "name": "T17: owner feedback ignores the fix-round cap",
+    "row": "T17",
+    "pending": "TASK-06",
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 3,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_request_changes",
+      "feedback": "Add a test for the empty case."
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "attempt": 0,
+        "fix_rounds": 4,
+        "last_feedback": "## Feedback from the owner\n\nAdd a test for the empty case.",
+        "ci_status": null
+      },
+      "decisionPrefix": "Sending owner feedback on T003's PR back to the worker"
+    }
+  },
+  {
+    "name": "T17: owner feedback in local mode (no PR)",
+    "row": "T17",
+    "pending": "TASK-06",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "manual",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_request_changes",
+      "feedback": "Split the function."
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "attempt": 0,
+        "fix_rounds": 1,
+        "last_feedback": "## Feedback from the owner\n\nSplit the function.",
+        "ci_status": null
+      },
+      "decisionPrefix": "Sending owner feedback on T003"
+    }
+  },
+  {
+    "name": "T18: PR action mark_done: merged on GitHub",
+    "row": "T18",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "pr_action",
+      "action": "mark_done"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "remove_worktree"
+      ],
+      "decisionPrefix": "T003: PR was merged on GitHub"
+    }
+  },
+  {
+    "name": "T18: PR action mark_failed: closed without merging",
+    "row": "T18",
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "pr_action",
+      "action": "mark_failed",
+      "feedback": "PR was closed without merging: https://github.com/acme/app/pull/7"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "failed",
+      "patch": {
+        "last_feedback": "PR was closed without merging: https://github.com/acme/app/pull/7"
+      },
+      "notify": true
+    }
+  },
+  {
+    "name": "T18: PR action fix_round (ci): back to the worker with a fresh attempt budget",
+    "row": "T18",
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "attempt": 2,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "pr_action",
+      "action": "fix_round",
+      "kind": "ci",
+      "feedback": "## CI failed on the pull request (round 1/3)"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "attempt": 0,
+        "fix_rounds": 1,
+        "last_feedback": "## CI failed on the pull request (round 1/3)",
+        "ci_status": null
+      },
+      "decisionPrefix": "Sending CI failure on T003's PR back to the worker (round 1/3)"
+    }
+  },
+  {
+    "name": "T18: PR action fix_round (review)",
+    "row": "T18",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 1,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "pr_action",
+      "action": "fix_round",
+      "kind": "review",
+      "feedback": "## Review feedback on the pull request (round 2/3)"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "attempt": 0,
+        "fix_rounds": 2,
+        "last_feedback": "## Review feedback on the pull request (round 2/3)",
+        "ci_status": null
+      },
+      "decisionPrefix": "Sending review feedback on T003's PR back to the worker (round 2/3)"
+    }
+  },
+  {
+    "name": "T18: PR action fix_round over the cap goes to the inbox instead",
+    "row": "T18",
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 3,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "pr_action",
+      "action": "fix_round",
+      "kind": "review",
+      "feedback": "## Review feedback"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open",
+      "patch": {
+        "last_feedback": "New review feedback, but all 3 fix rounds are used.\n\n## Review feedback"
+      },
+      "notify": true
+    }
+  },
+  {
+    "name": "T18: PR action inbox",
+    "row": "T18",
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "pr_action",
+      "action": "inbox",
+      "feedback": "PR checks did not finish within 60 minutes: https://github.com/acme/app/pull/7"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open",
+      "patch": {
+        "last_feedback": "PR checks did not finish within 60 minutes: https://github.com/acme/app/pull/7"
+      },
+      "notify": true
+    }
+  },
+  {
+    "name": "T18: PR action inbox with the same message again is a no-op (no second notification)",
+    "row": "T18",
+    "task": {
+      "key": "T003",
+      "status": "pr_open",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": "CI still failing on aaa111: test"
+    },
+    "event": {
+      "type": "pr_action",
+      "action": "inbox",
+      "feedback": "CI still failing on aaa111: test"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_open"
+    }
+  },
+  {
+    "name": "T18: PR action wait changes nothing",
+    "row": "T18",
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "pr_action",
+      "action": "wait"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pr_checks"
+    }
+  },
+  {
+    "name": "T18: PR action merge",
+    "row": "T18",
+    "task": {
+      "key": "T003",
+      "status": "pr_checks",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": "https://github.com/acme/app/pull/7",
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "pr_action",
+      "action": "merge"
+    },
+    "config": {
+      "pr": true,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "merge_pr",
+        "remove_worktree"
+      ],
+      "decisionPrefix": "Merging T003: PR checks passed"
+    }
+  },
+  {
+    "name": "T19: UI validator has no browser: fail without retry",
+    "row": "T19",
+    "pending": "TASK-16",
+    "task": {
+      "key": "T003",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validator_blocked",
+      "reason": "no browser tool available"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "failed",
+      "patch": {
+        "last_feedback": "UI validation blocked: no browser tool available"
+      },
+      "notify": true
+    }
+  },
+  {
+    "name": "T3: synthetic phase fix-up task retries like any task",
+    "row": "T3",
+    "pending": "TASK-15",
+    "task": {
+      "key": "FIX-1.1",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/fix-1.1-phase-1",
+      "worktree": "/wt/run-1-fix-1.1",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null,
+      "synthetic": true
+    },
+    "event": {
+      "type": "attempt_failed",
+      "feedback": "Validator: FAIL"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "pending",
+      "patch": {
+        "last_feedback": "Validator: FAIL"
+      },
+      "decisionPrefix": "Retrying FIX-1.1 (attempt 2/3)"
+    }
+  },
+  {
+    "name": "T6: synthetic phase fix-up task merges like any auto task",
+    "row": "T6",
+    "pending": "TASK-15",
+    "task": {
+      "key": "FIX-1.1",
+      "status": "validating",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/fix-1.1-phase-1",
+      "worktree": "/wt/run-1-fix-1.1",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null,
+      "synthetic": true
+    },
+    "event": {
+      "type": "validated",
+      "branchSha": "ccc333"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "done",
+      "patch": {
+        "worktree": null
+      },
+      "effect": [
+        "merge_local",
+        "remove_worktree"
+      ]
+    }
+  }
+]

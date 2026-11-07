@@ -1,0 +1,5 @@
+[
+  {"key": "T01", "phase": "Phase 1", "parallel": false, "done": false, "depends_on": []},
+  {"key": "T0002", "phase": "Phase 1", "parallel": false, "done": false, "depends_on": ["T01"]},
+  {"key": "T003", "phase": "Phase 1", "parallel": false, "done": false, "depends_on": ["T0002"]}
+]
