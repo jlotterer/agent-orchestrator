@@ -1,5 +1,6 @@
 # TASK-04: Regression e2e for built lifecycle behaviour
-**Status:** todo · **Wave:** 2 · **Depends on:** TASK-02 · **Parallel:** Yes (with TASK-03)
+**Status:** done · **Wave:** 2 · **Depends on:** TASK-02 · **Parallel:** Yes (with TASK-03)
+> **As built:** all 13 scenarios (a)–(m) pass; none is `todo`. Three bugs found and fixed, each in one function: (c) a worker timeout's feedback said only "agent run failed (see log)"; `runTask` now uses the run's error messages, and the runner reports sub-minute limits in seconds instead of "0 min". (d) after a failing `git.setupCommand` the retry reused the half-set-up worktree and skipped setup; `runTask` now removes the worktree (branch kept) so setup reruns. (h) answering while paused moved the task to `pending`, which consumed an attempt and could start a fresh session; `answerQuestion` now leaves it `needs_input` so the tick after resume continues the same session (architecture §8 T11 updated). **Owner review needed:** fixture `transitions.json` case "T11: answered while the run is paused" still expects `pending`; TASK-03's core should expect `needs_input`.
 
 ## Goal
 Pin down the behaviour orch already has but that no test covers, so later refactors (multi-project, auth) can't silently break it. Add the end-to-end scenarios below; fix small bugs they reveal.

@@ -228,7 +228,7 @@ first few runs; the JSON extractor is forgiving (last fenced block, else last ob
 ## Testing
 
 ```bash
-npm test            # build, unit tests, invariants check, both e2e scenarios
+npm test            # build, unit tests, invariants check, all e2e scripts
 npm run test:unit   # node --test test/unit/*.test.mjs (against dist/, so build first)
 npm run check       # invariants: one runtime dependency; vendor names only in src/adapters/
 ```
@@ -247,7 +247,15 @@ retried, a validator rejection retried, a manual-merge approval, and tasks.md ti
 `origin`: a CI failure fed back and fixed before auto-merge, a `/orch` review comment fixed before a
 manual merge (with a bot comment that must be ignored), and a PR merged by hand on "GitHub".
 
-Both scenarios use the shared helpers in `scripts/lib/e2e.mjs` (`makeRepo`, `writeConfig`, `startDaemon`,
+`scripts/e2e-lifecycle.mjs` pins down the rest of the task lifecycle in 13 independent scenarios,
+each in its own throwaway repo: stopping a run mid-task, `kill -9` of the daemon and restart (no lost
+decisions or questions), agent timeout, a failing setup command, a worker that commits nothing, a
+feature directory without `tasks.md`, a failing planner, answering while paused, a dirty main checkout
+at merge time, two parallel tasks conflicting on one file, skipping a failed dependency, answering a
+question twice, and editing acceptance criteria before approval. Run a subset by letter:
+`node scripts/e2e-lifecycle.mjs b h`.
+
+All e2e scripts use the shared helpers in `scripts/lib/e2e.mjs` (`makeRepo`, `writeConfig`, `startDaemon`,
 `api`, `waitFor`, `cleanup`), so a new scenario is mostly its config, a polling loop and its assertions.
 A failed run keeps its throwaway repo and prints its path.
 

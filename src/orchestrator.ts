@@ -283,7 +283,11 @@ export class Orchestrator extends EventEmitter {
         if (this.cfg.git.setupCommand) {
           const r = await shell(this.cfg.git.setupCommand, worktree, { timeoutMs: 15 * 60_000 });
           this.log(run, task, "git", { message: `setup: ${this.cfg.git.setupCommand} → exit ${r.code}`, output: clip(r.stdout + r.stderr, 2000) });
-          if (r.code !== 0) throw new Error(`setup command failed: ${clip(r.stderr || r.stdout, 500)}`);
+          if (r.code !== 0) {
+            // Drop the half-set-up worktree (branch kept) so the next attempt recreates it and reruns setup.
+            await this.git.removeWorktree(worktree, false);
+            throw new Error(`setup command failed (exit ${r.code}): ${clip((r.stdout + "\n" + r.stderr).trim(), 500)}`);
+          }
         }
       }
 
@@ -297,11 +301,15 @@ export class Orchestrator extends EventEmitter {
             feedback_section: task.last_feedback ? `## Feedback from the previous attempt (fix these)\n${task.last_feedback}` : "",
           });
 
+      const agentErrors: string[] = []; // timeout / exit code / spawn failure, for the attempt's feedback
       const res = await runAgent({
         ...workerAgent, cwd: worktree, prompt,
         resumeSessionId: resume ? task.session_id : null, env: this.taskEnv(task),
         onSpawn: (c) => this.procs.set(task.id, c),
-        onEvent: (kind, data) => this.log(run, task, kind, { role: "worker", ...data }),
+        onEvent: (kind, data) => {
+          if (kind === "error" && data?.message) agentErrors.push(String(data.message));
+          this.log(run, task, kind, { role: "worker", ...data });
+        },
       });
       this.procs.delete(task.id);
       if (res.sessionId) this.store.updateTask(task.id, { session_id: res.sessionId });
@@ -329,7 +337,7 @@ export class Orchestrator extends EventEmitter {
       }
 
       if (!res.ok || out.status === "failed") {
-        const reason = out.reason ? String(out.reason) : "agent run failed (see log)";
+        const reason = out.reason ? String(out.reason) : agentErrors.length ? agentErrors.join("; ") : "agent run failed (see log)";
         await this.failOrRetry(run, task, `Worker reported failure: ${reason}`);
         return;
       }
@@ -663,9 +671,10 @@ export class Orchestrator extends EventEmitter {
     const task = this.store.getTask(q.task_id)!;
     this.decide(run, task, "human", `Answered: ${clip(q.text, 120)} → ${answer}`, null);
     this.changed("questions", { runId: run.id });
-    if (task.status === "needs_input" && this.store.openQuestionsForTask(task.id).length === 0) {
-      if (run.status === "running") await this.resumeAfterAnswer(run, task);
-      else { this.store.updateTask(task.id, { status: "pending" }); this.changed("tasks", { runId: run.id }); }
+    // Not running (paused/stopped): the task stays needs_input and tick() resumes it on start, so the
+    // answer reaches the same session and no attempt is consumed (REQ-SCHED-08, REQ-HITL-03).
+    if (task.status === "needs_input" && this.store.openQuestionsForTask(task.id).length === 0 && run.status === "running") {
+      await this.resumeAfterAnswer(run, task);
     }
   }
   private async resumeAfterAnswer(run: Run, task: Task) {

@@ -8,7 +8,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 
 ## Phase 2: Wave 2
 - [ ] T003 [P] Extract the pure decision core. Brief: docs/tasks/TASK-03.md.
-- [ ] T004 [P] Regression e2e for built lifecycle behaviour. Brief: docs/tasks/TASK-04.md.
+- [x] T004 [P] Regression e2e for built lifecycle behaviour. Brief: docs/tasks/TASK-04.md.
 
 ## Phase 3: Wave 3
 - [ ] T005 [P] Server/project config split and ORCH_HOME. Brief: docs/tasks/TASK-05.md.
