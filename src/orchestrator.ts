@@ -11,13 +11,27 @@ import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
 import { notify } from "./notify.js";
 import { readSpecDir, parseTasksMd, markTaskDoneInFile } from "./speckit.js";
 import type { Run, Task, TaskStatus } from "./types.js";
-import { freshFeedback, isTrigger, summarizeChecks, formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
+import { formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
+import { selectReady } from "./core/readiness.js";
+import { nextTaskState, type TaskEvent, type TransitionResult, type Effect } from "./core/transitions.js";
+import { decidePrAction } from "./core/prpoll.js";
 
 const FINISHED: TaskStatus[] = ["done", "skipped"];
 const ACTIVE: TaskStatus[] = ["running", "validating"];
 /** Tasks with an open PR that the feedback loop watches. */
 const WATCHED: TaskStatus[] = ["pr_checks", "pr_open"];
+/** Effects that can fail and must succeed before the transition is applied (§8: failure → T9). */
+const MERGE_EFFECTS: Effect[] = ["merge_local", "push_and_pr", "merge_pr"];
 const nowIso = () => new Date().toISOString();
+
+interface ApplyOptions {
+  /** Merge-effect failure: send `merge_failed` (T9, default) or throw to the caller (T15: stay, surface the error). */
+  onEffectError?: "merge_failed" | "throw";
+  /** Replaces the notification body the core proposes (e.g. the open questions). */
+  notifyBody?: string;
+  /** Branch head computed before `validated`; recorded as `pr_head` by `push_and_pr`. */
+  sha?: string | null;
+}
 
 export class Orchestrator extends EventEmitter {
   store: Store;
@@ -71,6 +85,103 @@ export class Orchestrator extends EventEmitter {
   private deadlineGuard(run: Run) {
     const r = this.store.getRun(run.id);
     return r && r.status === "running";
+  }
+
+  // ------------------------------------------------------------------ state machine shell (§8)
+  /** Ask the pure state machine what `event` does to the task's current (stored) state. */
+  private transition(taskId: string, event: TaskEvent): { task: Task; result: TransitionResult } {
+    const task = this.store.getTask(taskId);
+    if (!task) throw new Error("task not found");
+    const fb = this.cfg.git.feedback;
+    const result = nextTaskState(task, event, { pr: this.cfg.git.pr, feedback: { enabled: fb.enabled, waitForChecks: fb.waitForChecks, maxRounds: fb.maxRounds } });
+    return { task, result };
+  }
+
+  /**
+   * Decide and apply a transition: merge effects first (a failure becomes `merge_failed`, T9),
+   * then the patch, decision and change event (synchronously when there are no merge effects),
+   * then the remaining effects and the notification. Returns the applied result (or the rejection).
+   */
+  private async fire(run: Run, taskId: string, event: TaskEvent, opts: ApplyOptions = {}): Promise<TransitionResult> {
+    const { task, result } = this.transition(taskId, event);
+    if (!result.rejected) await this.applyTransition(run, task, result, opts);
+    return result;
+  }
+
+  private async applyTransition(run: Run, task: Task, r: TransitionResult, opts: ApplyOptions = {}): Promise<TransitionResult> {
+    const effects = r.effect ?? [];
+    try {
+      for (const e of effects) if (MERGE_EFFECTS.includes(e)) await this.performEffect(run, task, e, opts);
+    } catch (e: any) {
+      const error = e?.message ?? String(e);
+      this.log(run, task, "error", { message: error });
+      if (opts.onEffectError === "throw") throw e;
+      const failed = this.transition(task.id, { type: "merge_failed", error });
+      if (failed.result.rejected) return failed.result;
+      return this.applyTransition(run, failed.task, failed.result);
+    }
+
+    const before = task.status;
+    if (before !== r.status || r.patch) {
+      this.store.updateTask(task.id, { status: r.status, ...(r.patch ?? {}) });
+      this.changed("tasks", { runId: run.id });
+    }
+    if (r.decision) this.decide(run, task, r.decision.actor, r.decision.text, r.decision.rationale);
+    if (r.status === "pr_open" && r.patch?.last_feedback) {
+      this.log(run, task, "state", { message: "needs a human", feedback: clip(r.patch.last_feedback, 2000) });
+    }
+
+    for (const e of effects) if (!MERGE_EFFECTS.includes(e)) await this.performEffect(run, task, e, opts);
+
+    if (r.notify) {
+      const cur = this.store.getTask(task.id)!;
+      let body = opts.notifyBody ?? r.notify.body;
+      if (cur.pr_url && !body.includes(cur.pr_url)) body = body ? `${body}\n${cur.pr_url}` : cur.pr_url;
+      await notify(this.cfg, r.notify.title, clip(body, 300), { priority: r.notify.priority, tags: r.notify.tags, click: cur.pr_url ?? undefined });
+    }
+    if (r.status === "done" && before !== "done") {
+      await this.tickTasksMd(run, task);
+      this.log(run, task, "state", { message: "done" });
+      void this.tick();
+    }
+    return r;
+  }
+
+  private async performEffect(run: Run, task: Task, effect: Effect, opts: ApplyOptions) {
+    const cur = this.store.getTask(task.id)!;
+    const worktree = cur.worktree, branch = cur.branch!;
+    const cwd = worktree && fs.existsSync(worktree) ? worktree : this.cfg.repo;
+    const title = `${cur.key}: ${cur.title}`;
+    switch (effect) {
+      case "merge_local":
+        await this.withMergeLock(() => this.git.mergeLocal(worktree!, branch, this.cfg.git.squash, title));
+        this.log(run, cur, "git", { message: `merged ${branch} into ${this.cfg.baseBranch} locally` });
+        return;
+      case "push_and_pr": {
+        const body = `${cur.summary ?? ""}\n\nRun ${run.id} · ${run.title}\nAutomated by orch; validated ${this.cfg.validation.agent ? "by validator agent" : "by command gate"}.`;
+        const sha = opts.sha !== undefined ? opts.sha : await this.git.branchSha(branch);
+        await this.git.push(worktree!, branch);
+        const url = await this.git.createPr(worktree!, branch, title, body);
+        const firstPush = !cur.pr_pushed_at;
+        this.store.updateTask(cur.id, { pr_url: url, pr_head: sha, pr_pushed_at: nowIso(), pr_feedback_at: cur.pr_feedback_at ?? nowIso() });
+        this.log(run, cur, "git", { message: firstPush ? `PR opened: ${url}` : `PR updated (fix round ${cur.fix_rounds}): ${url}` });
+        return;
+      }
+      case "merge_pr":
+        await this.git.mergePr(cwd, branch, this.cfg.git.squash);
+        this.log(run, cur, "git", { message: "PR merged" });
+        return;
+      case "kill_agent": {
+        const child = this.procs.get(cur.id);
+        if (child) child.kill("SIGTERM");
+        this.procs.delete(cur.id);
+        return;
+      }
+      case "remove_worktree":
+        // The state change already cleared `worktree`; use the path from before it.
+        if (task.worktree) await this.git.removeWorktree(task.worktree, !this.cfg.git.pr, task.branch ?? undefined);
+        return;
+    }
   }
 
   // ------------------------------------------------------------------ planning
@@ -186,12 +297,9 @@ export class Orchestrator extends EventEmitter {
   stop(runId?: string) {
     const run = runId ? this.store.getRun(runId) : this.store.activeRun();
     if (!run) throw new Error("no active run");
-    for (const [taskId, child] of this.procs) {
-      child.kill("SIGTERM");
-      const t = this.store.getTask(taskId);
-      if (t && ACTIVE.includes(t.status)) this.store.updateTask(taskId, { status: "pending" });
+    for (const t of this.store.listTasks(run.id)) {
+      if (ACTIVE.includes(t.status)) void this.fire(run, t.id, { type: "run_stop" }); // T14: state + kill are synchronous
     }
-    this.procs.clear();
     this.store.setRunStatus(run.id, "stopped");
     this.log(run, null, "state", { message: "run stopped; active agents killed" });
     this.changed("run", { run: this.store.getRun(run.id) });
@@ -223,21 +331,24 @@ export class Orchestrator extends EventEmitter {
       if (this.cfg.git.pr && this.cfg.git.feedback.enabled) this.pollPullRequests(run, tasks);
 
       const active = tasks.filter((t) => ACTIVE.includes(t.status)).length;
-      let slots = this.cfg.scheduler.maxParallel - active;
-      if (slots <= 0) return;
 
-      const doneKeys = new Set(tasks.filter((t) => FINISHED.includes(t.status)).map((t) => t.key));
-      const ready = tasks.filter((t) => t.status === "pending" && t.depends_on.every((k) => doneKeys.has(k)) && this.store.openQuestionsForTask(t.id).length === 0);
+      // Readiness is decided by src/core (§7.1). Single project until TASK-09: maxAgents = maxParallel, nothing else busy.
+      const supportsResume = this.roleAgent("worker").adapter.supportsResume;
+      const { start } = selectReady({
+        maxAgents: this.cfg.scheduler.maxParallel,
+        busyAgents: 0,
+        projects: [{ id: "default", runId: run.id, runStatus: run.status, maxParallel: this.cfg.scheduler.maxParallel, lastStartAt: null, planQuestionsOpen: 0, resumeOnRetry: this.cfg.scheduler.resumeOnRetry }],
+        tasks: tasks.map((t) => ({
+          id: t.id, projectId: "default", runId: t.run_id, key: t.key, orderIdx: t.order_idx, status: t.status, dependsOn: t.depends_on, filesOwned: [],
+          openQuestions: t.status === "pending" ? this.store.openQuestionsForTask(t.id).length : 0,
+          attempt: t.attempt, fixRounds: t.fix_rounds, hasSession: !!t.session_id, adapterSupportsResume: supportsResume,
+        })),
+      });
+      const byId = new Map(tasks.map((t) => [t.id, t]));
+      for (const s of start) void this.runTask(run, byId.get(s.taskId)!, s.resume);
 
-      for (const t of ready) {
-        if (slots <= 0) break;
-        slots--;
-        // Resume on a retry, and on a PR fix round (attempt was reset to give the round a fresh budget).
-        const resume = this.cfg.scheduler.resumeOnRetry && !!t.session_id && (t.attempt > 0 || t.fix_rounds > 0);
-        void this.runTask(run, t, resume);
-      }
-
-      if (!ready.length && active === 0) {
+      if (!start.length && active === 0) {
+        const doneKeys = new Set(tasks.filter((t) => FINISHED.includes(t.status)).map((t) => t.key));
         const unfinished = tasks.filter((t) => !FINISHED.includes(t.status));
         if (!unfinished.length) {
           this.store.setRunStatus(run.id, "done");
@@ -261,13 +372,19 @@ export class Orchestrator extends EventEmitter {
   }
 
   // ------------------------------------------------------------------ task lifecycle
-  private async runTask(run: Run, task: Task, resume = false) {
-    const attempt = task.attempt + 1;
+  /**
+   * Run the worker for a task: T1 `start` first, unless `started` (T10 `answered` already set it running
+   * without consuming an attempt). The state change happens synchronously, before the first await.
+   */
+  private async runTask(run: Run, task: Task, resume = false, started = false) {
+    if (!started && (await this.fire(run, task.id, { type: "start" })).rejected) return;
+    task = this.store.getTask(task.id)!;
+    // Values produced by starting are the shell's (§8 T1: branch/worktree assigned if null).
     const branch = task.branch ?? `orch/${task.key.toLowerCase()}-${slug(task.title)}`;
     const worktree = task.worktree ?? path.join(this.cfg.worktreeDir, `${run.id}-${task.key.toLowerCase()}`);
-    this.store.updateTask(task.id, { status: "running", attempt, branch, worktree });
+    if (task.branch !== branch || task.worktree !== worktree) this.store.updateTask(task.id, { branch, worktree });
     task = this.store.getTask(task.id)!;
-    this.changed("tasks", { runId: run.id });
+    const attempt = task.attempt;
     const workerAgent = this.roleAgent("worker");
     if (resume && !workerAgent.adapter.supportsResume) resume = false;
     this.log(run, task, "state", { message: `worker started (${workerAgent.label}, attempt ${attempt}/${task.max_attempts})${resume ? " — resuming previous session" : ""}` });
@@ -329,10 +446,8 @@ export class Orchestrator extends EventEmitter {
           const q = this.store.addQuestion(run.id, task.id, String(out.question.text), out.question.options ?? []);
           this.log(run, task, "question", { id: q.id, text: q.text, options: q.options });
         }
-        this.store.updateTask(task.id, { status: "needs_input" });
-        this.changed("tasks", { runId: run.id });
         const qs = this.store.openQuestionsForTask(task.id);
-        await notify(this.cfg, `${task.key} needs your input`, qs.map((q) => q.text).join("\n") || "Worker blocked", { priority: "high", tags: ["question"] });
+        await this.fire(run, task.id, { type: "worker_blocked" }, { notifyBody: qs.map((q) => q.text).join("\n") || "Worker blocked" }); // T2
         return;
       }
 
@@ -344,6 +459,7 @@ export class Orchestrator extends EventEmitter {
 
       // Make sure the work is committed, then validate.
       await this.git.commitAll(worktree, `${task.key}: ${task.title} (orch auto-commit)`).then((c) => { if (c) this.log(run, task, "git", { message: "committed leftover changes" }); });
+      if ((await this.fire(run, task.id, { type: "worker_done" })).rejected) return; // T5
       await this.validate(run, this.store.getTask(task.id)!);
     } catch (e: any) {
       this.procs.delete(task.id);
@@ -357,8 +473,6 @@ export class Orchestrator extends EventEmitter {
   }
 
   private async validate(run: Run, task: Task) {
-    this.store.updateTask(task.id, { status: "validating" });
-    this.changed("tasks", { runId: run.id });
     const worktree = task.worktree!;
 
     if ((await this.git.commitsAhead(worktree)) === 0) {
@@ -411,75 +525,28 @@ export class Orchestrator extends EventEmitter {
     await this.finalize(run, this.store.getTask(task.id)!);
   }
 
+  /** T3/T4: retry with feedback, or fail and notify when the attempt budget is used. */
   private async failOrRetry(run: Run, task: Task, feedback: string) {
-    task = this.store.getTask(task.id)!;
-    this.store.updateTask(task.id, { last_feedback: feedback });
-    if (task.attempt < task.max_attempts) {
-      this.log(run, task, "state", { message: `attempt ${task.attempt} failed; retrying`, feedback: clip(feedback, 2000) });
-      this.decide(run, task, "orchestrator", `Retrying ${task.key} (attempt ${task.attempt + 1}/${task.max_attempts})`, clip(feedback.split("\n")[0], 200));
-      this.store.updateTask(task.id, { status: "pending" });
-      this.changed("tasks", { runId: run.id });
+    const attempt = this.store.getTask(task.id)!.attempt;
+    const r = await this.fire(run, task.id, { type: "attempt_failed", feedback });
+    if (r.rejected) return; // e.g. stopped by the owner meanwhile
+    if (r.status === "pending") {
+      this.log(run, task, "state", { message: `attempt ${attempt} failed; retrying`, feedback: clip(feedback, 2000) });
       // The scheduler picks it up again (resuming the worker's session if configured).
       if (this.deadlineGuard(run)) setTimeout(() => void this.tick(), 50);
       return;
     }
-    this.store.updateTask(task.id, { status: "failed" });
-    this.log(run, task, "state", { message: `failed after ${task.attempt} attempts; needs a human`, feedback: clip(feedback, 2000) });
-    this.changed("tasks", { runId: run.id });
-    await notify(this.cfg, `${task.key} failed`, clip(feedback, 300), { priority: "high", tags: ["x"] });
+    this.log(run, task, "state", { message: `failed after ${attempt} attempts; needs a human`, feedback: clip(feedback, 2000) });
   }
 
+  /** T6–T8a: merge locally, open/update the PR, wait for checks or the owner. Merge errors → T9. */
   private async finalize(run: Run, task: Task) {
-    const worktree = task.worktree!, branch = task.branch!;
-    const title = `${task.key}: ${task.title}`;
-    const body = `${task.summary ?? ""}\n\nRun ${run.id} · ${run.title}\nAutomated by orch; validated ${this.cfg.validation.agent ? "by validator agent" : "by command gate"}.`;
-    try {
-      if (this.cfg.git.pr) {
-        const fb = this.cfg.git.feedback;
-        const sha = await this.git.branchSha(branch);
-        const unchanged = task.fix_rounds > 0 && !!sha && sha === task.pr_head;
-        await this.git.push(worktree, branch);
-        const url = await this.git.createPr(worktree, branch, title, body);
-        const firstPush = !task.pr_pushed_at;
-        this.store.updateTask(task.id, { pr_url: url, pr_head: sha, pr_pushed_at: nowIso(), pr_feedback_at: task.pr_feedback_at ?? nowIso(), ci_status: null });
-        this.log(run, task, "git", { message: firstPush ? `PR opened: ${url}` : `PR updated (fix round ${task.fix_rounds}): ${url}` });
-        if (unchanged) {
-          // A fix round that changed nothing would re-run the same CI / ignore the reviewer. A human decides.
-          await this.toInbox(run, this.store.getTask(task.id)!, `Fix round ${task.fix_rounds} produced no new commits.\n\n${task.last_feedback ?? ""}`);
-          return;
-        }
-        if (task.merge_policy === "manual") {
-          this.store.updateTask(task.id, { status: "pr_open" });
-          this.changed("tasks", { runId: run.id });
-          await notify(this.cfg, `${task.key} ready for review`, `${title}\n${url}`, { click: url, tags: ["eyes"] });
-          return;
-        }
-        if (fb.enabled && fb.waitForChecks) {
-          this.store.updateTask(task.id, { status: "pr_checks" });
-          this.log(run, task, "state", { message: "waiting for PR checks before merging" });
-          this.changed("tasks", { runId: run.id });
-          this.lastPoll.delete(task.id); // poll soon rather than a full interval from now
-          return;
-        }
-        await this.git.mergePr(worktree, branch, this.cfg.git.squash);
-        this.log(run, task, "git", { message: "PR merged" });
-      } else {
-        if (task.merge_policy === "manual") {
-          this.store.updateTask(task.id, { status: "pr_open" });
-          this.changed("tasks", { runId: run.id });
-          await notify(this.cfg, `${task.key} ready for review`, `${title}\nbranch ${branch} (local merge when approved)`, { tags: ["eyes"] });
-          return;
-        }
-        await this.withMergeLock(() => this.git.mergeLocal(worktree, branch, this.cfg.git.squash, title));
-        this.log(run, task, "git", { message: `merged ${branch} into ${this.cfg.baseBranch} locally` });
-      }
-      await this.markDone(run, task);
-    } catch (e: any) {
-      this.log(run, task, "error", { message: e?.message ?? String(e) });
-      // Merge problems are for a human (conflicts, CI, auth); don't burn worker retries on them.
-      this.store.updateTask(task.id, { status: "pr_open", last_feedback: `Merge step failed: ${e?.message ?? e}` });
-      this.changed("tasks", { runId: run.id });
-      await notify(this.cfg, `${task.key}: merge needs you`, clip(String(e?.message ?? e), 300), { priority: "high", tags: ["warning"] });
+    // The head is read before pushing: it decides T8a (fix round without new commits) and becomes pr_head.
+    const sha = this.cfg.git.pr ? await this.git.branchSha(task.branch!) : null;
+    const r = await this.fire(run, task.id, { type: "validated", branchSha: sha }, { sha });
+    if (r.status === "pr_checks" && !r.rejected) {
+      this.log(run, task, "state", { message: "waiting for PR checks before merging" });
+      this.lastPoll.delete(task.id); // poll soon rather than a full interval from now
     }
   }
 
@@ -512,15 +579,6 @@ export class Orchestrator extends EventEmitter {
     return next;
   }
 
-  private async markDone(run: Run, task: Task) {
-    await this.git.removeWorktree(task.worktree!, !this.cfg.git.pr, task.branch!);
-    this.store.updateTask(task.id, { status: "done", worktree: null });
-    await this.tickTasksMd(run, task);
-    this.log(run, task, "state", { message: "done" });
-    this.changed("tasks", { runId: run.id });
-    void this.tick();
-  }
-
   // ------------------------------------------------------------------ PR feedback loop (R1)
   private polling = new Set<string>();
   private lastPoll = new Map<string, number>();
@@ -545,85 +603,46 @@ export class Orchestrator extends EventEmitter {
     }
   }
 
+  /** Gather the PR facts, let src/core decide (§12.2), then perform the action through the state machine (T18). */
   private async pollPr(run: Run, task: Task) {
     const fb = this.cfg.git.feedback;
     const cwd = task.worktree && fs.existsSync(task.worktree) ? task.worktree : this.cfg.repo;
     const pr = await this.git.prStatus(cwd, task.pr_url!);
+    const localSha = await this.git.branchSha(task.branch!);
     task = this.store.getTask(task.id)!; // a human may have acted while gh was running
     if (!WATCHED.includes(task.status)) return;
 
-    if (pr.state === "MERGED") {
-      this.decide(run, task, "orchestrator", `${task.key}: PR was merged on GitHub; marking done`, pr.url);
-      await this.markDone(run, task);
-      return;
-    }
-    if (pr.state === "CLOSED") {
-      this.store.updateTask(task.id, { status: "failed", last_feedback: `PR was closed without merging: ${pr.url}` });
-      this.log(run, task, "state", { message: "PR closed without merging; needs a human" });
-      this.changed("tasks", { runId: run.id });
-      await notify(this.cfg, `${task.key}: PR closed`, pr.url, { click: pr.url, priority: "high", tags: ["x"] });
-      return;
-    }
+    const a = decidePrAction({
+      task, pr, localSha, now: nowIso(),
+      config: { trigger: fb.trigger, ignoreAuthors: fb.ignoreAuthors, maxRounds: fb.maxRounds, noChecksGraceSeconds: fb.noChecksGraceSeconds, checksTimeoutMinutes: fb.checksTimeoutMinutes },
+    });
+    if (a.patch) { this.store.updateTask(task.id, a.patch); this.changed("tasks", { runId: run.id }); }
 
-    // 1. Review feedback: a "changes requested" review or a `/orch …` comment since the watermark.
-    const fresh = freshFeedback(pr.feedback, task.pr_feedback_at, fb.ignoreAuthors);
-    const triggers = fresh.filter((i) => isTrigger(i, fb.trigger));
-    if (triggers.length) {
-      const watermark = new Date(Math.max(...fresh.map((i) => Date.parse(i.ts)))).toISOString();
-      this.store.updateTask(task.id, { pr_feedback_at: watermark });
-      const authors = [...new Set(triggers.map((i) => i.author))].join(", ");
-      // All fresh human feedback goes to the worker, not only the triggering comment: it is the reviewer's full context.
-      await this.startFixRound(run, this.store.getTask(task.id)!, "review", formatReviewFeedback(fresh, pr.url, task.fix_rounds + 1, fb.maxRounds), `review feedback from ${authors}`);
-      return;
-    }
-
-    // 2. Checks, only once GitHub reports them for the commit we pushed.
-    const localSha = await this.git.branchSha(task.branch!);
-    const current = !localSha || pr.headSha === localSha;
-    let summary = current ? summarizeChecks(pr.checks) : "pending";
-    const sincePush = Date.now() - Date.parse(task.pr_pushed_at ?? task.updated_at);
-    if (summary === "none" && sincePush < fb.noChecksGraceSeconds * 1000) summary = "pending"; // CI may not have registered yet
-    if (task.ci_status !== summary) { this.store.updateTask(task.id, { ci_status: summary }); this.changed("tasks", { runId: run.id }); }
-
-    if (summary === "pending") {
-      if (task.status === "pr_checks" && sincePush > fb.checksTimeoutMinutes * 60_000) {
-        await this.toInbox(run, task, `PR checks did not finish within ${fb.checksTimeoutMinutes} minutes: ${pr.url}`);
-      }
-      return;
-    }
-
-    if (summary === "fail") {
-      const failed = pr.checks.filter((c) => c.state === "fail");
-      const names = failed.map((c) => c.name).join(", ");
-      if (task.ci_head === pr.headSha) {
-        // Already acted on this commit's failure; only an auto task still waiting needs moving along.
-        if (task.status === "pr_checks") await this.toInbox(run, task, `CI still failing on ${pr.headSha.slice(0, 10)}: ${names}`);
+    switch (a.action) {
+      case "wait":
+        return;
+      case "mark_done":
+        await this.fire(run, task.id, { type: "pr_action", action: "mark_done", reason: a.reason });
+        return;
+      case "mark_failed":
+        if (!(await this.fire(run, task.id, { type: "pr_action", action: "mark_failed", feedback: a.reason })).rejected) {
+          this.log(run, task, "state", { message: "PR closed without merging; needs a human" });
+        }
+        return;
+      case "inbox":
+        await this.fire(run, task.id, { type: "pr_action", action: "inbox", feedback: a.reason });
+        return;
+      case "merge":
+        await this.fire(run, task.id, { type: "pr_action", action: "merge", reason: a.reason });
+        return;
+      case "fix_round": {
+        const round = task.fix_rounds + 1;
+        const feedback = a.kind === "ci"
+          ? formatCiFeedback(a.failedChecks ?? [], await this.git.failedCheckLogs(cwd, a.failedChecks ?? [], fb.logChars), pr.url, pr.headSha, round, fb.maxRounds)
+          : formatReviewFeedback(a.items ?? [], pr.url, round, fb.maxRounds);
+        await this.startFixRound(run, this.store.getTask(task.id)!, a.kind ?? "review", feedback, a.reason);
         return;
       }
-      this.store.updateTask(task.id, { ci_head: pr.headSha });
-      if (task.fix_rounds >= fb.maxRounds) {
-        await this.toInbox(run, task, `CI failing (${names}) and all ${fb.maxRounds} fix rounds are used: ${pr.url}`);
-        return;
-      }
-      const logs = await this.git.failedCheckLogs(cwd, failed, fb.logChars);
-      await this.startFixRound(run, this.store.getTask(task.id)!, "ci", formatCiFeedback(failed, logs, pr.url, pr.headSha, task.fix_rounds + 1, fb.maxRounds), `failed checks: ${names}`);
-      return;
-    }
-
-    // pass / none: auto tasks merge now. Manual tasks stay with the human (the inbox shows CI status).
-    if (task.status !== "pr_checks") return;
-    if (pr.reviewDecision === "CHANGES_REQUESTED") {
-      await this.toInbox(run, task, `Checks pass, but a reviewer's "changes requested" is still open on ${pr.url}. Merge once you're satisfied.`);
-      return;
-    }
-    this.decide(run, task, "orchestrator", `Merging ${task.key}: PR checks passed`, summary === "none" ? "no checks configured on the PR" : `${pr.checks.length} checks passed`);
-    try {
-      await this.git.mergePr(cwd, task.branch!, this.cfg.git.squash);
-      this.log(run, task, "git", { message: "PR merged" });
-      await this.markDone(run, this.store.getTask(task.id)!);
-    } catch (e: any) {
-      this.log(run, task, "error", { message: e?.message ?? String(e) });
-      await this.toInbox(run, task, `Merge step failed: ${e?.message ?? e}`);
     }
   }
 
@@ -631,34 +650,21 @@ export class Orchestrator extends EventEmitter {
   private async startFixRound(run: Run, task: Task, kind: "ci" | "review", feedback: string, why: string) {
     const fb = this.cfg.git.feedback;
     const round = task.fix_rounds + 1;
-    if (round > fb.maxRounds) {
-      await this.toInbox(run, task, `New ${kind === "ci" ? "CI failure" : "review feedback"}, but all ${fb.maxRounds} fix rounds are used.\n\n${feedback}`);
-      return;
-    }
-    if (task.worktree && fs.existsSync(task.worktree)) {
+    const event: TaskEvent = { type: "pr_action", action: "fix_round", kind, feedback, reason: why };
+    // When T18 would start the round (within the cap), first bring in commits pushed to the PR branch (§12.3).
+    if (this.transition(task.id, event).result.status === "pending" && task.worktree && fs.existsSync(task.worktree)) {
       const sync = await this.git.syncFromRemote(task.worktree, task.branch!);
       if (sync === "fast-forwarded") this.log(run, task, "git", { message: "pulled new commits from the PR branch before the fix round" });
       if (sync === "diverged") {
         // Our next push would overwrite someone else's commits. Not our call.
-        await this.toInbox(run, task, `The PR branch has commits that conflict with the local branch; resolve before orch continues.\n\n${feedback}`);
+        await this.fire(run, task.id, { type: "pr_action", action: "inbox", feedback: `The PR branch has commits that conflict with the local branch; resolve before orch continues.\n\n${feedback}` });
         return;
       }
     }
-    this.decide(run, task, "orchestrator", `Sending ${kind === "ci" ? "CI failure" : "review feedback"} on ${task.key}'s PR back to the worker (round ${round}/${fb.maxRounds})`, why);
+    const r = await this.fire(run, task.id, event);
+    if (r.rejected || r.status !== "pending") return;
     this.log(run, task, "state", { message: `PR fix round ${round}/${fb.maxRounds}: ${why}`, feedback: clip(feedback, 2000) });
-    // attempt resets so validation retries inside the round get the full budget; fix_rounds caps the rounds.
-    this.store.updateTask(task.id, { status: "pending", attempt: 0, fix_rounds: round, last_feedback: feedback, ci_status: null });
-    this.changed("tasks", { runId: run.id });
     if (this.deadlineGuard(run)) setTimeout(() => void this.tick(), 50);
-  }
-
-  /** Park a PR task with a human: inbox + push notification. Idempotent for the same message. */
-  private async toInbox(run: Run, task: Task, feedback: string) {
-    if (task.status === "pr_open" && task.last_feedback === feedback) return;
-    this.store.updateTask(task.id, { status: "pr_open", last_feedback: feedback });
-    this.log(run, task, "state", { message: "PR needs a human", feedback: clip(feedback, 2000) });
-    this.changed("tasks", { runId: run.id });
-    await notify(this.cfg, `${task.key}: PR needs you`, clip(feedback, 300), { click: task.pr_url ?? undefined, priority: "high", tags: ["warning"] });
   }
 
   // ------------------------------------------------------------------ human actions
@@ -671,17 +677,16 @@ export class Orchestrator extends EventEmitter {
     const task = this.store.getTask(q.task_id)!;
     this.decide(run, task, "human", `Answered: ${clip(q.text, 120)} → ${answer}`, null);
     this.changed("questions", { runId: run.id });
-    // Not running (paused/stopped): the task stays needs_input and tick() resumes it on start, so the
-    // answer reaches the same session and no attempt is consumed (REQ-SCHED-08, REQ-HITL-03).
-    if (task.status === "needs_input" && this.store.openQuestionsForTask(task.id).length === 0 && run.status === "running") {
-      await this.resumeAfterAnswer(run, task);
-    }
+    if (task.status === "needs_input") await this.resumeAfterAnswer(run, task);
   }
+  /**
+   * T10/T11: once every question is answered, continue the worker without consuming an attempt
+   * (run running) or put the task back to pending (run not running).
+   */
   private async resumeAfterAnswer(run: Run, task: Task) {
-    if (ACTIVE.includes(this.store.getTask(task.id)!.status)) return;
-    // Resuming does not consume an attempt.
-    this.store.updateTask(task.id, { attempt: Math.max(0, task.attempt - 1) });
-    await this.runTask(run, this.store.getTask(task.id)!, !!task.session_id);
+    const r = await this.fire(run, task.id, { type: "answered", openQuestions: this.store.openQuestionsForTask(task.id).length, runStatus: run.status });
+    if (r.rejected || r.status !== "running") return;
+    await this.runTask(run, this.store.getTask(task.id)!, !!task.session_id, true);
   }
   private resumePrompt(task: Task): string {
     const answered = this.store.listQuestions(task.run_id).filter((q) => q.task_id === task.id && q.answer);
@@ -709,63 +714,36 @@ export class Orchestrator extends EventEmitter {
     return this.decide(run, task ?? null, actor, text, rationale);
   }
 
+  /**
+   * An owner action: decide synchronously (a rejected event throws, so the API answers with the reason),
+   * then apply. The state change is synchronous; only effects such as merges and worktree removal are awaited.
+   */
+  private human(taskId: string, event: TaskEvent, opts: ApplyOptions = {}): Promise<TransitionResult> {
+    const { task, result } = this.transition(taskId, event);
+    if (result.rejected) throw new Error(result.reason ?? `${event.type} is not allowed for a ${task.status} task`);
+    return this.applyTransition(this.store.getRun(task.run_id)!, task, result, opts);
+  }
+
+  /** T12: budgets reset, the scheduler picks the task up again. */
   async retryTask(taskId: string) {
-    const t = this.store.getTask(taskId);
-    if (!t) throw new Error("task not found");
-    if (ACTIVE.includes(t.status)) throw new Error("task is active");
-    const run = this.store.getRun(t.run_id)!;
-    this.store.updateTask(taskId, { status: "pending", attempt: 0, fix_rounds: 0, ci_head: null, ci_status: null });
-    this.decide(run, t, "human", `Retry requested for ${t.key}`, null);
-    this.changed("tasks", { runId: run.id });
+    await this.human(taskId, { type: "human_retry" });
     void this.tick();
   }
+  /** T13. */
   skipTask(taskId: string) {
-    const t = this.store.getTask(taskId);
-    if (!t) throw new Error("task not found");
-    if (ACTIVE.includes(t.status)) throw new Error("task is active; stop it first");
-    const run = this.store.getRun(t.run_id)!;
-    this.store.updateTask(taskId, { status: "skipped" });
-    this.decide(run, t, "human", `Skipped ${t.key}`, null);
-    if (t.worktree) void this.git.removeWorktree(t.worktree, !this.cfg.git.pr, t.branch ?? undefined);
-    this.store.updateTask(taskId, { worktree: null });
-    this.changed("tasks", { runId: run.id });
-    void this.tick();
+    void this.human(taskId, { type: "human_skip" }).then(() => this.tick(), (e) => console.error("[skip]", e));
   }
-  /** Human approves a pr_open task: merge it now. */
+  /** T15: the owner approves a pr_open/pr_checks task; merge errors are thrown back to the owner. */
   async mergeTask(taskId: string) {
-    const t = this.store.getTask(taskId);
-    if (!t) throw new Error("task not found");
-    if (!WATCHED.includes(t.status)) throw new Error(`task is ${t.status}, not pr_open`);
-    const run = this.store.getRun(t.run_id)!;
-    this.decide(run, t, "human", `Approved merge of ${t.key}`, null);
-    try {
-      if (this.cfg.git.pr) await this.git.mergePr(t.worktree!, t.branch!, this.cfg.git.squash);
-      else await this.withMergeLock(() => this.git.mergeLocal(t.worktree!, t.branch!, this.cfg.git.squash, `${t.key}: ${t.title}`));
-      this.log(run, t, "git", { message: "merged" });
-      await this.markDone(run, t);
-    } catch (e: any) {
-      this.log(run, t, "error", { message: e?.message ?? String(e) });
-      throw e;
-    }
+    await this.human(taskId, { type: "human_merge" }, { onEffectError: "throw" });
   }
-  /** Human marks a pr_open task as merged elsewhere (e.g. merged on GitHub by hand). */
+  /** T16: the owner marks a task as merged elsewhere (e.g. merged on GitHub by hand). */
   async markMerged(taskId: string) {
-    const t = this.store.getTask(taskId);
-    if (!t) throw new Error("task not found");
-    const run = this.store.getRun(t.run_id)!;
-    this.decide(run, t, "human", `Marked ${t.key} as merged externally`, null);
-    await this.markDone(run, t);
+    await this.human(taskId, { type: "human_mark_merged" });
   }
+  /** T14: only active tasks can be stopped. */
   stopTask(taskId: string) {
-    const child = this.procs.get(taskId);
-    const t = this.store.getTask(taskId);
-    if (!t) throw new Error("task not found");
-    if (child) child.kill("SIGTERM");
-    this.procs.delete(taskId);
-    const run = this.store.getRun(t.run_id)!;
-    this.store.updateTask(taskId, { status: "pending" });
-    this.decide(run, t, "human", `Stopped ${t.key}`, null);
-    this.changed("tasks", { runId: run.id });
+    void this.human(taskId, { type: "human_stop" }).catch((e) => console.error("[stop]", e));
   }
 
   // ------------------------------------------------------------------ hand-off brief
@@ -821,7 +799,7 @@ export class Orchestrator extends EventEmitter {
       if (["done", "stopped", "failed"].includes(run.status)) continue;
       for (const t of this.store.listTasks(run.id)) {
         if (ACTIVE.includes(t.status)) {
-          this.store.updateTask(t.id, { status: "pending" });
+          void this.fire(run, t.id, { type: "daemon_restart" }); // T14: no effects, applied synchronously
           this.log(run, t, "state", { message: "daemon restarted while task was active; task reset to pending (worktree kept)" });
         }
       }

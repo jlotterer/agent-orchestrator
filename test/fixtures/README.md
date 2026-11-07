@@ -122,7 +122,7 @@ Step mapping (architecture §12.2):
 
 ## Behaviour changes
 
-Cases whose expected output differs from what the code did when the fixtures were written. TASK-03 (or the task named) makes the code match.
+Cases whose expected output differs from what the code did when the fixtures were written. TASK-03 (or the task named) makes the code match. TASK-03 is done: the `extract-json`, T14 and readiness `maxAgents`/`busyAgents` rows below now pass; the `pending` rows wait for their tasks.
 
 | File | Case | Reason |
 | :--- | :--- | :--- |

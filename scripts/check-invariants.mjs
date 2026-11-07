@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
- * Stack invariants (REQ-NFR-02, REQ-NFR-04; decisions 0007 and 0009). Exits non-zero on any violation.
+ * Stack invariants (REQ-NFR-02, REQ-NFR-04, REQ-NFR-05; decisions 0007, 0009 and 0020). Exits non-zero on any violation.
  *   1. package.json `dependencies` is exactly { better-sqlite3 }.
  *   2. Agent-vendor names appear in src/**\/*.ts only inside src/adapters/, plus the allowlisted
  *      built-in defaults in src/config.ts below.
+ *   3. src/core/ is pure (decision 0020): no node:fs, node:child_process or ../db imports, no
+ *      Date.now() / new Date() without arguments.
  *   npm run check
  */
 import fs from "node:fs";
@@ -61,8 +63,27 @@ for (const file of walk(path.join(ROOT, "src"))) {
   });
 }
 
+// 3. src/core/ is pure (decision 0020): no file system, child processes or DB, and no clock reads.
+//    Time is passed in; `new Date(x)` and `Date.parse(x)` are fine, `Date.now()` and `new Date()` are not.
+const CORE_RULES = [
+  [/\bfrom\s+["'](node:)?(fs|fs\/promises|child_process)["']|\brequire\(\s*["'](node:)?(fs|child_process)["']\s*\)|\bimport\(\s*["'](node:)?(fs|fs\/promises|child_process)["']\s*\)/, "imports node:fs or node:child_process"],
+  [/\bfrom\s+["']\.\.\/db(\.js)?["']|\bimport\(\s*["']\.\.\/db(\.js)?["']\s*\)/, "imports ../db"],
+  [/\bDate\.now\s*\(/, "reads the clock (Date.now())"],
+  [/\bnew\s+Date\s*\(\s*\)/, "reads the clock (new Date())"],
+  [/\bperformance\.now\s*\(/, "reads the clock (performance.now())"],
+];
+const coreDir = path.join(ROOT, "src", "core");
+for (const file of fs.existsSync(coreDir) ? walk(coreDir) : []) {
+  const rel = path.relative(ROOT, file).split(path.sep).join("/");
+  fs.readFileSync(file, "utf8").split(/\r?\n/).forEach((line, i) => {
+    const code = line.replace(/\/\/.*$/, "").trim();
+    if (!code || /^(\*|\/\*)/.test(code)) return; // comments
+    for (const [re, what] of CORE_RULES) if (re.test(code)) errors.push(`${rel}:${i + 1}: src/core must be pure but ${what} (decision 0020): ${line.trim()}`);
+  });
+}
+
 if (errors.length) {
   console.error("Invariant check FAILED:\n  " + errors.join("\n  "));
   process.exit(1);
 }
-console.log("Invariant check passed: 1 runtime dependency, vendor names only in src/adapters/.");
+console.log("Invariant check passed: 1 runtime dependency, vendor names only in src/adapters/, src/core is pure.");

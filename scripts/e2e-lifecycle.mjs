@@ -218,15 +218,30 @@ const scenarios = [
       let s = await h.state();
       const byKey = Object.fromEntries(s.tasks.map((t) => [t.key, t]));
       assert(s.run.status === "paused", `run should stay paused, is ${s.run.status}`);
-      assert(byKey.T002.status === "needs_input" && byKey.T002.attempt === 1, `T002 should wait for resume (status ${byKey.T002.status}, attempt ${byKey.T002.attempt})`);
+      assert(["needs_input", "pending"].includes(byKey.T002.status) && byKey.T002.attempt === 1, `T002 ran while paused (status ${byKey.T002.status}, attempt ${byKey.T002.attempt})`);
       assert(byKey.T010.status === "pending" && byKey.T010.attempt === 0, "T010 started while paused");
       await h.api("POST", `/api/runs/${run.id}/start`);
       s = await h.waitRunDone();
       const t2 = s.tasks.find((t) => t.key === "T002");
-      assert(t2.attempt === 1, `answering consumed an attempt (attempt ${t2.attempt})`);
       assert(h.sh("cat impl/T002.txt").includes("greeting=French"), "answer did not reach the worker");
       const evs = await h.events(run.id);
       assert(stateMsgs(evs, t2.id).some((m) => /resuming previous session/.test(m)), "worker session was not resumed after the answer");
+    },
+  },
+  {
+    id: "h2", name: "answering while paused does not consume an attempt", reqs: "REQ-HITL-03",
+    todo: "today the resumed worker runs as attempt 2: §8 T11 and the owner-reviewed fixture transitions.json \"T11: answered while the run is paused\" send the task to pending, and the next start counts an attempt. Needs an owner decision on T11 (e.g. stay needs_input so the tick applies T10).",
+    run: async (port) => {
+      const h = await setup(port, { tasks: "## Phase 1\n- [ ] T002 Add greeting\n" });
+      const run = await h.planAndStart();
+      await h.waitTask("T002", (t) => t.status === "needs_input", "T002 asks");
+      await h.api("POST", `/api/runs/${run.id}/pause`);
+      const q = (await h.state()).questions.find((x) => !x.answer);
+      await h.api("POST", `/api/questions/${q.id}/answer`, { answer: "French" });
+      await h.api("POST", `/api/runs/${run.id}/start`);
+      const s = await h.waitRunDone();
+      const t2 = s.tasks.find((t) => t.key === "T002");
+      assert(t2.attempt === 1, `answering consumed an attempt (attempt ${t2.attempt})`);
     },
   },
   {
@@ -261,6 +276,8 @@ const scenarios = [
       assert(/Merge step failed: rebase onto main failed/.test(parked.last_feedback ?? ""), `feedback should carry the conflict:\n${parked.last_feedback}`);
       assert(s.inbox.some((i) => i.type === "merge" && i.task_key === parked.key), "conflicting task not in the inbox");
       assert(h.sh("cat shared.txt").includes(`written by ${done.key}`), "main does not hold the merged task's file");
+      // The task shows done just before its tasks.md tick is committed; wait for that commit, then require a clean tree.
+      await waitFor(() => h.sh("git log --oneline -1").includes(`${done.key}: tick in tasks.md`), { timeoutMs: 5_000, label: "tasks.md tick commit" });
       assert(h.sh("git status --porcelain --untracked-files=no").trim() === "", "main checkout left dirty after the failed merge");
     },
   },

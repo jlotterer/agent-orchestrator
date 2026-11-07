@@ -366,7 +366,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-NFR-02 | Maintainability | orch MUST keep exactly one runtime dependency (SQLite binding) unless a decision record approves another; the dashboard MUST need no build step. | `npm run check` (scripts/check-invariants.mjs) in CI on every PR |
 | REQ-NFR-03 | Portability | orch MUST run on Linux and in Docker; development and tests MUST also work on macOS and WSL2. | CI on Linux (`.github/workflows/ci.yml`, Node 22 and 24); e2e in `node:22` container |
 | REQ-NFR-04 | Vendor independence | Agent-vendor-specific code MUST live only in the adapter layer. | `npm run check`: vendor names outside `src/adapters/` fail CI (allowlisted defaults in `src/config.ts`) |
-| REQ-NFR-05 | Determinism | Scheduling, state transitions and PR-loop decisions MUST be decided by pure functions with fixture-driven tests. | unit tests over the fixture tables |
+| REQ-NFR-05 | Determinism | Scheduling, state transitions and PR-loop decisions MUST be decided by pure functions with fixture-driven tests. | `test/unit/core.test.mjs` runs every fixture table; `npm run check` keeps `src/core/` free of fs, child processes, DB and clock reads |
 | REQ-NFR-06 | Performance | The dashboard state for a run of 200 tasks MUST load in under 1 second on the server, regardless of the size of the event log. | unit/perf test with seeded DB |
 | REQ-NFR-07 | Observability | Every task state change MUST appear in the activity stream with a reason. | e2e assertions on events |
 | REQ-NFR-08 | Safety | orch MUST refuse to run as root where the agent CLI requires a non-root user, and MUST document that agents have full permissions in their working copy. | Docker image runs as uid 1000; README |

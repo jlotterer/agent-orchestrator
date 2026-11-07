@@ -17,11 +17,32 @@ export interface RunOptions extends LaunchOptions {
   onSpawn?: (child: ChildProcess) => void;
 }
 
-/** Extract the last fenced ```json block (or trailing JSON object) from text. */
+/**
+ * Fenced code blocks tagged `json` or untagged, in order. Line-based so that a block in another
+ * language (```ts) is skipped as a whole and fences may be indented (e.g. inside a list item).
+ */
+function jsonFences(text: string): string[] {
+  const blocks: string[] = [];
+  let open: { lang: string; lines: string[] } | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    if (!open) {
+      const m = line.match(/^\s*```\s*([\w+-]*)\s*$/);
+      if (m) open = { lang: m[1].toLowerCase(), lines: [] };
+    } else if (/^\s*```\s*$/.test(line)) {
+      if (open.lang === "" || open.lang === "json") blocks.push(open.lines.join("\n"));
+      open = null;
+    } else {
+      open.lines.push(line);
+    }
+  }
+  return blocks;
+}
+
+/** Extract the last parseable fenced ```json block (or trailing JSON object) from text. */
 export function extractJson(text: string): any | null {
-  const fences = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)\n```/g)];
+  const fences = jsonFences(text);
   for (let i = fences.length - 1; i >= 0; i--) {
-    try { return JSON.parse(fences[i][1]); } catch { /* try next */ }
+    try { return JSON.parse(fences[i]); } catch { /* try next */ }
   }
   const last = text.lastIndexOf("{");
   if (last >= 0) {

@@ -1,5 +1,5 @@
 # TASK-03: Extract the pure decision core
-**Status:** todo · **Wave:** 2 · **Depends on:** TASK-01, TASK-02 · **Parallel:** Yes (with TASK-04)
+**Status:** done · **Wave:** 2 · **Depends on:** TASK-01, TASK-02 · **Parallel:** Yes (with TASK-04)
 
 ## Goal
 Move the scheduling, task-transition and PR-poll decisions out of `orchestrator.ts` into pure functions in `src/core/`, and make the approved fixtures pass. Behaviour stays the same except where the fixtures' Behaviour changes list says otherwise.
