@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeChecks, collectFeedback, tail, type Check, type PrStatus } from "./prfeedback.js";
 
 export interface ShResult { code: number; stdout: string; stderr: string }
 
@@ -32,7 +33,7 @@ async function must(p: Promise<ShResult>, what: string): Promise<string> {
 }
 
 export class Git {
-  constructor(public repo: string, public baseBranch: string) {}
+  constructor(public repo: string, public baseBranch: string, public gh = "gh") {}
 
   async hasRemote(): Promise<boolean> {
     const r = await git(["remote"], this.repo);
@@ -104,9 +105,9 @@ export class Git {
   }
 
   async createPr(worktree: string, branch: string, title: string, body: string): Promise<string> {
-    const existing = await sh("gh", ["pr", "view", branch, "--json", "url", "-q", ".url"], worktree);
+    const existing = await sh(this.gh, ["pr", "view", branch, "--json", "url,state", "-q", 'select(.state == "OPEN") | .url'], worktree);
     if (existing.code === 0 && existing.stdout.trim()) return existing.stdout.trim();
-    const r = await sh("gh", ["pr", "create", "--base", this.baseBranch, "--head", branch, "--title", title, "--body", body], worktree);
+    const r = await sh(this.gh, ["pr", "create", "--base", this.baseBranch, "--head", branch, "--title", title, "--body", body], worktree);
     if (r.code !== 0) throw new Error(`gh pr create failed: ${(r.stderr || r.stdout).trim()}`);
     const url = r.stdout.trim().split("\n").pop() ?? "";
     return url;
@@ -114,8 +115,59 @@ export class Git {
 
   async mergePr(worktree: string, branch: string, squash: boolean): Promise<void> {
     const args = ["pr", "merge", branch, squash ? "--squash" : "--merge", "--delete-branch"];
-    const r = await sh("gh", args, worktree);
+    const r = await sh(this.gh, args, worktree);
     if (r.code !== 0) throw new Error(`gh pr merge failed: ${(r.stderr || r.stdout).trim()}`);
+  }
+
+  /** State, head, checks and all review feedback of a PR, in one normalized object. */
+  async prStatus(cwd: string, prRef: string): Promise<PrStatus> {
+    const fields = "number,url,state,headRefOid,reviewDecision,reviews,comments,statusCheckRollup";
+    const r = await sh(this.gh, ["pr", "view", prRef, "--json", fields], cwd, { timeoutMs: 60_000 });
+    if (r.code !== 0) throw new Error(`gh pr view failed: ${(r.stderr || r.stdout).trim()}`);
+    const v = JSON.parse(r.stdout);
+    // Inline (diff) comments are only on the REST API. Best effort: a failure here must not stop CI handling.
+    let inline: any[] = [];
+    const ir = await sh(this.gh, ["api", `repos/{owner}/{repo}/pulls/${v.number}/comments?per_page=100`], cwd, { timeoutMs: 60_000 });
+    if (ir.code === 0) { try { const j = JSON.parse(ir.stdout); if (Array.isArray(j)) inline = j; } catch {} }
+    return {
+      number: v.number, url: v.url, state: v.state, headSha: v.headRefOid ?? "", reviewDecision: v.reviewDecision ?? "",
+      checks: normalizeChecks(v.statusCheckRollup), feedback: collectFeedback(v, inline),
+    };
+  }
+
+  /** Tail of the failed-step log for each failed GitHub Actions job (other CI providers: none). */
+  async failedCheckLogs(cwd: string, checks: Check[], maxChars: number): Promise<Record<string, string>> {
+    const jobs = checks.filter((c) => c.jobId).slice(0, 3);
+    const out: Record<string, string> = {};
+    for (const c of jobs) {
+      const r = await sh(this.gh, ["run", "view", "--job", c.jobId!, "--log-failed"], cwd, { timeoutMs: 120_000 });
+      if (r.code === 0 && r.stdout.trim()) out[c.name] = tail(r.stdout.trim(), Math.floor(maxChars / jobs.length));
+    }
+    return out;
+  }
+
+  /** Full sha of a local branch (works from the main repo regardless of which worktree has it). */
+  async branchSha(branch: string): Promise<string | null> {
+    const r = await git(["rev-parse", "--verify", `refs/heads/${branch}`], this.repo);
+    return r.code === 0 ? r.stdout.trim() : null;
+  }
+
+  /**
+   * Before a fix round: bring in commits someone pushed to the PR branch (e.g. applied review
+   * suggestions) so our next force-with-lease push doesn't drop them.
+   */
+  async syncFromRemote(worktree: string, branch: string): Promise<"same" | "ahead" | "fast-forwarded" | "diverged" | "no-remote"> {
+    const f = await git(["fetch", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`], worktree);
+    if (f.code !== 0) return "no-remote";
+    const local = (await git(["rev-parse", "HEAD"], worktree)).stdout.trim();
+    const remote = (await git(["rev-parse", `refs/remotes/origin/${branch}`], worktree)).stdout.trim();
+    if (!remote || local === remote) return "same";
+    if ((await git(["merge-base", "--is-ancestor", remote, local], worktree)).code === 0) return "ahead";
+    if ((await git(["merge-base", "--is-ancestor", local, remote], worktree)).code === 0) {
+      await must(git(["merge", "--ff-only", "-q", remote], worktree), "git merge --ff-only");
+      return "fast-forwarded";
+    }
+    return "diverged";
   }
 
   /**

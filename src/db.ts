@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   summary TEXT,
   files TEXT NOT NULL DEFAULT '[]',
   last_feedback TEXT,
+  fix_rounds INTEGER NOT NULL DEFAULT 0,
+  pr_head TEXT,
+  pr_pushed_at TEXT,
+  pr_feedback_at TEXT,
+  ci_head TEXT,
+  ci_status TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(run_id, key)
@@ -73,6 +79,16 @@ CREATE TABLE IF NOT EXISTS questions (
 );
 `;
 
+/** Columns added after 0.1; added to existing databases on open. */
+const TASK_MIGRATIONS: [string, string][] = [
+  ["fix_rounds", "INTEGER NOT NULL DEFAULT 0"],
+  ["pr_head", "TEXT"],
+  ["pr_pushed_at", "TEXT"],
+  ["pr_feedback_at", "TEXT"],
+  ["ci_head", "TEXT"],
+  ["ci_status", "TEXT"],
+];
+
 const now = () => new Date().toISOString();
 
 function rowToTask(r: any): Task {
@@ -98,6 +114,8 @@ export class Store {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
     this.db.exec(SCHEMA);
+    const have = new Set((this.db.prepare("PRAGMA table_info(tasks)").all() as any[]).map((c) => c.name));
+    for (const [col, type] of TASK_MIGRATIONS) if (!have.has(col)) this.db.exec(`ALTER TABLE tasks ADD COLUMN ${col} ${type}`);
   }
 
   // ---- runs ----
@@ -138,15 +156,18 @@ export class Store {
   }
 
   // ---- tasks ----
-  insertTask(t: Omit<Task, "id" | "created_at" | "updated_at">): Task {
-    const task: Task = { ...t, id: crypto.randomUUID().slice(0, 8), created_at: now(), updated_at: now() };
+  insertTask(t: Omit<Task, "id" | "created_at" | "updated_at" | "fix_rounds" | "pr_head" | "pr_pushed_at" | "pr_feedback_at" | "ci_head" | "ci_status">): Task {
+    const task: Task = {
+      fix_rounds: 0, pr_head: null, pr_pushed_at: null, pr_feedback_at: null, ci_head: null, ci_status: null,
+      ...t, id: crypto.randomUUID().slice(0, 8), created_at: now(), updated_at: now(),
+    };
     this.db
       .prepare(`INSERT INTO tasks (id, run_id, key, title, description, acceptance, depends_on, parallel, phase, order_idx,
                 status, attempt, max_attempts, merge_policy, validate_cmd, worktree, branch, pr_url, session_id, summary, files,
-                last_feedback, created_at, updated_at)
+                last_feedback, fix_rounds, pr_head, pr_pushed_at, pr_feedback_at, ci_head, ci_status, created_at, updated_at)
                 VALUES (@id, @run_id, @key, @title, @description, @acceptance, @depends_on, @parallel, @phase, @order_idx,
                 @status, @attempt, @max_attempts, @merge_policy, @validate_cmd, @worktree, @branch, @pr_url, @session_id, @summary, @files,
-                @last_feedback, @created_at, @updated_at)`)
+                @last_feedback, @fix_rounds, @pr_head, @pr_pushed_at, @pr_feedback_at, @ci_head, @ci_status, @created_at, @updated_at)`)
       .run({
         ...task,
         acceptance: JSON.stringify(task.acceptance),

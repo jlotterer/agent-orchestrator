@@ -1,4 +1,4 @@
-# orch
+# orch.
 
 An orchestrator / worker / validator runner for Claude Code, with a live dashboard.
 
@@ -62,6 +62,7 @@ Edit `orch.config.json`:
 | `scheduler.maxAttempts` | worker attempts before a task goes to your inbox (`2`) |
 | `git.pr` | `true` = push + `gh pr create` + `gh pr merge`; `false` = merge locally, no GitHub needed |
 | `git.mergePolicy` | default `auto` (merge when validated) or `manual` (wait for you). The planner marks risky tasks `manual` on its own |
+| `git.feedback` | PR mode only: wait for CI before auto-merging, and send CI failures and `/orch` review comments back to the worker. See [Merging](#merging) |
 | `git.copyFiles` / `git.setupCommand` | e.g. `[".env"]` and `npm ci` for each new worktree |
 | `agents.roles.{planner,worker,validator}` | which adapter and model each role uses, e.g. `{"adapter": "gemini", "model": "pro"}` for the validator |
 | `agents.adapters.claude.extraArgs` | defaults to `--permission-mode bypassPermissions`. Tighten with `--allowedTools` if you prefer |
@@ -97,7 +98,8 @@ sudo systemctl enable --now orch
 4. **Start**. Watch the **Board** or walk away. Your phone buzzes when:
    * a worker asks a question → answer with one tap or a sentence
    * a task fails after its retries → inspect the log, retry or skip
-   * a manual-merge task is validated → review the PR, **Merge now**
+   * a manual-merge task is validated → review the PR, **Merge now** (or comment `/orch …` on the PR to send it back)
+   * a PR's CI keeps failing, or its checks hang → look at the PR
    * the run finishes
 5. **Decisions** tab is the audit trail: every planner, worker, validator and human decision with
    its rationale, in order. **Activity** is the run-level event stream.
@@ -141,11 +143,38 @@ worktree.
 
 ### Merging
 
-* `git.pr: true`: push, `gh pr create`, then `gh pr merge --squash --delete-branch` (auto) or wait
-  in the inbox (manual). If the merge fails (conflict, required checks, auth) the task goes to the
-  inbox as **merge needs you**; fix it on GitHub and click **Merged elsewhere**, or **Re-run**.
+* `git.pr: true`: push, `gh pr create`, wait for the PR's checks (auto), then
+  `gh pr merge --squash --delete-branch`; or wait in the inbox (manual). If the merge fails
+  (conflict, required checks, auth) the task goes to the inbox as **merge needs you**; fix it on
+  GitHub and click **Merged elsewhere**, or **Re-run**.
 * `git.pr: false`: rebases the task branch and squash-merges into `baseBranch` locally. Needs
   `baseBranch` checked out and clean in the repo. Good for a server that is the only writer.
+
+#### The PR feedback loop (`git.feedback`, PR mode)
+
+While a task's PR is open, orch polls it every `pollSeconds` (default 60):
+
+* **CI fails** → the failed checks and the tail of their GitHub Actions logs go back to the worker
+  as feedback. The worker resumes its own session, fixes and commits; orch re-runs the gate and the
+  validator, pushes, and waits for CI again. Auto tasks sit in the **Waiting on CI** lane meanwhile
+  and merge only once checks pass (`waitForChecks`).
+* **A reviewer wants changes** → a "Request changes" review, or any PR comment with a line that
+  starts with `/orch` (`trigger`), sends every new human comment since the last round, including
+  inline `file:line` comments, back to the worker the same way. Use `/orch` on your own PRs:
+  GitHub doesn't let a PR's author request changes, and orch opens PRs with your `gh` account.
+  Comments from bots (`[bot]` logins, `ignoreAuthors`) never trigger a round.
+* **Merged or closed on GitHub** → orch notices: merged marks the task done, closed marks it failed.
+
+Fix rounds have their own budget (`maxRounds`, default 3); each round gets the full
+`maxAttempts` for validation. The task goes to your inbox instead of running another round when
+the rounds are used up, when a round produces no new commits, when checks stay pending past
+`checksTimeoutMinutes`, when "changes requested" is still open after a fix (an auto task waits for
+you rather than merging over a reviewer), or when someone pushed commits to the PR branch that
+conflict with orch's local branch. Commits that only add to the branch (e.g. applied suggestions)
+are pulled in before the next round. Every round is logged in the **Decisions** tab.
+
+If a PR has no checks at all, orch waits `noChecksGraceSeconds` (90) after each push for CI to
+show up, then merges. Set `feedback.enabled: false` to merge right after the PR is created.
 
 After a merge, the task is ticked in `tasks.md` on the base branch (committed in local mode; left
 as a working-tree change in PR mode so you can commit it with your next push).
@@ -199,20 +228,28 @@ first few runs; the JSON extractor is forgiving (last fenced block, else last ob
 ## Testing
 
 ```bash
-npm run test:e2e
+npm run build && npm run test:unit && npm run test:e2e
 ```
 
-Runs the whole loop against a fake agent (`scripts/fake-agent.mjs`) in a throwaway repo, with
-workers on the Claude adapter and the validator on the Gemini adapter: planning,
+`scripts/e2e.mjs` runs the whole loop against a fake agent (`scripts/fake-agent.mjs`) in a throwaway
+repo, with workers on the Claude adapter and the validator on the Gemini adapter: planning,
 approval, two parallel workers, a question answered mid-task with session resume, a gate failure
 retried, a validator rejection retried, a manual-merge approval, and tasks.md ticked on main.
+
+`scripts/e2e-pr.mjs` runs PR mode against a fake `gh` (`scripts/fake-gh.mjs`) and a local bare
+`origin`: a CI failure fed back and fixed before auto-merge, a `/orch` review comment fixed before a
+manual merge (with a bot comment that must be ignored), and a PR merged by hand on "GitHub".
+
+The e2e tests need Linux or macOS (they spawn `.mjs` files and `sh`). On Windows, run them in a
+container: `docker run --rm -v "$PWD:/src" -w /src node:22 sh -c "npm ci && npm run build && npm run test:e2e"`.
 
 ## Layout
 
 ```
 src/orchestrator.ts   state machine: plan → approve → run → validate → merge; questions, decisions, retries
 src/adapters/         one adapter per agent CLI (claude.ts, gemini.ts) + the shared process runner
-src/git.ts            worktrees, diffs, push, gh pr create/merge, local merge
+src/git.ts            worktrees, diffs, push, gh pr create/merge/view, CI logs, local merge
+src/prfeedback.ts     PR feedback loop helpers: check verdicts, review comments, worker feedback text
 src/speckit.ts        tasks.md parser and ticker
 src/db.ts             SQLite: runs, tasks, events, decisions, questions
 src/server.ts         REST + SSE, serves the dashboard

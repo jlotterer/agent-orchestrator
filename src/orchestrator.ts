@@ -11,9 +11,13 @@ import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
 import { notify } from "./notify.js";
 import { readSpecDir, parseTasksMd, markTaskDoneInFile } from "./speckit.js";
 import type { Run, Task, TaskStatus } from "./types.js";
+import { freshFeedback, isTrigger, summarizeChecks, formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
 
 const FINISHED: TaskStatus[] = ["done", "skipped"];
 const ACTIVE: TaskStatus[] = ["running", "validating"];
+/** Tasks with an open PR that the feedback loop watches. */
+const WATCHED: TaskStatus[] = ["pr_checks", "pr_open"];
+const nowIso = () => new Date().toISOString();
 
 export class Orchestrator extends EventEmitter {
   store: Store;
@@ -25,7 +29,7 @@ export class Orchestrator extends EventEmitter {
   constructor(public cfg: Config) {
     super();
     this.store = new Store(cfg.dbPath);
-    this.git = new Git(cfg.repo, cfg.baseBranch);
+    this.git = new Git(cfg.repo, cfg.baseBranch, cfg.git.ghCommand);
   }
 
   // ------------------------------------------------------------------ helpers
@@ -216,6 +220,8 @@ export class Orchestrator extends EventEmitter {
         }
       }
 
+      if (this.cfg.git.pr && this.cfg.git.feedback.enabled) this.pollPullRequests(run, tasks);
+
       const active = tasks.filter((t) => ACTIVE.includes(t.status)).length;
       let slots = this.cfg.scheduler.maxParallel - active;
       if (slots <= 0) return;
@@ -226,7 +232,8 @@ export class Orchestrator extends EventEmitter {
       for (const t of ready) {
         if (slots <= 0) break;
         slots--;
-        const resume = this.cfg.scheduler.resumeOnRetry && !!t.session_id && t.attempt > 0;
+        // Resume on a retry, and on a PR fix round (attempt was reset to give the round a fresh budget).
+        const resume = this.cfg.scheduler.resumeOnRetry && !!t.session_id && (t.attempt > 0 || t.fix_rounds > 0);
         void this.runTask(run, t, resume);
       }
 
@@ -420,14 +427,30 @@ export class Orchestrator extends EventEmitter {
     const body = `${task.summary ?? ""}\n\nRun ${run.id} · ${run.title}\nAutomated by orch; validated ${this.cfg.validation.agent ? "by validator agent" : "by command gate"}.`;
     try {
       if (this.cfg.git.pr) {
+        const fb = this.cfg.git.feedback;
+        const sha = await this.git.branchSha(branch);
+        const unchanged = task.fix_rounds > 0 && !!sha && sha === task.pr_head;
         await this.git.push(worktree, branch);
         const url = await this.git.createPr(worktree, branch, title, body);
-        this.store.updateTask(task.id, { pr_url: url });
-        this.log(run, task, "git", { message: `PR opened: ${url}` });
+        const firstPush = !task.pr_pushed_at;
+        this.store.updateTask(task.id, { pr_url: url, pr_head: sha, pr_pushed_at: nowIso(), pr_feedback_at: task.pr_feedback_at ?? nowIso(), ci_status: null });
+        this.log(run, task, "git", { message: firstPush ? `PR opened: ${url}` : `PR updated (fix round ${task.fix_rounds}): ${url}` });
+        if (unchanged) {
+          // A fix round that changed nothing would re-run the same CI / ignore the reviewer. A human decides.
+          await this.toInbox(run, this.store.getTask(task.id)!, `Fix round ${task.fix_rounds} produced no new commits.\n\n${task.last_feedback ?? ""}`);
+          return;
+        }
         if (task.merge_policy === "manual") {
           this.store.updateTask(task.id, { status: "pr_open" });
           this.changed("tasks", { runId: run.id });
           await notify(this.cfg, `${task.key} ready for review`, `${title}\n${url}`, { click: url, tags: ["eyes"] });
+          return;
+        }
+        if (fb.enabled && fb.waitForChecks) {
+          this.store.updateTask(task.id, { status: "pr_checks" });
+          this.log(run, task, "state", { message: "waiting for PR checks before merging" });
+          this.changed("tasks", { runId: run.id });
+          this.lastPoll.delete(task.id); // poll soon rather than a full interval from now
           return;
         }
         await this.git.mergePr(worktree, branch, this.cfg.git.squash);
@@ -490,6 +513,146 @@ export class Orchestrator extends EventEmitter {
     void this.tick();
   }
 
+  // ------------------------------------------------------------------ PR feedback loop (R1)
+  private polling = new Set<string>();
+  private lastPoll = new Map<string, number>();
+  private lastPollError = new Map<string, string>();
+
+  /** Called from tick(): poll each watched PR at most every `pollSeconds`, never two polls of one task at once. */
+  private pollPullRequests(run: Run, tasks: Task[]) {
+    const every = this.cfg.git.feedback.pollSeconds * 1000;
+    for (const t of tasks) {
+      if (!WATCHED.includes(t.status) || !t.pr_url || !t.branch) continue;
+      if (this.polling.has(t.id) || Date.now() - (this.lastPoll.get(t.id) ?? 0) < every) continue;
+      this.polling.add(t.id);
+      this.lastPoll.set(t.id, Date.now());
+      this.pollPr(run, t)
+        .then(() => this.lastPollError.delete(t.id))
+        .catch((e) => {
+          const msg = `PR poll failed: ${e?.message ?? e}`;
+          if (this.lastPollError.get(t.id) !== msg) this.log(run, t, "error", { message: msg }); // log once per distinct error
+          this.lastPollError.set(t.id, msg);
+        })
+        .finally(() => this.polling.delete(t.id));
+    }
+  }
+
+  private async pollPr(run: Run, task: Task) {
+    const fb = this.cfg.git.feedback;
+    const cwd = task.worktree && fs.existsSync(task.worktree) ? task.worktree : this.cfg.repo;
+    const pr = await this.git.prStatus(cwd, task.pr_url!);
+    task = this.store.getTask(task.id)!; // a human may have acted while gh was running
+    if (!WATCHED.includes(task.status)) return;
+
+    if (pr.state === "MERGED") {
+      this.decide(run, task, "orchestrator", `${task.key}: PR was merged on GitHub; marking done`, pr.url);
+      await this.markDone(run, task);
+      return;
+    }
+    if (pr.state === "CLOSED") {
+      this.store.updateTask(task.id, { status: "failed", last_feedback: `PR was closed without merging: ${pr.url}` });
+      this.log(run, task, "state", { message: "PR closed without merging; needs a human" });
+      this.changed("tasks", { runId: run.id });
+      await notify(this.cfg, `${task.key}: PR closed`, pr.url, { click: pr.url, priority: "high", tags: ["x"] });
+      return;
+    }
+
+    // 1. Review feedback: a "changes requested" review or a `/orch …` comment since the watermark.
+    const fresh = freshFeedback(pr.feedback, task.pr_feedback_at, fb.ignoreAuthors);
+    const triggers = fresh.filter((i) => isTrigger(i, fb.trigger));
+    if (triggers.length) {
+      const watermark = new Date(Math.max(...fresh.map((i) => Date.parse(i.ts)))).toISOString();
+      this.store.updateTask(task.id, { pr_feedback_at: watermark });
+      const authors = [...new Set(triggers.map((i) => i.author))].join(", ");
+      // All fresh human feedback goes to the worker, not only the triggering comment: it is the reviewer's full context.
+      await this.startFixRound(run, this.store.getTask(task.id)!, "review", formatReviewFeedback(fresh, pr.url, task.fix_rounds + 1, fb.maxRounds), `review feedback from ${authors}`);
+      return;
+    }
+
+    // 2. Checks, only once GitHub reports them for the commit we pushed.
+    const localSha = await this.git.branchSha(task.branch!);
+    const current = !localSha || pr.headSha === localSha;
+    let summary = current ? summarizeChecks(pr.checks) : "pending";
+    const sincePush = Date.now() - Date.parse(task.pr_pushed_at ?? task.updated_at);
+    if (summary === "none" && sincePush < fb.noChecksGraceSeconds * 1000) summary = "pending"; // CI may not have registered yet
+    if (task.ci_status !== summary) { this.store.updateTask(task.id, { ci_status: summary }); this.changed("tasks", { runId: run.id }); }
+
+    if (summary === "pending") {
+      if (task.status === "pr_checks" && sincePush > fb.checksTimeoutMinutes * 60_000) {
+        await this.toInbox(run, task, `PR checks did not finish within ${fb.checksTimeoutMinutes} minutes: ${pr.url}`);
+      }
+      return;
+    }
+
+    if (summary === "fail") {
+      const failed = pr.checks.filter((c) => c.state === "fail");
+      const names = failed.map((c) => c.name).join(", ");
+      if (task.ci_head === pr.headSha) {
+        // Already acted on this commit's failure; only an auto task still waiting needs moving along.
+        if (task.status === "pr_checks") await this.toInbox(run, task, `CI still failing on ${pr.headSha.slice(0, 10)}: ${names}`);
+        return;
+      }
+      this.store.updateTask(task.id, { ci_head: pr.headSha });
+      if (task.fix_rounds >= fb.maxRounds) {
+        await this.toInbox(run, task, `CI failing (${names}) and all ${fb.maxRounds} fix rounds are used: ${pr.url}`);
+        return;
+      }
+      const logs = await this.git.failedCheckLogs(cwd, failed, fb.logChars);
+      await this.startFixRound(run, this.store.getTask(task.id)!, "ci", formatCiFeedback(failed, logs, pr.url, pr.headSha, task.fix_rounds + 1, fb.maxRounds), `failed checks: ${names}`);
+      return;
+    }
+
+    // pass / none: auto tasks merge now. Manual tasks stay with the human (the inbox shows CI status).
+    if (task.status !== "pr_checks") return;
+    if (pr.reviewDecision === "CHANGES_REQUESTED") {
+      await this.toInbox(run, task, `Checks pass, but a reviewer's "changes requested" is still open on ${pr.url}. Merge once you're satisfied.`);
+      return;
+    }
+    this.decide(run, task, "orchestrator", `Merging ${task.key}: PR checks passed`, summary === "none" ? "no checks configured on the PR" : `${pr.checks.length} checks passed`);
+    try {
+      await this.git.mergePr(cwd, task.branch!, this.cfg.git.squash);
+      this.log(run, task, "git", { message: "PR merged" });
+      await this.markDone(run, this.store.getTask(task.id)!);
+    } catch (e: any) {
+      this.log(run, task, "error", { message: e?.message ?? String(e) });
+      await this.toInbox(run, task, `Merge step failed: ${e?.message ?? e}`);
+    }
+  }
+
+  /** Send PR feedback (CI failure or review) back to the worker: same path as a validation retry, own budget. */
+  private async startFixRound(run: Run, task: Task, kind: "ci" | "review", feedback: string, why: string) {
+    const fb = this.cfg.git.feedback;
+    const round = task.fix_rounds + 1;
+    if (round > fb.maxRounds) {
+      await this.toInbox(run, task, `New ${kind === "ci" ? "CI failure" : "review feedback"}, but all ${fb.maxRounds} fix rounds are used.\n\n${feedback}`);
+      return;
+    }
+    if (task.worktree && fs.existsSync(task.worktree)) {
+      const sync = await this.git.syncFromRemote(task.worktree, task.branch!);
+      if (sync === "fast-forwarded") this.log(run, task, "git", { message: "pulled new commits from the PR branch before the fix round" });
+      if (sync === "diverged") {
+        // Our next push would overwrite someone else's commits. Not our call.
+        await this.toInbox(run, task, `The PR branch has commits that conflict with the local branch; resolve before orch continues.\n\n${feedback}`);
+        return;
+      }
+    }
+    this.decide(run, task, "orchestrator", `Sending ${kind === "ci" ? "CI failure" : "review feedback"} on ${task.key}'s PR back to the worker (round ${round}/${fb.maxRounds})`, why);
+    this.log(run, task, "state", { message: `PR fix round ${round}/${fb.maxRounds}: ${why}`, feedback: clip(feedback, 2000) });
+    // attempt resets so validation retries inside the round get the full budget; fix_rounds caps the rounds.
+    this.store.updateTask(task.id, { status: "pending", attempt: 0, fix_rounds: round, last_feedback: feedback, ci_status: null });
+    this.changed("tasks", { runId: run.id });
+    if (this.deadlineGuard(run)) setTimeout(() => void this.tick(), 50);
+  }
+
+  /** Park a PR task with a human: inbox + push notification. Idempotent for the same message. */
+  private async toInbox(run: Run, task: Task, feedback: string) {
+    if (task.status === "pr_open" && task.last_feedback === feedback) return;
+    this.store.updateTask(task.id, { status: "pr_open", last_feedback: feedback });
+    this.log(run, task, "state", { message: "PR needs a human", feedback: clip(feedback, 2000) });
+    this.changed("tasks", { runId: run.id });
+    await notify(this.cfg, `${task.key}: PR needs you`, clip(feedback, 300), { click: task.pr_url ?? undefined, priority: "high", tags: ["warning"] });
+  }
+
   // ------------------------------------------------------------------ human actions
   async answerQuestion(questionId: number, answer: string) {
     const q = this.store.getQuestion(questionId);
@@ -514,8 +677,9 @@ export class Orchestrator extends EventEmitter {
   private resumePrompt(task: Task): string {
     const answered = this.store.listQuestions(task.run_id).filter((q) => q.task_id === task.id && q.answer);
     const qa = answered.map((q) => `Q: ${q.text}\nA: ${q.answer}`).join("\n\n");
+    const qaSection = qa ? `\n\n## Answers to your questions\n${qa}` : "";
     const fb = task.last_feedback ? `\n\n## Feedback to address\n${task.last_feedback}` : "";
-    return `You are being resumed by the orchestrator on task ${task.key}.\n\n## Answers to your questions\n${qa || "(none)"}${fb}\n\nContinue the task from where you left off. Commit your work. Finish with the same JSON block as before (status "done").`;
+    return `You are being resumed by the orchestrator on task ${task.key}.${qaSection}${fb}\n\nContinue the task from where you left off. Commit your work. Finish with the same JSON block as before (status "done").`;
   }
 
   /** `orch ask` from a worker: record and let the worker end its turn. */
@@ -541,7 +705,7 @@ export class Orchestrator extends EventEmitter {
     if (!t) throw new Error("task not found");
     if (ACTIVE.includes(t.status)) throw new Error("task is active");
     const run = this.store.getRun(t.run_id)!;
-    this.store.updateTask(taskId, { status: "pending", attempt: 0 });
+    this.store.updateTask(taskId, { status: "pending", attempt: 0, fix_rounds: 0, ci_head: null, ci_status: null });
     this.decide(run, t, "human", `Retry requested for ${t.key}`, null);
     this.changed("tasks", { runId: run.id });
     void this.tick();
@@ -562,7 +726,7 @@ export class Orchestrator extends EventEmitter {
   async mergeTask(taskId: string) {
     const t = this.store.getTask(taskId);
     if (!t) throw new Error("task not found");
-    if (t.status !== "pr_open") throw new Error(`task is ${t.status}, not pr_open`);
+    if (!WATCHED.includes(t.status)) throw new Error(`task is ${t.status}, not pr_open`);
     const run = this.store.getRun(t.run_id)!;
     this.decide(run, t, "human", `Approved merge of ${t.key}`, null);
     try {
@@ -633,13 +797,13 @@ export class Orchestrator extends EventEmitter {
     }
     for (const t of tasks) {
       if (t.status === "failed") inbox.push({ type: "failed", task_id: t.id, task_key: t.key, title: `${t.key} failed after ${t.attempt} attempts`, detail: t.last_feedback, ts: t.updated_at });
-      if (t.status === "pr_open") inbox.push({ type: "merge", task_id: t.id, task_key: t.key, title: `${t.key} ready to merge`, detail: t.pr_url ?? t.branch, pr_url: t.pr_url, feedback: t.last_feedback, ts: t.updated_at });
+      if (t.status === "pr_open") inbox.push({ type: "merge", task_id: t.id, task_key: t.key, title: `${t.key} ready to merge`, detail: t.pr_url ?? t.branch, pr_url: t.pr_url, feedback: t.last_feedback, ci_status: t.ci_status, fix_rounds: t.fix_rounds, ts: t.updated_at });
     }
     return { run, tasks, decisions: this.store.listDecisions(run.id), questions, inbox, runs: this.store.listRuns(), config: this.publicConfig() };
   }
   private publicConfig() {
     const c = this.cfg;
-    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries(c.agents.roles).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), ntfy: !!c.notify.ntfyUrl };
+    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries(c.agents.roles).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), ntfy: !!c.notify.ntfyUrl, prFeedback: c.git.pr && c.git.feedback.enabled ? { waitForChecks: c.git.feedback.waitForChecks, maxRounds: c.git.feedback.maxRounds, trigger: c.git.feedback.trigger } : null };
   }
 
   /** On daemon start: anything that was 'running' when we died goes back to pending. */

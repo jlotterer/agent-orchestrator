@@ -30,6 +30,8 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .s-validating { color: var(--info); border-color: var(--info); }
 .s-needs_input { color: var(--warn); border-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .s-pr_open { color: var(--accent); border-color: var(--accent); }
+.s-pr_checks { color: var(--info); border-color: var(--info); }
+.ci { font-family: var(--mono); font-size: 11px; } .ci.pass { color: var(--ok); } .ci.fail { color: var(--bad); } .ci.pending { color: var(--info); } .ci.none { color: var(--dim); }
 .s-failed { color: var(--bad); border-color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
 .s-done { color: var(--ok); border-color: var(--ok); }
 .s-skipped { color: var(--dim); border-color: var(--line); text-decoration: line-through; }
@@ -74,7 +76,7 @@ h2 .count { background: var(--warn); color: #0b0e14; border-radius: 999px; paddi
 .task .n { font-size: 13px; margin: 2px 0 4px; }
 .task .m { font-size: 11px; color: var(--dim); display: flex; gap: 8px; flex-wrap: wrap; }
 .task.running { border-left: 3px solid var(--run); } .task.validating { border-left: 3px solid var(--info); }
-.task.needs_input { border-left: 3px solid var(--warn); } .task.failed { border-left: 3px solid var(--bad); } .task.pr_open { border-left: 3px solid var(--accent); }
+.task.needs_input { border-left: 3px solid var(--warn); } .task.failed { border-left: 3px solid var(--bad); } .task.pr_open { border-left: 3px solid var(--accent); } .task.pr_checks { border-left: 3px solid var(--info); }
 .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--line); border-top-color: var(--run); border-radius: 50%; animation: sp 1s linear infinite; vertical-align: -1px; }
 @keyframes sp { to { transform: rotate(360deg); } }
 
@@ -176,7 +178,8 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px;
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtTs = (ts) => ts ? new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
-const LANES = [["pending", "Pending"], ["running", "Running"], ["validating", "Validating"], ["needs_input", "Needs input"], ["pr_open", "Review / merge"], ["failed", "Failed"], ["done", "Done"]];
+const LANES = [["pending", "Pending"], ["running", "Running"], ["validating", "Validating"], ["needs_input", "Needs input"], ["pr_checks", "Waiting on CI"], ["pr_open", "Review / merge"], ["failed", "Failed"], ["done", "Done"]];
+const ciBadge = (s) => s ? `<span class="ci ${esc(s)}" title="PR checks">CI ${esc(s)}</span>` : "";
 let state = { run: null, tasks: [], decisions: [], questions: [], inbox: [], runs: [], config: {} };
 let selected = null, selectedRun = null, lastEventId = 0, activity = [];
 
@@ -207,7 +210,7 @@ function render() {
   $("#btnPause").hidden = !(run && run.status === "running");
   $("#btnStop").hidden = !(run && ["running", "paused"].includes(run.status));
   const c = state.config || {};
-  $("#cfg").innerHTML = `repo ${esc(c.repo)}<br>base ${esc(c.baseBranch)} · parallel ${c.maxParallel} · attempts ${c.maxAttempts}<br>merge ${c.pr ? "via PR" : "local"} · default ${c.mergePolicy}<br>gate ${esc(c.validationCommand || "—")} · validator ${c.validatorAgent ? "on" : "off"}<br>ntfy ${c.ntfy ? "on" : "off"}<br>${Object.entries(c.roles || {}).map(([r, a]) => `${r} ${esc(a)}`).join(" · ")}`;
+  $("#cfg").innerHTML = `repo ${esc(c.repo)}<br>base ${esc(c.baseBranch)} · parallel ${c.maxParallel} · attempts ${c.maxAttempts}<br>merge ${c.pr ? "via PR" : "local"} · default ${c.mergePolicy}<br>gate ${esc(c.validationCommand || "—")} · validator ${c.validatorAgent ? "on" : "off"}${c.prFeedback ? `<br>PR loop: ${c.prFeedback.waitForChecks ? "wait for CI" : "no CI wait"} · ${c.prFeedback.maxRounds} rounds${c.prFeedback.trigger ? ` · comment <code>${esc(c.prFeedback.trigger)}</code>` : ""}` : ""}<br>ntfy ${c.ntfy ? "on" : "off"}<br>${Object.entries(c.roles || {}).map(([r, a]) => `${r} ${esc(a)}`).join(" · ")}`;
   renderInbox(); renderBoard(); renderPlan(); renderDecisions();
   if (selected) renderDetail(selected, false);
 }
@@ -220,7 +223,7 @@ function renderInbox() {
     if (i.type === "approve_plan") return `<div class="card hot"><div class="t">Plan awaits your approval</div><div class="d">${esc(i.detail)}. Review the Plan tab, edit tasks if needed, then approve.</div><div class="actions"><button class="primary small" onclick="act(()=>api('POST','/api/runs/${i.run_id}/approve').then(refresh))">Approve plan</button></div></div>`;
     if (i.type === "question") return `<div class="card hot" data-q="${i.id}"><div class="t"><span class="mono">${esc(i.task_key || "")}</span> asks</div><div class="d">${esc(i.title)}</div><div class="actions">${(i.options || []).map(o => `<button class="small" onclick="answer(${i.id}, ${JSON.stringify(o).replace(/"/g, "&quot;")})">${esc(o)}</button>`).join("")}</div><div class="actions"><input placeholder="or type an answer…" style="flex:1" id="qa-${i.id}" onkeydown="if(event.key==='Enter')answer(${i.id}, this.value)"><button class="small" onclick="answer(${i.id}, document.getElementById('qa-${i.id}').value)">Send</button></div></div>`;
     if (i.type === "failed") return `<div class="card hot"><div class="t"><span class="pill s-failed">failed</span> ${esc(i.task_key)}</div><div class="d">${esc((i.detail || "").slice(0, 400))}</div><div class="actions"><button class="small" onclick="selectTask('${i.task_id}')">Inspect</button><button class="small good" onclick="taskAct('${i.task_id}','retry')">Retry</button><button class="small" onclick="taskAct('${i.task_id}','skip')">Skip</button></div></div>`;
-    if (i.type === "merge") return `<div class="card hot"><div class="t"><span class="pill s-pr_open">review</span> ${esc(i.task_key)}</div><div class="d">${i.pr_url ? `<a href="${esc(i.pr_url)}" target="_blank">${esc(i.pr_url)}</a>` : esc(i.detail)}${i.feedback ? "\n" + esc(i.feedback.slice(0, 300)) : ""}</div><div class="actions"><button class="small" onclick="selectTask('${i.task_id}')">Inspect</button><button class="small good" onclick="taskAct('${i.task_id}','merge')">Merge now</button><button class="small" onclick="taskAct('${i.task_id}','mark-merged')">Merged elsewhere</button><button class="small" onclick="taskAct('${i.task_id}','retry')">Re-run</button></div></div>`;
+    if (i.type === "merge") return `<div class="card hot"><div class="t"><span class="pill s-pr_open">review</span> ${esc(i.task_key)} ${ciBadge(i.ci_status)}${i.fix_rounds ? ` <span class="ci">· ${i.fix_rounds} fix round${i.fix_rounds > 1 ? "s" : ""}</span>` : ""}</div><div class="d">${i.pr_url ? `<a href="${esc(i.pr_url)}" target="_blank">${esc(i.pr_url)}</a>` : esc(i.detail)}${i.feedback ? "\n" + esc(i.feedback.slice(0, 300)) : ""}</div><div class="actions"><button class="small" onclick="selectTask('${i.task_id}')">Inspect</button><button class="small good" onclick="taskAct('${i.task_id}','merge')">Merge now</button><button class="small" onclick="taskAct('${i.task_id}','mark-merged')">Merged elsewhere</button><button class="small" onclick="taskAct('${i.task_id}','retry')">Re-run</button></div></div>`;
     return "";
   }).join("");
 }
@@ -239,7 +242,7 @@ function taskCard(t) {
   return `<div class="task ${t.status} ${selected === t.id ? "sel" : ""}" onclick="selectTask('${t.id}')">
     <div class="k"><span>${esc(t.key)}${t.parallel ? " [P]" : ""}</span><span>${busy ? '<span class="spin"></span> ' : ""}${t.attempt ? `try ${t.attempt}/${t.max_attempts}` : ""}</span></div>
     <div class="n">${esc(t.title)}</div>
-    <div class="m">${t.merge_policy === "manual" ? "<span title='manual merge'>👁 manual</span>" : ""}${blocked ? `<span>⏳ after ${t.depends_on.join(", ")}</span>` : ""}${t.pr_url ? `<a href="${esc(t.pr_url)}" target="_blank" onclick="event.stopPropagation()">PR</a>` : ""}${t.status === "skipped" ? "<span>skipped</span>" : ""}</div>
+    <div class="m">${t.merge_policy === "manual" ? "<span title='manual merge'>👁 manual</span>" : ""}${blocked ? `<span>⏳ after ${t.depends_on.join(", ")}</span>` : ""}${t.pr_url ? `<a href="${esc(t.pr_url)}" target="_blank" onclick="event.stopPropagation()">PR</a>` : ""}${t.pr_url && t.status !== "done" ? ciBadge(t.ci_status) : ""}${t.fix_rounds ? `<span title="PR fix rounds">↻ ${t.fix_rounds}</span>` : ""}${t.status === "skipped" ? "<span>skipped</span>" : ""}</div>
   </div>`;
 }
 
@@ -299,6 +302,7 @@ async function renderDetail(id, reloadLog) {
       <dt>Merge</dt><dd>${t.merge_policy}${t.pr_url ? ` · <a href="${esc(t.pr_url)}" target="_blank">PR</a>` : ""}</dd>
       <dt>Branch</dt><dd class="mono">${esc(t.branch || "—")}</dd>
       <dt>Attempts</dt><dd>${t.attempt}/${t.max_attempts}</dd>
+      ${t.pr_url ? `<dt>PR checks</dt><dd>${ciBadge(t.ci_status) || "—"}${state.config.prFeedback ? ` · fix rounds ${t.fix_rounds}/${state.config.prFeedback.maxRounds}` : ""}</dd>` : ""}
       <dt>Validate</dt><dd class="mono">${esc(t.validate_cmd || state.config.validationCommand || "—")}</dd>
     </dl>
     <div class="section"><h4>Acceptance criteria</h4>${t.acceptance.length ? `<ul class="acc">${t.acceptance.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : `<div class="empty">none</div>`}</div>
@@ -307,9 +311,9 @@ async function renderDetail(id, reloadLog) {
     <div class="actions" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">
       ${canEdit ? `<button class="small" onclick="openEdit('${t.id}')">Edit</button>` : ""}
       ${busy ? `<button class="small danger" onclick="taskAct('${t.id}','stop')">Stop</button>` : ""}
-      ${["failed", "pr_open", "done", "skipped"].includes(t.status) ? `<button class="small" onclick="taskAct('${t.id}','retry')">Re-run from scratch</button>` : ""}
+      ${["failed", "pr_open", "pr_checks", "done", "skipped"].includes(t.status) ? `<button class="small" onclick="taskAct('${t.id}','retry')">Re-run from scratch</button>` : ""}
       ${["pending", "failed", "needs_input"].includes(t.status) ? `<button class="small" onclick="taskAct('${t.id}','skip')">Skip</button>` : ""}
-      ${t.status === "pr_open" ? `<button class="small good" onclick="taskAct('${t.id}','merge')">Merge now</button><button class="small" onclick="taskAct('${t.id}','mark-merged')">Merged elsewhere</button>` : ""}
+      ${["pr_open", "pr_checks"].includes(t.status) ? `<button class="small good" onclick="taskAct('${t.id}','merge')">Merge now</button><button class="small" onclick="taskAct('${t.id}','mark-merged')">Merged elsewhere</button>` : ""}
     </div>
     <div class="section"><h4>Log</h4><div id="log"></div></div>`;
   if (reloadLog) { lastEventId = 0; $("#log").innerHTML = ""; }

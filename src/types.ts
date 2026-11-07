@@ -13,7 +13,8 @@ export type TaskStatus =
   | "running"        // worker active
   | "validating"     // validator active
   | "needs_input"    // worker asked a question; waiting on human
-  | "pr_open"        // validated, PR open, merge policy manual
+  | "pr_checks"      // validated, PR open, auto-merge waiting on CI checks
+  | "pr_open"        // validated, PR open, waiting on a human (manual policy, merge error, CI stuck)
   | "failed"         // retries exhausted or hard error; needs human
   | "done"
   | "skipped";
@@ -54,6 +55,12 @@ export interface Task {
   summary: string | null;      // worker's final summary (used in hand-offs)
   files: string[];             // files the worker reported touching
   last_feedback: string | null;
+  fix_rounds: number;          // PR feedback rounds used (CI failures / review comments)
+  pr_head: string | null;      // sha last pushed to the PR
+  pr_pushed_at: string | null; // when we last pushed to the PR
+  pr_feedback_at: string | null; // newest PR comment/review already consumed (watermark)
+  ci_head: string | null;      // sha whose CI failure was already acted on
+  ci_status: string | null;    // pass | fail | pending | none (last poll)
   created_at: string;
   updated_at: string;
 }

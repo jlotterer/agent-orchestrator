@@ -7,6 +7,9 @@
  *   worker    -> writes impl/<KEY>.txt and commits; T002 asks a question first;
  *                T003 writes BAD on its first attempt (gate catches it);
  *                T004 writes NEEDS_REVIEW on its first attempt (validator catches it)
+ *                PR scenario (scripts/e2e-pr.mjs): a task whose description has CI_TRAP writes
+ *                CIFAIL until it gets feedback (fake gh's CI fails on it); review feedback
+ *                that mentions "the reviewer" makes the worker write "reviewed"
  *   validator -> FAIL if the diff contains NEEDS_REVIEW, else PASS
  */
 import fs from "node:fs";
@@ -54,7 +57,7 @@ if (prompt.includes("You are the PLANNER")) {
   const tasks = JSON.parse(m[1]);
   say("Reading the spec and tasks.");
   finish({
-    tasks: tasks.map((t) => ({ key: t.key, acceptance: [`impl/${t.key}.txt exists and contains OK`], depends_on: t.depends_on, merge_policy: t.key === "T004" ? "manual" : "auto", validate_cmd: null })),
+    tasks: tasks.map((t) => ({ key: t.key, acceptance: [`impl/${t.key}.txt exists and contains OK`], depends_on: t.depends_on, merge_policy: t.key === "T004" || /(manual)/.test(t.title) ? "manual" : "auto", validate_cmd: null })),
     decisions: [{ text: "Marked T004 manual merge", rationale: "it touches the public API" }],
     questions: [],
   }, "Plan drafted.");
@@ -78,6 +81,8 @@ if (prompt.includes("You are the PLANNER")) {
     let content = "OK";
     if (key === "T003" && !retry) content = "BAD";
     if (key === "T004" && !retry) content = "OK NEEDS_REVIEW";
+    if (prompt.includes("CI_TRAP") && !retry) content = "OK CIFAIL";
+    if (retry && prompt.includes("the reviewer")) content = "OK reviewed";
     if (key === "T002") {
       const ans = (prompt.match(/A: (\w+)/) || [])[1] || "unknown";
       content = `OK greeting=${ans}`;

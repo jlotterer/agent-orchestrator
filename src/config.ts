@@ -69,6 +69,33 @@ export interface Config {
     setupCommand: string;
     /** After a task merges, tick it in the spec's tasks.md ("- [x] T001"). */
     tickTasksMd: boolean;
+    /** The GitHub CLI executable (overridable for tests). */
+    ghCommand: string;
+    /** PR feedback loop (PR mode only): watch open PRs for CI results and review comments. */
+    feedback: {
+      /** Poll open PRs at all. Off = the pre-R1 behaviour (merge right after PR creation). */
+      enabled: boolean;
+      /** Auto-merge tasks wait for the PR's checks to pass before merging. */
+      waitForChecks: boolean;
+      /** How often each open PR is polled, seconds. */
+      pollSeconds: number;
+      /** Fix rounds per task driven by CI failures or review comments. Separate from maxAttempts. */
+      maxRounds: number;
+      /** Pending checks longer than this send the task to the inbox. */
+      checksTimeoutMinutes: number;
+      /** If a PR reports no checks at all, wait this long after a push before treating it as "no CI". */
+      noChecksGraceSeconds: number;
+      /**
+       * A comment line starting with this sends review feedback to the worker (e.g. "/orch rename the flag").
+       * Needed because GitHub won't let you "Request changes" on a PR opened with your own account.
+       * "Changes requested" reviews always trigger. Empty = only those reviews trigger.
+       */
+      trigger: string;
+      /** Comment authors whose comments never trigger a round (bots ending in "[bot]" are always ignored). */
+      ignoreAuthors: string[];
+      /** Max characters of failed CI log passed to the worker. */
+      logChars: number;
+    };
   };
 
   handoff: {
@@ -139,6 +166,18 @@ export const DEFAULT_CONFIG: Config = {
     copyFiles: [],
     setupCommand: "",
     tickTasksMd: true,
+    ghCommand: "gh",
+    feedback: {
+      enabled: true,
+      waitForChecks: true,
+      pollSeconds: 60,
+      maxRounds: 3,
+      checksTimeoutMinutes: 60,
+      noChecksGraceSeconds: 90,
+      trigger: "/orch",
+      ignoreAuthors: [],
+      logChars: 6000,
+    },
   },
   handoff: {
     specChars: 12000,

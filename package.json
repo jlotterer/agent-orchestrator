@@ -11,7 +11,8 @@
     "dev": "tsx src/cli.ts",
     "serve": "node dist/cli.js serve",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:e2e": "node scripts/e2e.mjs"
+    "test:unit": "node --test scripts/unit.mjs",
+    "test:e2e": "node scripts/e2e.mjs && node scripts/e2e-pr.mjs"
   },
   "engines": {
     "node": ">=20"
