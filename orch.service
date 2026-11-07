@@ -1,0 +1,17 @@
+[Unit]
+Description=orch — Claude Code orchestrator and dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=USER
+WorkingDirectory=WORKDIR
+ExecStart=ORCHBIN serve
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+# Claude Code reads its login from the user's home directory.
+Environment=HOME=/home/USER
+
+[Install]
+WantedBy=multi-user.target

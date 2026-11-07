@@ -1,0 +1,39 @@
+services:
+  orch:
+    build: .
+    image: orch:local
+    container_name: orch
+    restart: unless-stopped
+    ports:
+      - "4800:4800"
+    environment:
+      # Claude Code auth. No API key needed: run `docker compose run --rm orch claude auth login`
+      # once to use your Claude subscription (saved in the claude-home volume), or set a
+      # long-lived token from `claude setup-token` here. Only set ANTHROPIC_API_KEY if you
+      # want per-token API billing instead.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Gemini CLI (only if a role uses the gemini adapter): an API key, or log in once with
+      # `docker compose run --rm orch gemini` and the login is kept in the gemini-home volume.
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # GitHub (for git.pr: true): a token with repo scope
+      - GH_TOKEN=${GH_TOKEN:-}
+      # Git identity used by workers' commits
+      - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-orch}
+      - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-orch@localhost}
+      - GIT_COMMITTER_NAME=${GIT_AUTHOR_NAME:-orch}
+      - GIT_COMMITTER_EMAIL=${GIT_AUTHOR_EMAIL:-orch@localhost}
+    volumes:
+      # Everything orch touches lives under /work: repo, worktrees, db, config.
+      - ./work:/work
+      # Claude Code login + settings (survives rebuilds)
+      - claude-home:/home/orch/.claude
+      - gemini-home:/home/orch/.gemini
+      # gh login (if you prefer `gh auth login` over GH_TOKEN)
+      - gh-config:/home/orch/.config/gh
+      # Uncomment to push over SSH instead of HTTPS:
+      # - ~/.ssh:/home/orch/.ssh:ro
+
+volumes:
+  claude-home:
+  gemini-home:
+  gh-config:

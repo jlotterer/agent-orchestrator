@@ -1,0 +1,29 @@
+{
+  "name": "orch",
+  "version": "0.1.0",
+  "description": "Orchestrator / worker / validator runner for Claude Code with a live dashboard",
+  "type": "module",
+  "bin": {
+    "orch": "./bin/orch.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "serve": "node dist/cli.js serve",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:e2e": "node scripts/e2e.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
