@@ -60,7 +60,7 @@ src/
   git.ts            Git class: worktrees, commits, diffs, merge, gh pr/run/api helpers
   auth.ts           token check, login cookie, bind guard                             (built: TASK-08)
   appserver.ts      UI-mode app lifecycle: port, start, readiness, stop, pidfiles     [planned: TASK-16]
-  archive.ts        event retention: export JSONL.gz, delete                          [planned: TASK-12]
+  archive.ts        event retention: export JSONL.gz, delete                          [built: TASK-12]
   costs.ts          cost/time rollups                                                 [planned: TASK-17]
   notify.ts         ntfy POST
   prompts.ts        prompt loading (repo override) + {{var}} rendering + clip
@@ -321,14 +321,14 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 | POST `/api/tasks/:id/{retry,skip,stop,merge,mark-merged,edit}` | edit: patch | `{ok}` | built |
 | POST `/api/tasks/:id/request-changes` | `{feedback}` (non-empty) | `{ok}`; 400 unless `pr_open\|pr_checks` | built (TASK-06) |
 | GET `/api/tasks/:id/diff` | — | `{base, head, files:[{path, status, additions, deletions, binary, patch}], truncated}`; 404 with reason when no worktree | built (TASK-06) |
-| GET `/api/tasks/:id/events`, `/api/runs/:id/events` | `?after&limit` | events | built |
+| GET `/api/tasks/:id/events`, `/api/runs/:id/events` | `?after&limit` | events; for an archived run, one synthetic `info` event "Log archived to <path>" (§17) | built (archive: TASK-12) |
 | POST `/api/questions/:id/answer` | `{answer}` | `{ok}` | built |
 | POST `/api/ask`, `/api/decide` | agent payloads | question / decision | built |
 | POST `/api/phases/:id/{revalidate,accept}` | — | `{ok}` | TASK-15 |
 | GET `/api/events/stream` | — | SSE: `event` (event rows), `change` (`{what, projectId, runId?, …}`; `what` ∈ run, tasks, questions, decision, projects); `: ping` every 25 s | built |
 
 ### 15.2 CLI
-`orch serve | project add <path> [--name n] | project list [--archived] | project remove <id> | plan <specDir> [--no-llm] [--dry-run] | approve [runId] | run | pause | stop | status | answer <qid> <text> | retry|skip|merge|stop-task <key> | archive-events | decide | ask`. Global `--project <id>` (§5.4). Exit codes: 0 ok, 1 error (`error: <msg>` on stderr, including API errors and an unreachable daemon), 2 usage (`UsageError`: missing arguments, unknown command or subcommand, flag without a value, project not determinable; the message is on stderr after `error:`). `orch`, `orch help` and `--help` print the help and exit 0. Project commands use the project routes: `status`, `approve`, `run|pause|stop` and the task actions read `GET /api/projects/:id/state` and act on its run or tasks by id; `plan` posts `/api/projects/:id/plan`. Token from `ORCH_TOKEN` or `$ORCH_HOME/server.json` when readable. Base URL from `ORCH_URL`, else `http://127.0.0.1:<port>` from the server settings. [built: TASK-10, except `--dry-run` (TASK-13) and `archive-events` (TASK-12)]
+`orch serve | project add <path> [--name n] | project list [--archived] | project remove <id> | plan <specDir> [--no-llm] [--dry-run] | approve [runId] | run | pause | stop | status | answer <qid> <text> | retry|skip|merge|stop-task <key> | archive-events | decide | ask`. Global `--project <id>` (§5.4). Exit codes: 0 ok, 1 error (`error: <msg>` on stderr, including API errors and an unreachable daemon), 2 usage (`UsageError`: missing arguments, unknown command or subcommand, flag without a value, project not determinable; the message is on stderr after `error:`). `orch`, `orch help` and `--help` print the help and exit 0. Project commands use the project routes: `status`, `approve`, `run|pause|stop` and the task actions read `GET /api/projects/:id/state` and act on its run or tasks by id; `plan` posts `/api/projects/:id/plan`. Token from `ORCH_TOKEN` or `$ORCH_HOME/server.json` when readable. Base URL from `ORCH_URL`, else `http://127.0.0.1:<port>` from the server settings. [built: TASK-10 (`archive-events`: TASK-12), except `--dry-run` (TASK-13)]
 
 ### 15.3 Dashboard
 Single `dashboard/index.html`. Regions: top bar (project switcher with status dot + inbox count, Add project, run selector, run controls, cost tile), Inbox (global, project tag), Board (lanes: Pending, Running, Validating, Needs input, Waiting on CI, Review / merge, Failed, Done), Plan (phases, criteria, deps incl. implicit overlap edges, policy, mode, owned files; edit dialog), Decisions, Activity, Task drawer (meta, criteria, summary, feedback, actions; Send back textarea for `pr_open|pr_checks`; Diff section loaded on expand: file list with status and +/− counts, collapsible unified diff per file with added/removed lines coloured, binary note, truncation notice; live log). The drawer keeps stable regions so a refresh does not clear a draft or collapse open files. The inbox merge card has **Send back…** (dialog) [built: TASK-06]. SSE reconnect: on error close, retry with backoff 1 s doubling to 30 s, on open do a full refresh [TASK-11]. On any 401 show a token prompt that POSTs `/api/login`, then refresh and reconnect SSE [built: TASK-08].
@@ -344,10 +344,13 @@ _(→ code: `src/auth.ts`, gate in `src/server.ts`, guard in `src/cli.ts` `serve
 - Docker: the image runs as uid 1000 (`orch`), the healthcheck uses `/api/health`, and compose passes `ORCH_TOKEN` (required, because the container binds `0.0.0.0`).
 
 ## 17. Retention & Archive
-_(→ code: `src/archive.ts`, [planned: TASK-12])_
-- On startup and every 24 h (and `orch archive-events`): runs with status `done|stopped|failed`, `archived_at IS NULL`, `updated_at` older than `retention.eventDays` (0 = never).
-- Per run: stream events `ORDER BY id` as JSON lines through `zlib.createGzip()` to `archive/<project>/<runId>-events.jsonl.gz.tmp`, fsync, rename to final name, then in one transaction delete the run's events and set `runs.archived_at`. Any failure before the rename → nothing deleted, error event logged.
-- Task log views for archived runs show "Log archived to <path>". Decisions, questions, task rows (summaries, feedback, costs) are untouched.
+_(→ code: `src/archive.ts`, built: TASK-12)_
+- On `orch serve` startup and every 24 h after (timer in `src/cli.ts`), and on `orch archive-events`: runs with status `done|stopped|failed`, `archived_at IS NULL`, `updated_at` older than `retention.eventDays` (0 = never), that still have events. Runs with no events are skipped (no empty files).
+- Per run: stream events `ORDER BY id` as JSON lines through `zlib.createGzip()` to `archive/<project>/<runId>-events.jsonl.gz.tmp` (`_unassigned` for a run with no project), fsync, rename to final name, then in one transaction delete the run's events and set `runs.archived_at`, then record an orchestrator decision "Archived N event(s) to <path>". Any failure before the rename → `.tmp` removed, nothing deleted, `error` event logged on the run, the error returned; other runs carry on.
+- Task and run log endpoints for archived runs return one synthetic `info` event "Log archived to <path>" (id `Number.MAX_SAFE_INTEGER`, so a client polling with `?after` sees it once). Decisions, questions, task rows (summaries, feedback, costs) are untouched.
+- `orch archive-events` opens `$ORCH_HOME/orch.db` directly (works with or without a running daemon; WAL), prints the archived run ids and exits 1 if any run failed.
+
+**Contract:** `archiveEligibleRuns(store, {now, eventDays, archiveRoot}) → {archived: runId[], errors: string[]}`; `archiveFilePath(archiveRoot, run)`; `archivedLogEvent(archiveRoot, run, taskId)`. Store: `listArchivableRuns(beforeIso)`, `iterateRunEvents(runId)` (pages of 500 by id, so the connection is free between pages while the stream awaits), `deleteRunEventsAndMarkArchived(runId, ts)`.
 
 ## 18. Cost & Time Rollup
 _(→ code: `src/costs.ts`, [planned: TASK-17])_

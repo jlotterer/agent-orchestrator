@@ -136,6 +136,7 @@ example: [orch.config.example.json](orch.config.example.json).
 | `agents.roles.{planner,worker,validator}` | default adapter and model per role for every project |
 | `agents.adapters.claude.extraArgs` | defaults to `--permission-mode bypassPermissions`. Tighten with `--allowedTools` if you prefer |
 | `agents.adapters.gemini.extraArgs` | defaults to `--yolo --skip-trust` (both required for headless runs in a worktree) |
+| `retention.eventDays` | archive the agent event logs of runs finished more than this many days ago. Default `30`; `0` = keep forever. See [Event log retention](#event-log-retention) |
 | `defaults` | project settings applied under every project's own file (same keys as `orch.config.json`) |
 
 Full example: [examples/server.example.json](examples/server.example.json).
@@ -200,6 +201,19 @@ not capped by `maxRounds`). It is recorded as a human decision.
 
 CLI equivalents: `orch status`, `orch approve`, `orch run|pause|stop`, `orch answer <id> <text>`,
 `orch retry|skip|merge T003`.
+
+### Event log retention
+
+Agent event logs (every tool call and message) are the bulk of the database. When a run has been
+finished (`done`, `stopped` or `failed`) for more than `retention.eventDays` days (default 30), orch
+writes its events to `$ORCH_HOME/archive/<project>/<runId>-events.jsonl.gz` (one JSON event per line)
+and then deletes them from the database. This happens when `orch serve` starts and every 24 hours
+after; `orch archive-events` does it now. Decisions, questions, task summaries, feedback and costs are
+kept, and the run gets a decision naming the archive file. The task's **Log** then shows
+"Log archived to <path>"; read the file with `zcat <path>`.
+
+If the file can't be written (for example, the archive directory isn't writable), nothing is deleted:
+the run gets an error event and the next pass tries again. Unfinished runs are never archived.
 
 ### Which project a command acts on
 
@@ -391,7 +405,8 @@ titles carrying the project name (captured by a local HTTP sink). The `projects`
 CLI against a daemon with no projects: `orch project add` refusing a non-git directory and printing
 the starter settings path, project selection from the current directory, `--project` and
 `ORCH_PROJECT`, exit code 2 outside both repos and for usage errors, the global inbox labelled by
-project, archiving refused while a run is running, and archive and restore. The `legacy` scenario
+project, archiving refused while a run is running, and archive and restore, plus `orch archive-events`
+on a run backdated 40 days (gzip file, "Log archived to" from the log endpoints, decisions kept). The `legacy` scenario
 upgrades a single-repo install with a 0.1-schema database and checks that the old run stays visible.
 
 Every daemon an e2e script starts gets `ORCH_HOME` set to a directory in its temp folder, so a test run
@@ -429,6 +444,7 @@ src/config.ts         settings: server.json and per-project loaders, plus the si
 src/paths.ts          ORCH_HOME layout (server.json, orch.db, worktrees/, archive/, run/)
 src/db.ts             SQLite: projects, runs, tasks, phases, events, decisions, questions; versioned migrations
 src/projects.ts       project registry: register a repo, archive, find the project for a directory
+src/archive.ts        event retention: old runs' events to archive/<project>/<runId>-events.jsonl.gz, then deleted
 src/server.ts         REST + SSE, serves the dashboard; token gate, /api/health, /api/login
 src/auth.ts           token check (Bearer or cookie), login cookie, bind guard
 src/cli.ts            `orch` (human commands, the agent-facing decide/ask, the single-repo upgrade in `serve`)

@@ -12,7 +12,9 @@
  *             and exits 2 outside both repos (listing both) and for `orch answer` without arguments. GET /api/inbox
  *             holds items of both projects with project_name; DELETE on a project with a running run is 400; an
  *             archived project leaves the default list and `project add` restores it
- *             (REQ-PROJ-01, -02, -04, REQ-UI-07, -08, REQ-HITL-01).
+ *             (REQ-PROJ-01, -02, -04, REQ-UI-07, -08, REQ-HITL-01). Alpha's finished run, backdated 40 days, is
+ *             archived by `orch archive-events`: a gzip file under ORCH_HOME/archive, one "Log archived to"
+ *             event from the log endpoints, decisions kept (TASK-12, REQ-OPS-04).
  *   legacy  : an old-style orch.config.json plus a 0.1-schema database holding a finished run. On first
  *             start the repo becomes a project, server.json is written, the settings file is reduced to
  *             project keys (original kept as .bak) and the old run is visible with its decisions (REQ-PROJ-10).
@@ -258,6 +260,27 @@ async function projects() {
   expectExit(rm, 1, "project remove <project with a running run>");
   await waitFor(async () => (await api("GET", `/api/projects/${pa.id}/state`)).run?.status === "done", { timeoutMs: 60_000, intervalMs: 300, label: "alpha's run" });
   assert(a.sh("ls impl").trim() === "T001.txt", "alpha's work did not land");
+
+  // REQ-OPS-04: once alpha's run is 40 days old, `orch archive-events` moves its log to a gzip file and the
+  // log endpoints return one "Log archived to" event; decisions stay.
+  const db = new Database(path.join(home, "orch.db"));
+  db.pragma("busy_timeout = 5000");
+  db.prepare("UPDATE runs SET updated_at = ? WHERE id = ?").run(new Date(Date.now() - 40 * 86_400_000).toISOString(), runA.id);
+  db.close();
+  const arch = run(["archive-events"]);
+  expectExit(arch, 0, "archive-events");
+  assert(arch.out.includes(runA.id), "archive-events should name the archived run: " + arch.out);
+  const archFile = path.join(home, "archive", pa.id, `${runA.id}-events.jsonl.gz`);
+  assert(fs.existsSync(archFile), "no archive file at " + archFile);
+  const archived = await api("GET", `/api/runs/${runA.id}`);
+  const taskLog = await api("GET", `/api/tasks/${archived.tasks[0].id}/events?after=0`);
+  const runLog = await api("GET", `/api/runs/${runA.id}/events`);
+  for (const [what, log] of [["task", taskLog], ["run", runLog]]) {
+    assert(log.length === 1 && log[0].kind === "info" && log[0].data.message === `Log archived to ${archFile}`, `${what} log of an archived run: ` + JSON.stringify(log));
+  }
+  assert(archived.decisions.some((d) => d.actor === "orchestrator" && d.text.startsWith("Archived ")), "no archive decision");
+  assert(archived.decisions.length > 1 && archived.tasks[0].summary, "archiving lost decisions or the task summary");
+  expectExit(run(["archive-events"]), 0, "archive-events (nothing to do)");
 
   // Archive B after stopping its run: gone from the default list, repo kept, `project add` restores it with its runs.
   expectExit(run(["stop"], b.repo), 0, "stop in repo B");

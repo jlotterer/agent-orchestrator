@@ -26,7 +26,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 
 ## Phase 7: Wave 7
 - [ ] T011 [P] Dashboard: projects, global inbox, reconnect. Brief: docs/tasks/TASK-11.md.
-- [ ] T012 [P] Event archive and retention. Brief: docs/tasks/TASK-12.md.
+- [x] T012 [P] Event archive and retention. Brief: docs/tasks/TASK-12.md.
 
 ## Phase 8: Wave 8
 - [ ] T013 Plan questions, plan preview and cycle check. Brief: docs/tasks/TASK-13.md.
