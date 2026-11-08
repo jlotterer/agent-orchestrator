@@ -51,6 +51,8 @@ body { display: flex; flex-direction: column; }
 #top h1 span { color: var(--accent); }
 #runInfo { min-width: 0; }
 #runTitle { font-weight: 600; overflow-wrap: anywhere; } #runMeta { color: var(--muted); font-size: 12px; }
+#usage { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px; }
+#usage b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 #controls { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #runSel { max-width: 260px; }
 #live { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); } #live.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); } #live.retry { background: var(--warn); }
@@ -183,6 +185,7 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
     <div id="runTitle">—</div>
     <div id="runMeta"></div>
   </div>
+  <div id="usage" hidden title="Cost (where the agent CLI reports it) and agent time. n/a: no agent reported a cost"></div>
   <div id="controls">
     <select id="runSel" title="Switch run (past runs of this project)"></select>
     <button id="btnPlan">New plan…</button>
@@ -367,6 +370,7 @@ function render() {
   renderProjects();
   $("#runTitle").textContent = !proj ? "No project yet" : run ? run.title : "No run yet";
   $("#runMeta").innerHTML = !proj ? "Add a git repository as a project to begin." : run ? `<span class="pill s-${run.status}">${run.status.replace("_", " ")}</span> &nbsp;run ${esc(run.id)} · ${state.tasks.filter(t => t.status === "done").length}/${state.tasks.length} done · base ${esc(run.base_branch)}` : proj.error ? "This project cannot be used until the problem below is fixed." : "Create a plan from a Spec Kit feature directory to begin.";
+  renderUsage();
   const sel = $("#runSel");
   sel.innerHTML = state.runs.map(r => `<option value="${esc(r.id)}" ${run && r.id === run.id ? "selected" : ""}>${esc(r.title)} (${r.status})</option>`).join("");
   sel.hidden = state.runs.length < 2;
@@ -573,6 +577,21 @@ async function selectTask(id) {
   renderBoard();
   await renderDetail(id, true);
 }
+// ---- cost and agent time (REQ-UI-06, architecture §18) ----
+const fmtCost = (c) => c == null ? "n/a" : c > 0 && c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`;
+function fmtMs(ms) {
+  const s = Math.round((ms || 0) / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+function renderUsage() {
+  const t = state.totals || {}, el = $("#usage");
+  const part = (label, x) => x ? `<span>${label} <b>${fmtCost(x.costUsd)}</b> · <b>${fmtMs(x.agentMs)}</b></span>` : "";
+  el.innerHTML = part("Run", t.run) + part("Project", t.project);
+  el.hidden = !t.run && !t.project;
+}
+
 async function renderDetail(id, reloadLog) {
   const t = state.tasks.find(x => x.id === id);
   if (!t) { detailFor = null; $("#detailBody").innerHTML = `<div class="empty">Task gone.</div>`; return; }
@@ -594,6 +613,7 @@ async function renderDetail(id, reloadLog) {
       <dt>Merge</dt><dd>${t.merge_policy}${t.pr_url ? ` · <a href="${esc(t.pr_url)}" target="_blank">PR</a>` : ""}</dd>
       <dt>Branch</dt><dd class="mono">${esc(t.branch || "—")}</dd>
       <dt>Attempts</dt><dd>${t.attempt}/${t.max_attempts}</dd>
+      <dt>Cost</dt><dd>${fmtCost(t.cost_usd)} · agent time ${fmtMs(t.agent_ms)}</dd>
       ${t.pr_url ? `<dt>PR checks</dt><dd>${ciBadge(t.ci_status) || "—"}${state.config.prFeedback ? ` · fix rounds ${t.fix_rounds}/${state.config.prFeedback.maxRounds}` : ""}</dd>` : ""}
       ${!t.pr_url && t.fix_rounds ? `<dt>Sent back</dt><dd>${t.fix_rounds}×</dd>` : ""}
       <dt>Validate</dt><dd class="mono">${esc(t.validate_cmd || state.config.validationCommand || "—")}</dd>

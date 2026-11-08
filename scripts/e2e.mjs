@@ -8,6 +8,8 @@
  * has no task and holds every start until answered; approval refuses a dependency cycle.
  * TASK-14: the planner gives T002 and T003 overlapping files_owned; they never run at the same time and an
  * orchestrator decision names both. T001's out-of-scope edit (notes/T001.md) is a finding, and T001 still passes.
+ * TASK-17: the fake Claude reports $0.01 per call and the fake Gemini no cost. The run total is the number of
+ * Claude-adapter calls x 0.01; the run row (planner and phase validators, Gemini only) has agent time but cost n/a.
  *   node scripts/e2e.mjs
  */
 import fs from "node:fs";
@@ -45,8 +47,9 @@ writeConfig(repo, {
       claude: { type: "claude", command: FAKE_AGENT, extraArgs: [], env: { FAKE_ACTIVE_DIR: ACTIVE_DIR } },
       gemini: { type: "gemini", command: FAKE_AGENT, extraArgs: ["--yolo", "--skip-trust"], env: { FAKE_FLAVOR: "gemini", FAKE_ACTIVE_DIR: ACTIVE_DIR } },
     },
-    // Workers on one adapter, validation on another: the mixed setup this test exists to exercise.
-    roles: { planner: { adapter: "claude", model: "" }, worker: { adapter: "claude", model: "" }, validator: { adapter: "gemini", model: "pro" } },
+    // Workers on one adapter, planning and validation on another: the mixed setup this test exists to exercise.
+    // Only the workers report a cost (TASK-17), so the run row's own spend is Gemini-only.
+    roles: { planner: { adapter: "gemini", model: "" }, worker: { adapter: "claude", model: "" }, validator: { adapter: "gemini", model: "pro" } },
   },
   scheduler: { maxParallel: 2, tickSeconds: 1, maxAttempts: 2, resumeOnRetry: true },
   validation: { command: "sh check.sh", agent: true },
@@ -197,6 +200,21 @@ try {
   if (vStart.length < 4) throw new Error("validator did not run on the gemini adapter: " + vStart.length);
   const vInit = evs.filter((e) => e.kind === "info" && e.data.role === "validator" && e.data.model === "fake-gemini");
   if (!vInit.length) throw new Error("gemini stream not parsed (no init with fake-gemini model)");
+  // TASK-17 (REQ-UI-06): cost and agent time, rolled up from rows.
+  const claudeCalls = evs.filter((e) => e.kind === "state" && /^worker started \(claude[,:)]/.test(e.data.message ?? "")).length;
+  const cents = (x) => Math.round(x * 100);
+  if (!claudeCalls) throw new Error("no Claude-adapter worker calls found in the log");
+  if (!s.totals?.run || cents(s.totals.run.costUsd) !== claudeCalls) {
+    throw new Error(`run cost should be ${claudeCalls} x $0.01: ` + JSON.stringify(s.totals));
+  }
+  if (!(s.totals.run.agentMs > 0)) throw new Error("run agent time not recorded: " + JSON.stringify(s.totals));
+  if (JSON.stringify(s.totals.project) !== JSON.stringify(s.totals.run)) throw new Error("one-run project total should equal the run total: " + JSON.stringify(s.totals));
+  if (cents(s.tasks.reduce((a, t) => a + (t.cost_usd ?? 0), 0)) !== claudeCalls) throw new Error("task costs don't add up to the run total: " + s.tasks.map((t) => `${t.key}=${t.cost_usd}`).join(" "));
+  if (!s.tasks.every((t) => t.cost_usd > 0 && t.agent_ms > 0)) throw new Error("every task ran a Claude worker, so has a cost and time: " + s.tasks.map((t) => `${t.key}=${t.cost_usd}/${t.agent_ms}`).join(" "));
+  // The planner and phase validators ran on Gemini only: time is counted, cost is unknown (n/a), not $0.
+  if (s.run.cost_usd !== null || !(s.run.agent_ms > 0)) throw new Error("Gemini-only run row should have agent time and cost null: " + JSON.stringify({ cost_usd: s.run.cost_usd, agent_ms: s.run.agent_ms }));
+  if (!html.includes('id="usage"')) throw new Error("dashboard has no cost/time tile");
+  console.log(`cost: run $${s.totals.run.costUsd} over ${claudeCalls} Claude calls, ${s.totals.run.agentMs} ms; planner/phase validators n/a`);
   const log = sh("git log --oneline").trim().split("\n");
   console.log("main log:\n  " + log.join("\n  "));
   console.log("decisions:\n  " + decisions.join("\n  "));

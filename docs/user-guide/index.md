@@ -50,7 +50,7 @@ orch is under active development. This manual describes every feature, including
 | [Choose agents and models](how-to/configure-agents.md) | Pick Claude Code or Gemini CLI per role, set models, customize prompts |
 | [Secure remote access](how-to/secure-access.md) | Access token, network address, health check |
 | [Get push notifications](how-to/set-up-notifications.md) | Send inbox alerts to your phone with ntfy |
-| [Track cost and agent time](how-to/track-cost.md) | **Planned.** See what each task, run and project cost |
+| [Track cost and agent time](how-to/track-cost.md) | See what each task, run and project cost |
 | [Archive old activity logs](how-to/archive-event-logs.md) | **Planned.** Keep the database small by archiving old agent logs |
 
 ### Reference

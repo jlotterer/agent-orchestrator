@@ -14,7 +14,7 @@ This manual describes all of orch, including features that are still in developm
 | Merging | Pull request mode with `gh`; local merge mode; automatic and manual merge policies; `tasks.md` ticks on the base branch |
 | Pull request loop | CI failures and review comments sent back to the worker; `/orch` comments; fix round limit; merged or closed pull requests detected |
 | Agents | Claude Code and Gemini CLI adapters; per-role agent and model, with per-project overrides; prompt overrides per project |
-| Dashboard | Board, Plan, Decisions and Activity tabs; task panel with live log; diff viewer; send back; run history |
+| Dashboard | Board, Plan, Decisions and Activity tabs; task panel with live log; diff viewer; send back; run history; cost and agent time per task, run and project ([Track cost and agent time](how-to/track-cost.md)) |
 | Projects | Several projects in one server; per-project settings file in the repo; server settings kept apart from project settings; automatic upgrade of single-repo installations |
 | Operations | Access token for the dashboard, API and command line; refusal to listen on a network without a token; open health check; systemd unit; Docker image; automatic database upgrades |
 
@@ -26,7 +26,6 @@ This manual describes all of orch, including features that are still in developm
 | Multi-project dashboard | Project switcher with status and inbox counts; add and archive from the dashboard; one inbox for all projects; automatic reconnect after a lost connection | [Dashboard reference](reference/dashboard.md) |
 | Log archiving | Agent logs of old finished runs moved to compressed files; `orch archive-events`; `retention.eventDays` | [Archive old activity logs](how-to/archive-event-logs.md) |
 | Plan questions and preview | Plan questions not tied to a task, which hold the whole run until answered; `orch plan --dry-run`; approval refused for dependency loops | [Plan a feature](how-to/plan-a-feature.md), [Review and approve a plan](how-to/review-a-plan.md) |
-| Cost and agent time | Totals per task, run and project in the dashboard | [Track cost and agent time](how-to/track-cost.md) |
 
 These features are planned in roughly the order listed. Details, including setting names and dashboard labels, can change before they're released.
 

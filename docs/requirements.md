@@ -313,7 +313,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-UI-03 | The task view MUST show the task's code changes against its base: the list of changed files with added/removed line counts, and each file's diff, collapsible. | built |
 | REQ-UI-04 | For a task awaiting review, the owner MUST be able to send it back to the worker with written feedback from the task view (see REQ-HITL-07). | built |
 | REQ-UI-05 | The owner MUST be able to view past runs of a project. | built (run selector per project, TASK-11) |
-| REQ-UI-06 | The dashboard MUST show cost and agent time per task, per run and per project where the agent CLI reports them, and "n/a" where it doesn't. | new |
+| REQ-UI-06 | The dashboard MUST show cost and agent time per task, per run and per project where the agent CLI reports them, and "n/a" where it doesn't. | built (TASK-17) |
 | REQ-UI-07 | The CLI MUST offer the owner's main actions: register, list and archive projects; plan (and preview); approve; run, pause, stop; status; answer; retry, skip, merge. Commands MUST act on the project given explicitly, else the project whose repo contains the current directory, else the only project. Otherwise they fail, listing the projects. | built (actions; projects and scoping, TASK-10; plan preview `--dry-run`, TASK-13) |
 | REQ-UI-08 | CLI commands MUST exit 0 on success, 1 on failure (with the error on stderr), and 2 on usage errors. `[ASSUMED]` | built (TASK-10) |
 

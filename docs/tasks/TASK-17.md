@@ -1,5 +1,5 @@
 # TASK-17: Cost and agent-time rollup
-**Status:** todo · **Wave:** 12 · **Depends on:** TASK-16 · **Parallel:** No
+**Status:** done · **Wave:** 12 · **Depends on:** TASK-16 · **Parallel:** No
 
 ## Goal
 Show what each task, run and project cost in money (where the CLI reports it) and in agent time, stored on rows so archiving events never changes the totals.
