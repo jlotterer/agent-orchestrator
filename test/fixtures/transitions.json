@@ -1954,7 +1954,6 @@
   {
     "name": "T3: synthetic phase fix-up task retries like any task",
     "row": "T3",
-    "pending": "TASK-15",
     "task": {
       "key": "FIX-1.1",
       "status": "validating",
@@ -1992,7 +1991,6 @@
   {
     "name": "T6: synthetic phase fix-up task merges like any auto task",
     "row": "T6",
-    "pending": "TASK-15",
     "task": {
       "key": "FIX-1.1",
       "status": "validating",

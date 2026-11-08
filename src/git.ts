@@ -64,6 +64,14 @@ export class Git {
     else await must(git(["worktree", "add", "-b", branch, dir, base], this.repo), "git worktree add -b");
   }
 
+  /** A worktree on a detached HEAD at `ref` (phase validation, §10.3): no branch is created. A leftover dir is replaced. */
+  async addDetachedWorktree(dir: string, ref: string): Promise<void> {
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    if (fs.existsSync(dir)) await this.removeWorktree(dir, false);
+    await git(["worktree", "prune"], this.repo);
+    await must(git(["worktree", "add", "--detach", dir, ref], this.repo), "git worktree add --detach");
+  }
+
   async removeWorktree(dir: string, deleteBranch: boolean, branch?: string): Promise<void> {
     await git(["worktree", "remove", "--force", dir], this.repo);
     if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });

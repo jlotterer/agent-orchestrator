@@ -1,0 +1,775 @@
+{
+  "toValidate": [
+    {
+      "name": "phase with all tasks done is due for validation",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 1
+        },
+        {
+          "key": "T003",
+          "phase": "Phase 2: Core",
+          "status": "pending",
+          "orderIdx": 2
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "fixup_rounds": 0
+        },
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": [
+        {
+          "phaseId": 1,
+          "name": "Phase 1: Setup",
+          "action": "validate",
+          "reason": "all 2 tasks are done or skipped"
+        }
+      ]
+    },
+    {
+      "name": "a task still running: nothing is due",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 1: Setup",
+          "status": "running",
+          "orderIdx": 1
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "done and skipped tasks: due (at least one done)",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "skipped",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 1
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": [
+        {
+          "phaseId": 1,
+          "name": "Phase 1: Setup",
+          "action": "validate",
+          "reason": "all 2 tasks are done or skipped"
+        }
+      ]
+    },
+    {
+      "name": "every task skipped: passes without validation and the walk continues",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "skipped",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "done",
+          "orderIdx": 1
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "fixup_rounds": 0
+        },
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": [
+        {
+          "phaseId": 1,
+          "name": "Phase 1: Setup",
+          "action": "pass",
+          "reason": "every task of the phase was skipped"
+        },
+        {
+          "phaseId": 2,
+          "name": "Phase 2: Core",
+          "action": "validate",
+          "reason": "all 1 tasks are done or skipped"
+        }
+      ]
+    },
+    {
+      "name": "passed phase is skipped over; the next finished phase is due",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "done",
+          "orderIdx": 1
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "passed",
+          "fixup_rounds": 0
+        },
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": [
+        {
+          "phaseId": 2,
+          "name": "Phase 2: Core",
+          "action": "validate",
+          "reason": "all 1 tasks are done or skipped"
+        }
+      ]
+    },
+    {
+      "name": "phases are validated in order: a later finished phase waits for an earlier pending one",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "pending",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "done",
+          "orderIdx": 1
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "fixup_rounds": 0
+        },
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "phase already validating: nothing more is due",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "done",
+          "orderIdx": 1
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "validating",
+          "fixup_rounds": 0
+        },
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "phase waiting on the owner blocks later phases",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "done",
+          "orderIdx": 1
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "needs_human",
+          "fixup_rounds": 2
+        },
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "pending fix-up task keeps its phase from being due",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "FIX-1.1",
+          "phase": "Phase 1: Setup",
+          "status": "pending",
+          "orderIdx": 1
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "pending",
+          "orderIdx": 2
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "fixup_rounds": 1
+        },
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "fix-up done: the phase is due again",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "FIX-1.1",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 1
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "pending",
+          "orderIdx": 2
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "fixup_rounds": 1
+        },
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": [
+        {
+          "phaseId": 1,
+          "name": "Phase 1: Setup",
+          "action": "validate",
+          "reason": "all 2 tasks are done or skipped"
+        }
+      ]
+    },
+    {
+      "name": "tasks before any heading form the phase named \"\"",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": null,
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 1: Setup",
+          "status": "pending",
+          "orderIdx": 1
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "",
+          "idx": 1,
+          "status": "pending",
+          "fixup_rounds": 0
+        },
+        {
+          "id": 2,
+          "name": "Phase 1: Setup",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": [
+        {
+          "phaseId": 1,
+          "name": "",
+          "action": "validate",
+          "reason": "all 1 tasks are done or skipped"
+        }
+      ]
+    },
+    {
+      "name": "phase row without tasks passes",
+      "tasks": [
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "done",
+          "orderIdx": 0
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "fixup_rounds": 0
+        },
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": [
+        {
+          "phaseId": 1,
+          "name": "Phase 1: Setup",
+          "action": "pass",
+          "reason": "the phase has no tasks"
+        },
+        {
+          "phaseId": 2,
+          "name": "Phase 2: Core",
+          "action": "validate",
+          "reason": "all 1 tasks are done or skipped"
+        }
+      ]
+    },
+    {
+      "name": "rows are walked by idx, not by input order",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "done",
+          "orderIdx": 1
+        }
+      ],
+      "phases": [
+        {
+          "id": 2,
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "fixup_rounds": 0
+        },
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "passed",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": [
+        {
+          "phaseId": 2,
+          "name": "Phase 2: Core",
+          "action": "validate",
+          "reason": "all 1 tasks are done or skipped"
+        }
+      ]
+    },
+    {
+      "name": "all phases passed: nothing is due",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        }
+      ],
+      "phases": [
+        {
+          "id": 1,
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "passed",
+          "fixup_rounds": 0
+        }
+      ],
+      "expected": []
+    }
+  ],
+  "fixup": [
+    {
+      "name": "first round: FIX-1.1 after the phase, later unfinished tasks depend on it and move down",
+      "phase": {
+        "name": "Phase 1: Setup",
+        "idx": 1,
+        "lastOrderIdx": 1
+      },
+      "round": 1,
+      "verdict": {
+        "verdict": "FAIL",
+        "failure": "Phase validator verdict: FAIL",
+        "reasons": [
+          "greeting and farewell use different file formats"
+        ],
+        "unmet": [
+          "impl/ files share one format"
+        ],
+        "suggestions": [
+          "use plain text everywhere"
+        ]
+      },
+      "laterTasks": [
+        {
+          "key": "T003",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [
+            "T001",
+            "T002"
+          ]
+        },
+        {
+          "key": "T004",
+          "orderIdx": 3,
+          "status": "pending",
+          "dependsOn": [
+            "T003"
+          ]
+        }
+      ],
+      "expected": {
+        "task": {
+          "key": "FIX-1.1",
+          "title": "Fix phase \"Phase 1: Setup\" so phase validation passes",
+          "description": "Phase validation of \"Phase 1: Setup\" failed (fix-up round 1). Make the phase pass as a whole.\n\nPhase validator verdict: FAIL\n\nReasons:\n- greeting and farewell use different file formats\n\nSuggestions:\n- use plain text everywhere",
+          "acceptance": [
+            "impl/ files share one format",
+            "Phase validation of \"Phase 1: Setup\" passes"
+          ],
+          "phase": "Phase 1: Setup",
+          "orderIdx": 2,
+          "dependsOn": [],
+          "mergePolicy": "auto",
+          "synthetic": true
+        },
+        "edges": [
+          {
+            "taskKey": "T003",
+            "dependsOn": "FIX-1.1"
+          },
+          {
+            "taskKey": "T004",
+            "dependsOn": "FIX-1.1"
+          }
+        ],
+        "reorder": [
+          {
+            "taskKey": "T003",
+            "orderIdx": 3
+          },
+          {
+            "taskKey": "T004",
+            "orderIdx": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "second round of phase 2: key FIX-2.2; done and skipped later tasks get no edge but still move",
+      "phase": {
+        "name": "Phase 2: Core",
+        "idx": 2,
+        "lastOrderIdx": 4
+      },
+      "round": 2,
+      "verdict": {
+        "verdict": "FAIL",
+        "failure": "Phase command failed on main (exit 1): `npm test`\n\n1 failing",
+        "reasons": [],
+        "unmet": [],
+        "suggestions": []
+      },
+      "laterTasks": [
+        {
+          "key": "T010",
+          "orderIdx": 5,
+          "status": "done",
+          "dependsOn": [
+            "T004"
+          ]
+        },
+        {
+          "key": "T011",
+          "orderIdx": 6,
+          "status": "skipped",
+          "dependsOn": []
+        },
+        {
+          "key": "T012",
+          "orderIdx": 7,
+          "status": "pending",
+          "dependsOn": [
+            "T010"
+          ]
+        }
+      ],
+      "expected": {
+        "task": {
+          "key": "FIX-2.2",
+          "title": "Fix phase \"Phase 2: Core\" so phase validation passes",
+          "description": "Phase validation of \"Phase 2: Core\" failed (fix-up round 2). Make the phase pass as a whole.\n\nPhase command failed on main (exit 1): `npm test`\n\n1 failing",
+          "acceptance": [
+            "Phase validation of \"Phase 2: Core\" passes"
+          ],
+          "phase": "Phase 2: Core",
+          "orderIdx": 5,
+          "dependsOn": [],
+          "mergePolicy": "auto",
+          "synthetic": true
+        },
+        "edges": [
+          {
+            "taskKey": "T012",
+            "dependsOn": "FIX-2.2"
+          }
+        ],
+        "reorder": [
+          {
+            "taskKey": "T010",
+            "orderIdx": 6
+          },
+          {
+            "taskKey": "T011",
+            "orderIdx": 7
+          },
+          {
+            "taskKey": "T012",
+            "orderIdx": 8
+          }
+        ]
+      }
+    },
+    {
+      "name": "last phase: no later tasks, no edges",
+      "phase": {
+        "name": "Phase 3: Polish",
+        "idx": 3,
+        "lastOrderIdx": 9
+      },
+      "round": 1,
+      "verdict": {
+        "verdict": "FAIL",
+        "failure": "Phase validator verdict: FAIL",
+        "reasons": [
+          "greeting and farewell use different file formats"
+        ],
+        "unmet": [
+          "impl/ files share one format"
+        ],
+        "suggestions": []
+      },
+      "laterTasks": [],
+      "expected": {
+        "task": {
+          "key": "FIX-3.1",
+          "title": "Fix phase \"Phase 3: Polish\" so phase validation passes",
+          "description": "Phase validation of \"Phase 3: Polish\" failed (fix-up round 1). Make the phase pass as a whole.\n\nPhase validator verdict: FAIL\n\nReasons:\n- greeting and farewell use different file formats",
+          "acceptance": [
+            "impl/ files share one format",
+            "Phase validation of \"Phase 3: Polish\" passes"
+          ],
+          "phase": "Phase 3: Polish",
+          "orderIdx": 10,
+          "dependsOn": [],
+          "mergePolicy": "auto",
+          "synthetic": true
+        },
+        "edges": [],
+        "reorder": []
+      }
+    },
+    {
+      "name": "unnamed phase (tasks before any heading): the fix-up has phase null; an existing edge is not added twice",
+      "phase": {
+        "name": "",
+        "idx": 1,
+        "lastOrderIdx": 0
+      },
+      "round": 1,
+      "verdict": {
+        "verdict": "FAIL",
+        "failure": "Phase validator verdict: FAIL",
+        "reasons": [],
+        "unmet": [],
+        "suggestions": []
+      },
+      "laterTasks": [
+        {
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [
+            "T001",
+            "FIX-1.1"
+          ]
+        }
+      ],
+      "expected": {
+        "task": {
+          "key": "FIX-1.1",
+          "title": "Fix phase \"(no phase)\" so phase validation passes",
+          "description": "Phase validation of \"(no phase)\" failed (fix-up round 1). Make the phase pass as a whole.\n\nPhase validator verdict: FAIL",
+          "acceptance": [
+            "Phase validation of \"(no phase)\" passes"
+          ],
+          "phase": null,
+          "orderIdx": 1,
+          "dependsOn": [],
+          "mergePolicy": "auto",
+          "synthetic": true
+        },
+        "edges": [],
+        "reorder": [
+          {
+            "taskKey": "T002",
+            "orderIdx": 2
+          }
+        ]
+      }
+    }
+  ]
+}

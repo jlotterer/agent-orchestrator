@@ -5,6 +5,7 @@
  */
 import type { TaskStatus } from "../types.js";
 import { ownedOverlap } from "./ownership.js";
+import { phaseName } from "./phases.js";
 
 export interface ReadinessProject {
   id: string;
@@ -14,6 +15,8 @@ export interface ReadinessProject {
   lastStartAt: string | null;
   planQuestionsOpen: number;
   resumeOnRetry: boolean;
+  /** Phase rows of the run (§10.3): a task waits while a phase before its own is not `passed`. Absent = no phase gate. */
+  phases?: { name: string; idx: number; status: string }[];
 }
 
 export interface ReadinessTask {
@@ -30,6 +33,8 @@ export interface ReadinessTask {
   fixRounds: number;
   hasSession: boolean;
   adapterSupportsResume: boolean;
+  /** `tasks.phase` (null = before any heading); matched against the project's `phases`. */
+  phase?: string | null;
 }
 
 export interface ReadinessInput {
@@ -64,8 +69,13 @@ export function selectReady(input: ReadinessInput): ReadinessResult {
   for (const p of eligible) {
     const runTasks = input.tasks.filter((t) => t.runId === p.runId && t.projectId === p.id);
     const finishedKeys = new Set(runTasks.filter((t) => FINISHED.has(t.status)).map((t) => t.key));
+    // Phase gate (§10.3): a task whose phase comes after the first phase that is not passed waits.
+    const rows = p.phases ?? [];
+    const phaseIdx = new Map(rows.map((r) => [r.name, r.idx]));
+    const gate = Math.min(Infinity, ...rows.filter((r) => r.status !== "passed").map((r) => r.idx));
+    const phaseOpen = (t: ReadinessTask) => { const i = phaseIdx.get(phaseName(t.phase ?? null)); return i === undefined || i <= gate; };
     const candidates = runTasks
-      .filter((t) => t.status === "pending" && t.openQuestions === 0 && t.dependsOn.every((k) => finishedKeys.has(k)))
+      .filter((t) => t.status === "pending" && t.openQuestions === 0 && t.dependsOn.every((k) => finishedKeys.has(k)) && phaseOpen(t))
       .sort((a, b) => a.orderIdx - b.orderIdx);
     queues.set(p.id, candidates);
   }

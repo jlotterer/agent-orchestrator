@@ -11,7 +11,7 @@ orch sends a notification when:
 - A task fails after its attempts.
 - A `manual` task passes validation and waits for your review.
 - Merging fails, or a pull request needs you (CI keeps failing, checks hang, a reviewer still asks for changes).
-- A phase needs you (**Planned**).
+- A phase needs you.
 - A run finishes.
 
 Each notification title starts with the project name in square brackets, for example `[shop]`, and names the task. Selecting the notification opens the task's pull request, or the dashboard at `publicUrl`.

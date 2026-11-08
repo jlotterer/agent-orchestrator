@@ -49,7 +49,7 @@ src/
     transitions.ts  nextTaskState(): task status after an event               (built: TASK-03)
     prpoll.ts       decidePrAction(): what to do with a PR observation        (built: TASK-03)
     ownership.ts    ownedOverlap() static-prefix overlap; outOfScope() via path.matchesGlob (TASK-14)
-    phases.ts       phasesToValidate(), fixup planning                        [planned: TASK-15]
+    phases.ts       phasesToValidate(), planFixup(), phaseList()              (built: TASK-15)
     graph.ts        cycle detection over depends_on (findCycle)               [built: TASK-13]
   prfeedback.ts     PURE: gh JSON → checks/feedback; worker feedback text (built, R1)
   speckit.ts        tasks.md parser (pure) + spec dir reader + tick writer
@@ -66,7 +66,7 @@ src/
   prompts.ts        prompt loading (repo override) + {{var}} rendering + clip
   types.ts          shared types
   adapters/         types.ts, runner.ts (spawn, stream, extractJson), claude.ts, gemini.ts, index.ts
-prompts/            planner.md, worker.md, validator.md, validator-ui.md [TASK-16], phase-validator.md [TASK-15]
+prompts/            planner.md, worker.md, validator.md, validator-ui.md [TASK-16], phase-validator.md (built: TASK-15)
 dashboard/          index.html (single file, no build)
 test/
   unit/             node:test files, run against dist/                                [TASK-02]
@@ -154,19 +154,21 @@ Dry run (`previewPlan(specDir)`, REQ-INTAKE-10) [built: TASK-13]: read the spec 
 ## 7. Scheduler
 ### 7.1 Readiness
 `selectReady(input) → ReadinessResult`
-_(→ code: `src/core/readiness.ts`; built in TASK-03 including fairness and plan questions; inputs filled by the orchestrator since TASK-09/13; overlap since TASK-14)_
+_(→ code: `src/core/readiness.ts`; built in TASK-03 including fairness and plan questions; inputs filled by the orchestrator since TASK-09/13; overlap since TASK-14; phase gate since TASK-15)_
 
-The orchestrator (built: TASK-09) passes `maxAgents` = `server.json` `scheduler.maxAgents`, `busyAgents` = planners currently running (phase validators from TASK-15), one entry per non-archived project whose current run is `running` or `paused` (`maxParallel`/`resumeOnRetry` from its context, `lastStartAt` = `projects.last_start_at`; `runStatus: null` when its context fails to build), and the tasks of those runs. `planQuestionsOpen` = unanswered questions of the run with `task_id NULL` (built: TASK-13); `filesOwned` = `tasks.files_owned` (built: TASK-14); each `heldForOverlap` pair becomes one orchestrator decision per run ("Holding <task> until <other> finishes: their owned files overlap", deduplicated against the stored decisions). Every start sets `projects.last_start_at` to the tick's time.
+The orchestrator (built: TASK-09) passes `maxAgents` = `server.json` `scheduler.maxAgents`, `busyAgents` = planners and phase validations currently running (phase validations: built TASK-15), one entry per non-archived project whose current run is `running` or `paused` (`maxParallel`/`resumeOnRetry` from its context, `lastStartAt` = `projects.last_start_at`; `runStatus: null` when its context fails to build), and the tasks of those runs. `planQuestionsOpen` = unanswered questions of the run with `task_id NULL` (built: TASK-13); `filesOwned` = `tasks.files_owned` (built: TASK-14); each `heldForOverlap` pair becomes one orchestrator decision per run ("Holding <task> until <other> finishes: their owned files overlap", deduplicated against the stored decisions). Every start sets `projects.last_start_at` to the tick's time. `phases` = the run's phase rows when `validation.phase.enabled`, else omitted (no gate); `phase` = `tasks.phase` (built: TASK-15).
 Input:
 ```ts
 interface ReadinessInput {
   maxAgents: number;                 // global cap (server)
   busyAgents: number;                // agents not tied to a task row: planners, phase validators
   projects: { id: string; runId: string | null; runStatus: string | null; maxParallel: number;
-              lastStartAt: string | null; planQuestionsOpen: number; resumeOnRetry: boolean }[];
+              lastStartAt: string | null; planQuestionsOpen: number; resumeOnRetry: boolean;
+              phases?: { name: string; idx: number; status: string }[] }[];   // §10.3 phase gate
   tasks: { id: string; projectId: string; runId: string; key: string; orderIdx: number; status: TaskStatus;
            dependsOn: string[]; filesOwned: string[]; openQuestions: number;
-           attempt: number; fixRounds: number; hasSession: boolean; adapterSupportsResume: boolean }[];
+           attempt: number; fixRounds: number; hasSession: boolean; adapterSupportsResume: boolean;
+           phase?: string | null }[];
 }
 interface ReadinessResult {
   start: { taskId: string; resume: boolean }[];
@@ -175,7 +177,7 @@ interface ReadinessResult {
 ```
 Algorithm:
 1. `active` = tasks with status `running|validating`. `free = maxAgents − active − busyAgents`.
-2. Candidates per project (only projects with `runStatus === "running"` and `planQuestionsOpen === 0`): `pending`, every `dependsOn` key is `done|skipped` in the same run, `openQuestions === 0`; sorted by `orderIdx`.
+2. Candidates per project (only projects with `runStatus === "running"` and `planQuestionsOpen === 0`): `pending`, every `dependsOn` key is `done|skipped` in the same run, `openQuestions === 0`, and the **phase gate** is open: with `gate` = the lowest `idx` among the project's `phases` whose status is not `passed`, a task whose phase row (`phase ?? ""`) has `idx > gate` waits (a task whose phase has no row is not gated); sorted by `orderIdx`.
 3. Projects ordered by `lastStartAt` ascending (null first), then `id` — fairness (REQ-PROJ-09).
 4. Round-robin: repeatedly walk the ordered projects; for each, take its first candidate if project active+chosen < `maxParallel`, `free > 0`, and its `filesOwned` does not overlap (§7.2) any active or already-chosen task **of the same project** — else record `heldForOverlap` against the first overlapping task and try the project's next candidate. Stop when a full pass chooses nothing.
 5. `resume = resumeOnRetry && hasSession && adapterSupportsResume && (attempt > 0 || fixRounds > 0)`.
@@ -185,13 +187,13 @@ _(→ code: `src/core/ownership.ts`; built in TASK-14; fixtures `test/fixtures/o
 `ownedOverlap(a, b)`: false if either list is empty (unknown ownership = unconstrained, preserves today's behaviour). Otherwise, for each pattern compute its **static prefix**: path segments (split on `/`, normalized, no leading `./`) up to but excluding the first segment containing any of `* ? [ {`; a pattern without wildcards is its own prefix. Two patterns overlap if one prefix's segments are a prefix of the other's (equal included; empty prefix overlaps everything). Conservative by design: may serialize tasks that would not actually collide, never runs colliding ones together ([0017](decisions/0017-file-ownership.md)). Patterns are normalized (backslashes become `/`; leading `./` and empty segments are dropped). A task in `needs_input` whose answers arrive is not resumed while an active task of its run has overlapping ownership; the next tick retries (the same decision is recorded). The dashboard Plan tab repeats this rule to show each task's "not with" keys.
 
 ### 7.3 Tick
-One timer (`server.json` `scheduler.tickSeconds`), one tick across all projects, never two ticks at once. Per tick, for each project's current run that is `running`: (1) resume `needs_input` tasks with no open questions (T10; a resume continues a session that already held a slot and is not held back by `maxAgents`, so after answers the cap can be exceeded briefly); (2) PR polls (§12, per project settings); (3) phase checks (§10.3); then (4) one `selectReady` over every project (§7.1) → start tasks (not awaited), set `last_start_at`, log held-for-overlap decisions; (5) per running run: if no task is active and all tasks `done|skipped` (and phases validated or phase validation disabled) → run `done` + notify; else if nothing can progress without the owner → one "waiting on you" activity event (deduped by last event).
+One timer (`server.json` `scheduler.tickSeconds`), one tick across all projects, never two ticks at once. Per tick, for each project's current run that is `running`: (1) resume `needs_input` tasks with no open questions (T10; a resume continues a session that already held a slot and is not held back by `maxAgents`, so after answers the cap can be exceeded briefly); (2) PR polls (§12, per project settings); (3) phase checks (§10.3: pass or start validations; built TASK-15); then (4) one `selectReady` over every project (§7.1) → start tasks (not awaited), set `last_start_at`, log held-for-overlap decisions; (5) per running run: if no task is active and all tasks `done|skipped` (and phases validated or phase validation disabled) → run `done` + notify; else if nothing can progress without the owner → one "waiting on you" activity event (deduped by last event).
 
 ### 7.4 Run control
 - One unfinished run per project: `plan(projectId, specDir, opts)` and `start(runId)` refuse when another run of the project is in `planning|plan_pending|ready|running|paused`, with `project '<id>' already has an unfinished run <runId> (<status>, "<title>"); finish or stop it first` (built: TASK-09). A project's **current run** is its newest run not `done|stopped|failed`; legacy routes without a run id act on the default project's current run.
 - `pause`: status `paused`; tick skips the run's starts; running agents finish.
-- `stop`: SIGTERM agent children of that run, active tasks → `pending`, run `stopped`. A stopped run may be started again if no other unfinished run exists.
-- `recover()` on daemon start: active tasks → `pending` (worktree kept, activity event), `planning` runs → `plan_pending`, kill leftover UI-mode apps from `run/*.pid` [TASK-16].
+- `stop`: SIGTERM agent children of that run (including a running phase validator, whose phase goes back to `pending`), active tasks → `pending`, run `stopped`. A stopped run may be started again if no other unfinished run exists.
+- `recover()` on daemon start: active tasks → `pending` (worktree kept, activity event), `planning` runs → `plan_pending`, `validating` phases → `pending` (validated again; built TASK-15), kill leftover UI-mode apps from `run/*.pid` [TASK-16].
 
 ## 8. Task State Machine
 _(→ code: `src/core/transitions.ts`; built in TASK-03, T17 in TASK-06; T19 [TASK-16] not yet)_
@@ -222,7 +224,7 @@ States: `pending, running, validating, needs_input, pr_checks, pr_open, failed, 
 | T18 | pr_checks/pr_open | PR action (§12.2) | — | per action | — |
 | T19 | validating | `validator_blocked` (UI mode, no browser) | — | failed | no retry; notify [TASK-16] |
 
-Fix-up tasks [TASK-15] use the same machine.
+Fix-up tasks (`synthetic`, built: TASK-15) use the same machine; the shell never ticks them in `tasks.md`.
 
 ## 9. Worker & Hand-off Brief
 - Worktree: `git worktree add -b orch/<key>-<slug> <dir> <baseRef>`; `baseRef` = `origin/<base>` after `fetch --prune` when a remote exists, else `<base>`. Reuse existing branch. Copy `git.copyFiles`, run `git.setupCommand` (15 min timeout). A failing setup removes the new worktree (branch kept) and fails the attempt with the command's exit code and output, so the next attempt recreates the worktree and reruns setup.
@@ -239,12 +241,13 @@ Fix-up tasks [TASK-15] use the same machine.
 Fresh session, prompt `prompts/validator.md`: task, criteria, worker summary (claims), `diffFromBase` (stat + diff, 60k chars), gate hint/output. Verdict contract §13.2. Non-PASS → T3/T4 with reasons + UNMET criteria. Out-of-scope edits (files in diff not matched by `files_owned` via `path.matchesGlob`) are listed by orch in the prompt (`files_owned`, `out_of_scope`; file names from `git diff --name-status`, so the list is complete even when the diff text is clipped; a pattern without wildcards also owns everything below it) and reported in `findings`, never a FAIL by themselves. The verdict event stores `findings` (validator) and `out_of_scope` (orch); the task panel shows the latest under "Validator findings" (built: TASK-14).
 
 ### 10.3 Phase validation
-_(→ code: `src/core/phases.ts`, [planned: TASK-15])_
-- `phases` table row per (run, phase name): `pending → validating → passed | failed | needs_human`, `fixup_rounds`.
-- `phasesToValidate(tasks, phases)`: a phase is due when it has ≥1 task, all its tasks (incl. fix-ups) are `done|skipped`, at least one is `done`, and its row is `pending`. Disabled when `validation.phase.enabled` is false (phase rows go straight to `passed`).
-- Run: counts as one busy agent. Create detached worktree at `baseRef` (`<run>-phase-<n>`), run setup, then `validation.phase.command || validation.command`, then phase validator (role `phaseValidator`, default = validator role) with prompt `prompts/phase-validator.md` (phase tasks + summaries + spec excerpt + gate output). Remove worktree after.
-- PASS → `passed`, decision. FAIL with `fixup_rounds < validation.phase.maxFixups` → create task key `FIX-<phaseIdx>.<round>` (`synthetic=1`, phase = same, policy auto, description = failure + reasons, acceptance = unmet criteria + "phase validation passes"), add its key to `depends_on` of every task in later phases, phase row → `pending` with `fixup_rounds+1`, decision. Otherwise → `needs_human` inbox item (actions: re-run phase validation, accept phase). Synthetic tasks are never ticked in `tasks.md`.
-- Later phases' tasks also wait while their earlier phase is `validating|needs_human` (readiness treats a phase not `passed` as an unmet dependency for later phases).
+_(→ code: decisions in `src/core/phases.ts` (built: TASK-15, fixtures `test/fixtures/phases.json`); flow in `src/orchestrator.ts` checkPhases/validatePhase/applyPhaseVerdict; `Git.addDetachedWorktree`)_
+- `phases` table row per (run, phase name): `pending → validating → passed | needs_human`, `fixup_rounds` (`failed` is reserved; the owner actions accept it like `needs_human`). Rows are created `pending` by the phase check from the run's tasks (`phaseList`: plan order of each phase's first task, `idx` from 1; tasks before any heading form the phase named `""`, shown as "(no phase)").
+- `phasesToValidate(tasks, phases) → {phaseId, name, action: validate|pass, reason}[]`: walk the rows by `idx`; skip `passed`; stop at the first row that is not `pending`. A `pending` phase is due (`validate`) when it has ≥1 task, all its tasks (incl. fix-ups) are `done|skipped` and at least one is `done`, which ends the walk; with no tasks or only skipped tasks it is `pass` (decision "Phase "<name>" passed without validation: <reason>") and the walk continues; otherwise the walk stops. So phases are validated one at a time, in order. Disabled (`validation.phase.enabled` false): every `pending` row goes straight to `passed` and readiness gets no rows.
+- Run: one validation per run at a time; it starts only when a global slot is free (`maxAgents − active tasks − busyAgents > 0`) and counts as one busy agent until it ends. Row → `validating`. Detached worktree at `baseRef` (`<worktreeDir>/<run>-phase-<idx>`, `git worktree add --detach`), `git.copyFiles`, `git.setupCommand`, then `validation.phase.command || validation.command` (20 min; a failing setup or command is a FAIL without the agent), then, if `validation.agent`, the phase validator (role `phaseValidator`, default = the project's validator role; env `ORCH_RUN_ID`, `ORCH_ACTOR=phase_validator`, no task id) with prompt `prompts/phase-validator.md` (phase label/idx/count, each task with criteria and summary, spec excerpt, command output clipped 4000, earlier fix-up rounds). Verdict event `verdict` with `role: phase_validator`. The worktree is always removed. An error of orch itself (worktree, git) → `needs_human` directly.
+- PASS → `passed`, decision "Phase "<name>" passed validation" (actor `phase_validator`, or `orchestrator` without the agent). FAIL → decision "Phase "<name>" failed validation" (rationale = failure + reasons + UNMET lines, clipped 1500). Then, with `fixup_rounds < validation.phase.maxFixups`: `planFixup(phase, round, verdict, laterTasks)` → task key `FIX-<idx>.<round>` (`synthetic`, phase = same, policy auto, `order_idx` = the phase's last + 1 with later tasks moved down one, description = failure + reasons + suggestions, acceptance = unmet + "Phase validation of "<name>" passes") and one edge per **unfinished** later-phase task (its `depends_on` gains the key); row → `pending` with `fixup_rounds+1`; orchestrator decision "Created fix-up task FIX-… for phase "<name>" (round n/max); later phases wait for it". Otherwise → `needs_human`, orchestrator decision "Phase "<name>" needs the owner: …" (rationale = the failure summary, used as the inbox item's `detail`) and a notification. Synthetic tasks are never ticked in `tasks.md`.
+- Owner actions (only on `needs_human|failed`, else 400): `revalidatePhase` → `pending` (fix-up rounds kept, so another FAIL returns to the inbox), human decision "Re-running validation of phase …"; `acceptPhase` → `passed`, human decision "Accepted phase … without passing validation".
+- Later phases' tasks wait while an earlier phase is not `passed` (readiness phase gate, §7.1). A run is `done` only when every phase row is `passed` (with validation enabled); a `needs_human` phase gives one "waiting on you" activity event.
 
 ### 10.4 UI validation mode
 _(→ code: `src/appserver.ts`, [planned: TASK-16])_
@@ -292,13 +295,13 @@ All roles end with one fenced ```json block; `extractJson` takes the last parsea
 - Planner: `{tasks:[{key, acceptance[], depends_on[], merge_policy, validate_cmd, validate_mode?, files_owned?}], decisions:[{text, rationale}], questions:[{text, options[]}]}`
 - Worker: `{status: done|blocked|failed, summary, files[], decisions[], follow_ups[], reason?}`
 - Validator: `{verdict: PASS|FAIL|BLOCKED, criteria:[{criterion, met, evidence}], reasons[], suggestions[], findings?[]}` (`BLOCKED` only in UI mode)
-- Phase validator [TASK-15]: `{verdict: PASS|FAIL, reasons[], unmet[], suggestions[]}`
+- Phase validator (built: TASK-15): `{verdict: PASS|FAIL, reasons[], unmet[], suggestions[]}`; anything but PASS (including no block) is a FAIL
 
 ### 13.3 Agent-facing CLI
 `orch decide "<text>" --why "<r>"` → `POST /api/decide`; `orch ask "<q>" --options "A,B"` → `POST /api/ask` (requires `ORCH_TASK_ID`), prints "STOP working now…".
 
 ## 14. Inbox, Decisions & Notifications
-- Inbox is **derived** on read, never stored: per project/run: `approve_plan` (run `plan_pending`), `question` (unanswered; `task_id` null = plan question: no `task_key`, `plan: true`; built: TASK-13), `failed` tasks, `merge` (`pr_open` tasks, with `pr_url`, `feedback`, `ci_status`, `fix_rounds`), `phase` (`needs_human` phase rows) [TASK-15]. Items of a run carry `run_id`. Global inbox = union over non-archived projects' shown runs (current, else newest), each item with `project_id`, `project_name` [built: TASK-10].
+- Inbox is **derived** on read, never stored: per project/run: `approve_plan` (run `plan_pending`), `question` (unanswered; `task_id` null = plan question: no `task_key`, `plan: true`; built: TASK-13), `failed` tasks, `merge` (`pr_open` tasks, with `pr_url`, `feedback`, `ci_status`, `fix_rounds`), `phase` (`needs_human`/`failed` phase rows, with `phase_id`, `phase_name`, `fixup_rounds`, `detail` = latest failure; built: TASK-15). Items of a run carry `run_id`. Global inbox = union over non-archived projects' shown runs (current, else newest), each item with `project_id`, `project_name` [built: TASK-10].
 - Decisions: append-only rows (actor ∈ planner|worker|validator|phase_validator|orchestrator|human).
 - Notifications (`src/notify.ts`): ntfy POST with Title, Priority, Click (task PR url or `publicUrl`), Tags. Title prefix `[<project name>] ` (registry name; built: TASK-09). Failures logged to stderr, never thrown.
 
@@ -314,7 +317,7 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 | GET `/api/projects` | `?archived=1` (include archived) | `[{id, name, repo, archived, error, run:{id,status,title}\|null, inboxCount}]`; `run` = shown run (§5), `error` = missing repo or invalid settings, else null; `inboxCount` 0 when archived | built: TASK-10 |
 | POST `/api/projects` | `{path, name?}` | project row `{id, name, repo_path, archived, …}` + `configCreated` (starter settings path, when written) + `unarchived: true` (when an archived project was restored); 400 with the registry's message (§5.3) | built: TASK-10 |
 | DELETE `/api/projects/:id` | — | `{ok}` (archive); 400 naming the unfinished run; 404 unknown id | built: TASK-10 |
-| GET `/api/projects/:id/state` | `?run=<id>` | snapshot `{project:{id,name,repo,archived}, run, tasks, decisions, questions, inbox, inboxCount, runs, config}` of that run (404 if not in the project), else of the shown run; `costs` added by TASK-17 | built: TASK-10 |
+| GET `/api/projects/:id/state` | `?run=<id>` | snapshot `{project:{id,name,repo,archived}, run, tasks, decisions, questions, phases, inbox, inboxCount, runs, config}` (`phases`: TASK-15; `config.phaseValidation` = `{enabled, command, maxFixups}`) of that run (404 if not in the project), else of the shown run; `costs` added by TASK-17 | built: TASK-10 |
 | GET `/api/inbox` | — | global inbox items (§14), each with `project_id`, `project_name`, `run_id` | built: TASK-10 |
 | POST `/api/projects/:id/plan` | `{specDir, llm, dryRun?}` | run; 400 for an archived project or an unfinished run; `dryRun: true` → `{dir, title, tasks, cycle}` (§6.3), no run created; 404 unknown project | built: TASK-10 (dry run: TASK-13) |
 | GET `/api/state`, GET `/api/runs/:id` | `/api/state?project=<id>` | legacy snapshot, same shape as the project state: the run by id (404 if unknown), else the project's shown run; `runs` and `config` are that project's; no project → default project | built (`project`, `?project=`: TASK-09) |
@@ -326,8 +329,8 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 | GET `/api/tasks/:id/events`, `/api/runs/:id/events` | `?after&limit` | events; for an archived run, one synthetic `info` event "Log archived to <path>" (§17) | built (archive: TASK-12) |
 | POST `/api/questions/:id/answer` | `{answer}` | `{ok}` | built |
 | POST `/api/ask`, `/api/decide` | agent payloads | question / decision | built |
-| POST `/api/phases/:id/{revalidate,accept}` | — | `{ok}` | TASK-15 |
-| GET `/api/events/stream` | — | SSE: `event` (event rows), `change` (`{what, projectId, runId?, …}`; `what` ∈ run, tasks, questions, decision, projects); `: ping` every 25 s | built |
+| POST `/api/phases/:id/{revalidate,accept}` | — | `{ok}`; 400 unless the phase is `needs_human\|failed`; 404 unknown id | built: TASK-15 |
+| GET `/api/events/stream` | — | SSE: `event` (event rows), `change` (`{what, projectId, runId?, …}`; `what` ∈ run, tasks, questions, decision, projects, phases); `: ping` every 25 s | built |
 
 ### 15.2 CLI
 `orch serve | project add <path> [--name n] | project list [--archived] | project remove <id> | plan <specDir> [--no-llm] [--dry-run] | approve [runId] | run | pause | stop | status | answer <qid> <text> | retry|skip|merge|stop-task <key> | archive-events | decide | ask`. Global `--project <id>` (§5.4). Exit codes: 0 ok, 1 error (`error: <msg>` on stderr, including API errors and an unreachable daemon), 2 usage (`UsageError`: missing arguments, unknown command or subcommand, flag without a value, project not determinable; the message is on stderr after `error:`). `orch`, `orch help` and `--help` print the help and exit 0. Project commands use the project routes: `status`, `approve`, `run|pause|stop` and the task actions read `GET /api/projects/:id/state` and act on its run or tasks by id; `plan` posts `/api/projects/:id/plan`. Token from `ORCH_TOKEN` or `$ORCH_HOME/server.json` when readable. Base URL from `ORCH_URL`, else `http://127.0.0.1:<port>` from the server settings. `plan --dry-run` posts `dryRun: true` and prints the phases, each task with `[x]`/`[ ]`, `[P]`, key, title and `depends on:`, and a warning when the preview has a cycle; exit 0, nothing created. [built: TASK-10 (`archive-events`: TASK-12, `--dry-run`: TASK-13)]
@@ -401,11 +404,11 @@ _(→ code: `src/db.ts`)_
 | :--- | :--- | :--- | :--- |
 | projects [TASK-07] | id, name, repo_path, archived, last_start_at, created_at, updated_at | TEXT/INT | `repo_path` UNIQUE |
 | runs | id, project_id [TASK-07], spec_dir, title, status, base_branch, cost_usd [TASK-17], agent_ms [TASK-17], archived_at [TASK-12], created_at, updated_at, notes | | status ∈ §7.4 run states |
-| tasks | id, run_id, key, title, description, acceptance JSON, depends_on JSON, parallel, phase, order_idx, status, attempt, max_attempts, merge_policy, validate_cmd, validate_mode [TASK-16], files_owned JSON [TASK-14], synthetic [TASK-15], worktree, branch, pr_url, session_id, summary, files JSON, last_feedback, fix_rounds, pr_head, pr_pushed_at, pr_feedback_at, ci_head, ci_status, cost_usd, agent_ms [TASK-17], created_at, updated_at | | UNIQUE(run_id, key) |
+| tasks | id, run_id, key, title, description, acceptance JSON, depends_on JSON, parallel, phase, order_idx, status, attempt, max_attempts, merge_policy, validate_cmd, validate_mode [TASK-16], files_owned JSON [TASK-14], synthetic [TASK-15, built], worktree, branch, pr_url, session_id, summary, files JSON, last_feedback, fix_rounds, pr_head, pr_pushed_at, pr_feedback_at, ci_head, ci_status, cost_usd, agent_ms [TASK-17], created_at, updated_at | | UNIQUE(run_id, key) |
 | events | id, run_id, task_id, ts, kind, data JSON | | append-only; deleted only by archive |
 | decisions | id, run_id, task_id, ts, actor, text, rationale | | append-only |
 | questions | id, run_id, task_id NULL-able [TASK-07], ts, text, options JSON, answer, answered_at | | NULL task = plan question |
-| phases [TASK-07 schema, TASK-15 use] | id, run_id, name, idx, status, fixup_rounds, updated_at | | UNIQUE(run_id, name) |
+| phases [TASK-07 schema, used since TASK-15] | id, run_id, name, idx, status, fixup_rounds, updated_at | | UNIQUE(run_id, name) |
 
 ### State ownership
 | State | Where | Source of truth | Survives restart/update |
@@ -437,14 +440,14 @@ _(→ code: `src/db.ts`)_
   - `transitions.json`: `[{name, row, task: {status, attempt, max_attempts, fix_rounds, merge_policy, …}, event, config, expected: {status, patch?, decisionPrefix?, notify?: bool, effect?: string[], rejected?: bool}}]`, at least one case per row of §8.
   - `pr-poll.json`: `[{name, step, task, pr, localSha, now, config, expected: {action, kind?, reasonContains?, patch?, itemBodies?, failedChecks?}}]`, at least one case per step of §12.2.
   - Any case may carry `"pending": "TASK-NN"`: runners skip it until that task removes the marker. Field semantics, row/step mapping and the Behaviour changes list: `test/fixtures/README.md`.
-  - `ownership.json` [TASK-14 extends], `phases.json` [TASK-15 extends].
+  - `ownership.json` [TASK-14]; `phases.json` [TASK-15]: `{toValidate: [{name, tasks, phases, expected}], fixup: [{name, phase, round, verdict, laterTasks, expected}]}`.
 - **E2E** (`scripts/e2e*.mjs`, Linux/macOS or `node:22` container): throwaway repos, real git, the daemon via `dist/cli.js serve`, fakes: `fake-agent.mjs` (Claude and Gemini dialects, scripted by task key/prompt markers), `fake-gh.mjs` (PR state files + local bare `origin`), `fake-app.mjs` [TASK-16] (HTTP server on `PORT`). Notifications captured with a local HTTP sink when asserted.
-  - `e2e.mjs`: full happy-path loop (Claude worker, Gemini validator); since TASK-13 it also runs `orch plan --dry-run` first (exit 0, every key printed, no run), checks the planner's plan question has no task, has approval refuse a T001↔T004 cycle with 400, and checks no task starts until the plan question is answered. `e2e-pr.mjs`: PR mode and feedback loop. `e2e-lifecycle.mjs` [TASK-04]: 13 independent regression scenarios (a)–(m), each its own repo, daemon and port (`node scripts/e2e-lifecycle.mjs b h` runs a subset): stop, `kill -9` + restart, timeout, setup failure, no commits, missing `tasks.md`, planner failure, answer while paused, dirty main checkout, merge conflict, skipped dependency, double answer, criteria edit. Scenario (h2) is `todo`: answering while paused still costs an attempt (T11, owner decision pending).
+  - `e2e.mjs`: full happy-path loop (Claude worker, Gemini validator); since TASK-13 it also runs `orch plan --dry-run` first (exit 0, every key printed, no run), checks the planner's plan question has no task, has approval refuse a T001↔T004 cycle with 400, and checks no task starts until the plan question is answered. `e2e-pr.mjs`: PR mode and feedback loop. `e2e-lifecycle.mjs` [TASK-04]: 13 independent regression scenarios (a)–(m), each its own repo, daemon and port (`node scripts/e2e-lifecycle.mjs b h` runs a subset): stop, `kill -9` + restart, timeout, setup failure, no commits, missing `tasks.md`, planner failure, answer while paused, dirty main checkout, merge conflict, skipped dependency, double answer, criteria edit. Scenario (h2) is `todo`: answering while paused still costs an attempt (T11, owner decision pending). `e2e-phase.mjs` [TASK-15]: (a) phase 1 FAIL → `FIX-1.1` with the failure, phase 2 waits → fix-up done → PASS → phase 2 → run done, decisions for both results and the fix-up, `tasks.md` without `FIX-`; (b) `maxFixups: 0` → phase inbox item, Re-run fails again, Accept lets phase 2 run.
   - `e2e-multi.mjs` [TASK-09]: (multi) one daemon, two projects registered through `dist/projects.js` before start, `server.json` with `maxAgents: 1` and ntfy pointed at a local HTTP sink: never more than one active task (polled), the second project's task starts before the first's third (worker-start event ids), refused plan/start naming the unfinished run, worktrees under `ORCH_HOME/worktrees/<id>/`, titles prefixed with the project name; (legacy) a legacy `orch.config.json` plus a 0.1-schema DB with a done run → project registered, old run + decisions visible, files split, a new run completes. Every e2e daemon gets `ORCH_HOME=<tmp>/home` (`makeRepo()` returns it); scripts that write a legacy config exercise the upgrade on each start.
-  - `fake-agent.mjs` markers (anywhere in the prompt): `PLANNER_FAIL` (planner exits 1), `PLAN_QUESTION` (planner also returns one plan question) [TASK-13], `SLEEP_LONG` (worker commits `impl/<KEY>.wip`, writes its pid to `$FAKE_STATE_DIR`, sleeps; exits if orphaned), `NO_COMMIT` (done without changes), `CONFLICT_FILE` (also writes `shared.txt`); task key T002 asks a question, T003/T004 fail once at the gate/validator, `CI_TRAP` fails CI once.
+  - `fake-agent.mjs` markers (anywhere in the prompt): `PLANNER_FAIL` (planner exits 1), `PLAN_QUESTION` (planner also returns one plan question) [TASK-13], `SLEEP_LONG` (worker commits `impl/<KEY>.wip`, writes its pid to `$FAKE_STATE_DIR`, sleeps; exits if orphaned), `NO_COMMIT` (done without changes), `CONFLICT_FILE` (also writes `shared.txt`), `PHASE_TRAP` (phase validator FAILs phase 1 until `impl/FIX-1.<round>.txt` is on the base branch) [TASK-15]; task key T002 asks a question, T003/T004 fail once at the gate/validator, `CI_TRAP` fails CI once.
 - **E2E helpers** (`scripts/lib/e2e.mjs`): `makeRepo({files, origin?, prefix?})` (throwaway repo on `main` with a local git identity, optional bare `origin`), `writeConfig(repo, cfg)`, `startDaemon({cwd, env, port})` (prefixed logs, resolves when `/api/state` answers), `api(port)` → `(method, path, body)`, `waitFor(fn, {timeoutMs, intervalMs})`, `cleanup({ok})` (kills daemons; keeps temp repos on failure). New scenarios should be a config, a loop and assertions.
 - **Invariants** (`scripts/check-invariants.mjs`, `npm run check`): `dependencies` is exactly `better-sqlite3` (REQ-NFR-02); `/claude|gemini|anthropic/i` in `src/**/*.ts` outside `src/adapters/` fails unless the line matches the allowlist in the script (built-in adapter defaults and legacy migration in `src/config.ts`) (REQ-NFR-04); files in `src/core/` must not import `node:fs`, `node:child_process` or `../db`, nor call `Date.now()` / `new Date()` without arguments (REQ-NFR-05, [0020](decisions/0020-pure-core-and-fixtures.md)).
-- **Fixture runner** (`test/unit/core.test.mjs`): loads every file in `test/fixtures/`, runs `parseTasksMd`, `extractJson`, `selectReady`, `nextTaskState` and `decidePrAction`, and reports cases with `pending` as skipped.
+- **Fixture runner** (`test/unit/core.test.mjs`): loads every file in `test/fixtures/`, runs `parseTasksMd`, `extractJson`, `selectReady`, `nextTaskState`, `decidePrAction`, `ownedOverlap`/`outOfScope` and `phasesToValidate`/`planFixup`, and reports cases with `pending` as skipped.
 - **Manual**: first live Gemini run; first real GitHub repo with Actions; visual dashboard review (dark + light, phone width).
 
 ## 22. Design Assumptions

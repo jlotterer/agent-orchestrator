@@ -35,7 +35,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T014 File ownership: safe parallelism. Brief: docs/tasks/TASK-14.md.
 
 ## Phase 10: Wave 10
-- [ ] T015 Phase validation and fix-up tasks. Brief: docs/tasks/TASK-15.md.
+- [x] T015 Phase validation and fix-up tasks. Brief: docs/tasks/TASK-15.md.
 
 ## Phase 11: Wave 11
 - [ ] T016 UI validation mode and gate output for validators. Brief: docs/tasks/TASK-16.md.

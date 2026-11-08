@@ -9,7 +9,7 @@ This page describes what each agent role receives, what it can do while it works
 | Planner | The feature title, every file in the feature folder except `tasks.md` (up to twice `handoff.specChars`), and the imported task list. | Not applicable |
 | Worker | The task's key, title, description and acceptance criteria; an excerpt of `plan.md` and `spec.md` (up to `handoff.specChars`); a hand-off brief; its branch and base branch; the test command; and feedback from a failed attempt, fix round or **Send back**. The files it owns. | Other tasks' sessions |
 | Validator | The task, its acceptance criteria, the worker's summary as claims to check, and the diff against the base branch. The test gate's output (**Planned**). The list of changes outside the task's owned files. The app's address in UI mode (**Planned**). | The worker's reasoning or conversation |
-| Phase validator (**Planned**) | The phase's tasks and their summaries, an excerpt of the spec, and the phase test output. | Not applicable |
+| Phase validator | The phase's tasks and their summaries, an excerpt of the spec, and the phase test output. | Not applicable |
 
 ### The hand-off brief
 
@@ -81,11 +81,11 @@ The verdict can include `findings`, such as changes outside the task's owned fil
 
 ### Phase validator
 
-**Planned.**
-
 ```json
 { "verdict": "PASS", "reasons": [], "unmet": [], "suggestions": [] }
 ```
+
+Anything other than `PASS`, including a missing block, fails the phase. The `reasons`, `unmet` and `suggestions` become the fix-up task's description and acceptance criteria.
 
 ## Customize the prompts
 

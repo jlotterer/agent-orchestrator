@@ -47,7 +47,7 @@ Select a card to open it in the **Task** panel. For details on each status, see 
 
 The **Plan** tab lists the tasks by phase. Each row shows the task key and status, the title and acceptance criteria, its dependencies, and its merge policy and test command. Select a row to open the task and edit it. See [Review and approve a plan](../how-to/review-a-plan.md).
 
-The **Plan** tab also shows each task's owned files and, under **not with**, the tasks that own some of the same files and so never run beside it. **Planned:** each task's validation mode, each phase's validation status, and a badge on fix-up tasks.
+The **Plan** tab also shows each task's owned files and, under **not with**, the tasks that own some of the same files and so never run beside it. Each phase heading shows the phase's validation status and fix-up rounds, and fix-up tasks carry a **fix-up** badge. **Planned:** each task's validation mode.
 
 ## Decisions tab
 

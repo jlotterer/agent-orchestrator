@@ -1,6 +1,6 @@
 # Fixtures: the executable spec for orch's risky logic
 
-These tables define correct behaviour for the parts of orch that are easy to get subtly wrong: the `tasks.md` parser, JSON extraction from agent output, task readiness, the task state machine and the PR-poll decision ([decision 0020](../../docs/decisions/0020-pure-core-and-fixtures.md), [architecture §21.2](../../docs/architecture.md#212-testing-architecture)).
+These tables define correct behaviour for the parts of orch that are easy to get subtly wrong: the `tasks.md` parser, JSON extraction from agent output, task readiness, the task state machine, the PR-poll decision, file ownership and phase validation ([decision 0020](../../docs/decisions/0020-pure-core-and-fixtures.md), [architecture §21.2](../../docs/architecture.md#212-testing-architecture)).
 
 They were written spec-first (TASK-01), before the pure functions in `src/core/` existed. **Changing an expected output is a behaviour change and needs the owner's review in the PR.** Adding cases is fine.
 
@@ -44,12 +44,19 @@ Covers: single fence; last fenced block wins; invalid last block falls back to a
 ### `readiness.json`
 `[{ name, pending?, input: ReadinessInput, expected: ReadinessResult }]` exactly as in [architecture §7.1](../../docs/architecture.md#71-readiness). Runner: `deepStrictEqual(selectReady(input), expected)`. The order of `start` is significant. `heldForOverlap` is always present (empty when nothing is held).
 
-Covers: dependencies done / skipped / unmet (running, failed, needs_input, pr_open, pr_checks, missing key, other run); open task question; open plan question (built by TASK-13; passes); `maxParallel` with `orderIdx` ordering; active tasks counting against `maxParallel`; tasks waiting on the owner not using a slot; global `maxAgents` across two projects (REQ-PROJ-08); `busyAgents`; free slots never negative; fairness by `lastStartAt`, null first, ties by id, round-robin (REQ-PROJ-09); a paused run starts nothing but its agents still count; runs that are not `running`; tasks of another run; only `pending` tasks are candidates; resume flag combinations (§7.1 step 5); empty `filesOwned` never blocks; disjoint ownership; overlap with an active or already-chosen task gives `heldForOverlap` (built by TASK-14; passes); no overlap check across projects.
+Covers: dependencies done / skipped / unmet (running, failed, needs_input, pr_open, pr_checks, missing key, other run); open task question; open plan question (built by TASK-13; passes); `maxParallel` with `orderIdx` ordering; active tasks counting against `maxParallel`; tasks waiting on the owner not using a slot; global `maxAgents` across two projects (REQ-PROJ-08); `busyAgents`; free slots never negative; fairness by `lastStartAt`, null first, ties by id, round-robin (REQ-PROJ-09); a paused run starts nothing but its agents still count; runs that are not `running`; tasks of another run; only `pending` tasks are candidates; resume flag combinations (§7.1 step 5); empty `filesOwned` never blocks; disjoint ownership; overlap with an active or already-chosen task gives `heldForOverlap` (built by TASK-14; passes); no overlap check across projects; the phase gate (built by TASK-15): later-phase tasks wait while an earlier phase is validating, needs the owner or is pending, a fix-up of the open phase still starts, tasks of the first unpassed phase are not held, no `phases` = no gate, a `null` phase matches the row named `""` and a phase without a row is not gated. The project's optional `phases` and the task's optional `phase` are the gate's inputs.
 
 ### `ownership.json`
 `{ overlap: [{ name, a, b, expected }], outOfScope: [{ name, files, owned, expected }] }` ([architecture §7.2](../../docs/architecture.md#72-ownership-overlap), §10.2, [decision 0017](../../docs/decisions/0017-file-ownership.md)). Runner: `ownedOverlap(a, b) === expected` and, because overlap is symmetric, `ownedOverlap(b, a) === expected`; `deepStrictEqual(outOfScope(files, owned), expected)` (order of `files` kept). Added in TASK-14.
 
 Covers `overlap`: equal paths; different files in one dir; dir glob vs a file inside it (both orders); sibling dirs; a segment prefix that is not a string prefix (`src/auth` vs `src/authz`); `**` and `*.md` at the root (empty prefix); empty lists (one or both); a wildcard in a middle segment; brace and bracket wildcards; `./` and backslash normalization; any matching pair in multi-entry lists; disjoint multi-entry lists; a plain directory vs a file below it. Covers `outOfScope`: the brief's `src/**` + `README.md` example; empty ownership reports nothing; exact file match; a plain directory owns its contents; `*` does not cross directories; several patterns.
+
+### `phases.json`
+`{ toValidate: [{ name, tasks, phases, expected }], fixup: [{ name, phase, round, verdict, laterTasks, expected }] }` ([architecture §10.3](../../docs/architecture.md#103-phase-validation), [decision 0015](../../docs/decisions/0015-phase-validation-fixups.md)). Added in TASK-15. Runners: `deepStrictEqual(phasesToValidate(tasks, phases), expected)` and `deepStrictEqual(planFixup(phase, round, verdict, laterTasks), expected)` (`src/core/phases.ts`).
+
+Shapes: `tasks`: `[{ key, phase, status, orderIdx }]` (`phase: null` = before any heading, the phase row named `""`); `phases`: `[{ id, name, idx, status, fixup_rounds }]`; `expected` (toValidate): `[{ phaseId, name, action: "validate" | "pass", reason }]` in walk order. `phase` (fixup): `{ name, idx, lastOrderIdx }`; `verdict`: `{ verdict, failure, reasons, unmet, suggestions }`; `laterTasks`: `[{ key, orderIdx, status, dependsOn }]`; `expected`: `{ task: { key, title, description, acceptance, phase, orderIdx, dependsOn, mergePolicy, synthetic }, edges: [{ taskKey, dependsOn }], reorder: [{ taskKey, orderIdx }] }`.
+
+Covers `toValidate`: all done → validate; a running task → nothing; done + skipped → validate; all skipped → pass and continue; a passed phase skipped over; an earlier pending phase blocks a later finished one; `validating` and `needs_human` stop the walk; a pending fix-up keeps the phase open; fix-up done → due again; the unnamed phase; a row without tasks passes; walk by `idx`, not input order; all passed. Covers `fixup`: round 1 with edges and reorder; round 2 of phase 2 (no edges for done/skipped tasks, which still move); the last phase (no edges); the unnamed phase (`phase: null`) and an edge that already exists.
 
 ### `transitions.json`
 `[{ name, row, pending?, task, event, config, expected }]`. Runner: `nextTaskState(task, event, config)` (`src/core/transitions.ts`), then:
@@ -76,10 +83,10 @@ Row mapping (architecture §8):
 | :--- | :--- | :--- |
 | T1 | start; retry start; start rejected when not pending | |
 | T2 | worker blocked | |
-| T3 | worker failure retry; validator FAIL retry; synthetic fix-up task retry | fix-up case: TASK-15 |
+| T3 | worker failure retry; validator FAIL retry; synthetic fix-up task retry (built by TASK-15; passes) | |
 | T4 | last attempt fails; `max_attempts` 1 | |
 | T5 | worker done | |
-| T6 | local auto merge; local mode ignores no-new-commits; synthetic fix-up merge | fix-up case: TASK-15 |
+| T6 | local auto merge; local mode ignores no-new-commits; synthetic fix-up merge (built by TASK-15; passes) | |
 | T7 | local manual; PR manual | |
 | T8 | wait for checks; no wait; feedback disabled; fix round with new commits | |
 | T8a | no new commits; wins over manual policy | |
@@ -136,6 +143,7 @@ Cases whose expected output differs from what the code did when the fixtures wer
 | `transitions.json` | T14: stop is rejected for a task that is not active | Today `stopTask` resets any task to `pending`, so "stop" on a `pr_open` task silently drops it out of the inbox. §8 only allows stopping active tasks. |
 | `readiness.json` | global `maxAgents` and `busyAgents` cases | New inputs. Since TASK-09 the orchestrator passes `server.json` `scheduler.maxAgents` and the running planners as `busyAgents`. |
 | `readiness.json` | fairness cases (built by TASK-09; pass), plan question (built by TASK-13; passes), ownership overlap (`pending: TASK-14`) | New behaviour built by those tasks. |
-| `transitions.json` | T17 (built by TASK-06; passes), T19 (`pending: TASK-16`), fix-up tasks (`pending: TASK-15`) | New behaviour built by those tasks. |
+| `transitions.json` | T17 (built by TASK-06; passes), T19 (`pending: TASK-16`), fix-up tasks (built by TASK-15; pass) | New behaviour built by those tasks. |
+| `readiness.json` | phase gate cases (added and built by TASK-15; pass) | New optional inputs `phases` (project) and `phase` (task); existing cases leave them out and are unchanged. |
 
 Everything else (all 15 `tasks-md` cases, the other 13 `extract-json` cases, all 36 `pr-poll` cases and the non-pending transitions) matches the code's behaviour when the fixtures were written. The `tasks-md`, `extract-json` and `pr-poll` cases were checked mechanically against `parseTasksMd`, `extractJson` and a transcription of `pollPr` on the real `prfeedback.ts` helpers.

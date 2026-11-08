@@ -181,8 +181,8 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-VAL-03 | The validator's verdict MUST be PASS or FAIL, with evidence for each acceptance criterion. Anything other than PASS MUST fail the attempt, with the reasons and unmet criteria as feedback. | built |
 | REQ-VAL-04 | The validator MUST be able to run on a different agent CLI and model from the worker. | built |
 | REQ-VAL-05 | The validator MUST report edits outside the task's owned files as a finding in its verdict. Such edits MUST NOT by themselves cause a FAIL. | built |
-| REQ-VAL-06 | When every task in a phase is done or skipped, orch MUST validate the phase as a whole on the base branch: the project's phase test command, then a phase validator agent given the phase's tasks and the spec. The result MUST be recorded as a decision. | new |
-| REQ-VAL-07 | When phase validation fails, orch MUST create a fix-up task describing the failure. Tasks of later phases MUST wait for it, and its creation MUST be recorded as a decision. After a configured number of failed fix-up rounds for a phase, the phase MUST go to the inbox instead. | new |
+| REQ-VAL-06 | When every task in a phase is done or skipped, orch MUST validate the phase as a whole on the base branch: the project's phase test command, then a phase validator agent given the phase's tasks and the spec. The result MUST be recorded as a decision. | built (TASK-15) |
+| REQ-VAL-07 | When phase validation fails, orch MUST create a fix-up task describing the failure. Tasks of later phases MUST wait for it, and its creation MUST be recorded as a decision. After a configured number of failed fix-up rounds for a phase, the phase MUST go to the inbox instead. | built (TASK-15) |
 | REQ-VAL-08 | A task in UI validation mode MUST be validated against the running application: orch starts the app from the task's working copy using the project's start command; waits until it responds or a time limit passes; gives the validator the app's address; and stops the app afterwards, including when the task is stopped or orch shuts down. | new |
 | REQ-VAL-09 | If the app in UI mode does not become ready in time, the attempt MUST fail with the app's output as feedback. If the validator reports it cannot drive a browser, the task MUST go to the inbox as failed without further retries. | new |
 
@@ -209,12 +209,12 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-HITL-01 | One inbox MUST list everything that needs the owner across all projects, each item labelled with its project: plan approvals, open questions (task and plan), failed tasks, tasks awaiting review or merge (including merge failures and PR problems), and phases needing the owner. Each item MUST offer its relevant actions. | built (all projects with project labels: `GET /api/inbox`, TASK-10; dashboard global inbox with project tags, TASK-11) / new (phase items, TASK-15) |
+| REQ-HITL-01 | One inbox MUST list everything that needs the owner across all projects, each item labelled with its project: plan approvals, open questions (task and plan), failed tasks, tasks awaiting review or merge (including merge failures and PR problems), and phases needing the owner. Each item MUST offer its relevant actions. | built (all projects with project labels: `GET /api/inbox`, TASK-10; dashboard global inbox with project tags, TASK-11); phase items with Re-run/Accept, TASK-15) |
 | REQ-HITL-02 | Every new inbox item and every run completion MUST trigger a push notification (when configured) whose text names the project and the task. | built (project name in the title, TASK-09) |
 | REQ-HITL-03 | A worker MUST be able to ask the owner a question, optionally with answer options. Only that task pauses, the owner is notified, and after the answer the worker continues in its own session. Answering MUST NOT consume an attempt. | built |
 | REQ-HITL-04 | Agents MUST be able to record a decision with a rationale without pausing. | built |
 | REQ-HITL-05 | The decisions log MUST show every decision by planner, worker, validator, orchestrator and owner, in order, with actor, time, task (if any) and rationale. | built |
-| REQ-HITL-06 | Every choice orch makes on its own MUST be recorded as an orchestrator decision. That includes retrying, holding back a task for file overlap, starting a PR fix round, merging, creating a fix-up task, and falling back from the planner. | built (fix-up new) |
+| REQ-HITL-06 | Every choice orch makes on its own MUST be recorded as an orchestrator decision. That includes retrying, holding back a task for file overlap, starting a PR fix round, merging, creating a fix-up task, and falling back from the planner. | built (fix-up creation: TASK-15) |
 | REQ-HITL-07 | The owner MUST be able to do the following to a task: retry from scratch, skip, stop, merge now, mark as merged elsewhere, and send it back with written feedback. Each action MUST be recorded as a human decision. | built |
 
 **Edge cases:**
@@ -288,7 +288,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-ADAPT-01 | The planner, worker and validator roles (and the phase validator) MUST each be assignable to an agent CLI and model independently, at server level, with per-project overrides choosing among the server's configured CLIs. | built (server level; project overrides TASK-09) / new (phase validator, TASK-15) |
+| REQ-ADAPT-01 | The planner, worker and validator roles (and the phase validator) MUST each be assignable to an agent CLI and model independently, at server level, with per-project overrides choosing among the server's configured CLIs. | built (server level; project overrides TASK-09); phase validator role, TASK-15) |
 | REQ-ADAPT-02 | orch MUST run Claude Code and Gemini CLI headlessly in a working copy, with the prompt, an optional model, and session resume. | built |
 | REQ-ADAPT-03 | Agent output MUST be shown live in the task view as one uniform stream: agent text, tool calls, tool results, errors, and session info including reported cost. | built |
 | REQ-ADAPT-04 | Agents MUST be able to use orch's agent-facing commands (decide, ask) from inside a task without any installation step, and those commands MUST act on the right task. | built |

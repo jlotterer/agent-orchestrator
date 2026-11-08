@@ -41,6 +41,9 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .s-skipped { color: var(--dim); border-color: var(--line); text-decoration: line-through; }
 .s-plan_pending, .s-planning { color: var(--warn); border-color: var(--warn); }
 .s-ready, .s-paused, .s-stopped { color: var(--muted); border-color: var(--muted); }
+.s-passed { color: var(--ok); border-color: var(--ok); }
+.s-needs_human { color: var(--bad); border-color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.fixup { color: var(--warn); border-color: var(--warn); }
 
 body { display: flex; flex-direction: column; }
 #top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 7; }
@@ -115,7 +118,8 @@ h2 .count { background: var(--warn); color: #0b0e14; border-radius: 999px; paddi
 .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--line); border-top-color: var(--run); border-radius: 50%; animation: sp 1s linear infinite; vertical-align: -1px; }
 @keyframes sp { to { transform: rotate(360deg); } }
 
-.plan-phase { margin-bottom: 14px; } .plan-phase h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+.plan-phase { margin-bottom: 14px; } .plan-phase h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.plan-phase h3 .ph-note { font-weight: 400; color: var(--dim); }
 .plan-row { display: grid; grid-template-columns: 70px 1fr 110px; gap: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 4px; background: var(--panel); cursor: pointer; align-items: start; }
 .plan-row:hover { border-color: var(--accent); }
 .plan-row ul { margin: 4px 0 0 16px; padding: 0; color: var(--muted); font-size: 12px; }
@@ -124,7 +128,7 @@ h2 .count { background: var(--warn); color: #0b0e14; border-radius: 999px; paddi
 .dec { display: grid; grid-template-columns: 70px 90px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .dec .ts { color: var(--dim); font-family: var(--mono); font-size: 11px; } .dec .r { color: var(--muted); font-size: 12px; }
 .actor { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-.actor.human { color: var(--ok); } .actor.worker { color: var(--run); } .actor.validator { color: var(--info); } .actor.planner, .actor.orchestrator { color: var(--warn); }
+.actor.human { color: var(--ok); } .actor.worker { color: var(--run); } .actor.validator { color: var(--info); } .actor.planner, .actor.orchestrator { color: var(--warn); } .actor.phase_validator { color: var(--info); }
 
 #log { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; max-height: 48vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .ev { padding: 2px 0; border-bottom: 1px dotted var(--line); }
@@ -274,7 +278,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const fmtTs = (ts) => ts ? new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
 const LANES = [["pending", "Pending"], ["running", "Running"], ["validating", "Validating"], ["needs_input", "Needs input"], ["pr_checks", "Waiting on CI"], ["pr_open", "Review / merge"], ["failed", "Failed"], ["done", "Done"]];
 const ciBadge = (s) => s ? `<span class="ci ${esc(s)}" title="PR checks">CI ${esc(s)}</span>` : "";
-const EMPTY = { project: null, run: null, tasks: [], decisions: [], questions: [], inbox: [], runs: [], config: {} };
+const EMPTY = { project: null, run: null, tasks: [], decisions: [], questions: [], phases: [], inbox: [], runs: [], config: {} };
 let state = EMPTY;
 let projects = [], gInbox = [];   // GET /api/projects, GET /api/inbox (all projects)
 // The selected project persists per browser; storage can be missing or throw (private mode, blocked site data).
@@ -447,6 +451,8 @@ function inboxBody(i) {
   if (i.type === "question") return `<div class="t">${tag}${i.task_key ? `<span class="mono">${esc(i.task_key)}</span> asks` : `<span class="pill s-plan_pending" title="About the whole plan: no task starts until it is answered">Plan</span> question · tasks wait for your answer`}</div><div class="d">${esc(i.title)}</div><div class="actions">${(i.options || []).map(o => `<button class="small" onclick="answer(${i.id}, ${esc(JSON.stringify(o))})">${esc(o)}</button>`).join("")}</div><div class="actions"><input placeholder="or type an answer…" style="flex:1" id="qa-${i.id}" onkeydown="if(event.key==='Enter')answer(${i.id}, this.value)"><button class="small" onclick="answer(${i.id}, document.getElementById('qa-${i.id}').value)">Send</button></div>`;
   if (i.type === "failed") return `<div class="t">${tag}<span class="pill s-failed">failed</span> ${esc(i.task_key)}</div><div class="d">${esc((i.detail || "").slice(0, 400))}</div><div class="actions"><button class="small" onclick="goTask(${pid}, '${esc(i.task_id)}')">Inspect</button><button class="small good" onclick="taskAct('${esc(i.task_id)}','retry')">Retry</button><button class="small" onclick="taskAct('${esc(i.task_id)}','skip')">Skip</button></div>`;
   if (i.type === "merge") return `<div class="t">${tag}<span class="pill s-pr_open">review</span> ${esc(i.task_key)} ${ciBadge(i.ci_status)}${i.fix_rounds ? ` <span class="ci">· ${i.fix_rounds} fix round${i.fix_rounds > 1 ? "s" : ""}</span>` : ""}</div><div class="d">${i.pr_url ? `<a href="${esc(i.pr_url)}" target="_blank">${esc(i.pr_url)}</a>` : esc(i.detail)}${i.feedback ? "\n" + esc(i.feedback.slice(0, 300)) : ""}</div><div class="actions"><button class="small" onclick="goTask(${pid}, '${esc(i.task_id)}')">Inspect</button><button class="small good" onclick="taskAct('${esc(i.task_id)}','merge')">Merge now</button><button class="small" onclick="openSendBack('${esc(i.task_id)}', ${pid})">Send back…</button><button class="small" onclick="taskAct('${esc(i.task_id)}','mark-merged')">Merged elsewhere</button><button class="small" onclick="taskAct('${esc(i.task_id)}','retry')">Re-run</button></div>`;
+  if (i.type === "phase") return `<div class="t">${tag}<span class="pill s-needs_human">phase</span> ${esc(phaseLabel(i.phase_name))}${i.fixup_rounds ? ` <span class="ci">· ${i.fixup_rounds} fix-up round${i.fixup_rounds > 1 ? "s" : ""}</span>` : ""}</div><div class="d">Phase validation failed; later phases wait.${i.detail ? "
+" + esc(i.detail.slice(0, 400)) : ""}</div><div class="actions"><button class="small good" onclick="phaseAct(${i.phase_id},'revalidate')" title="Validate the phase again on the base branch (e.g. after fixing it by hand)">Re-run validation</button><button class="small" onclick="phaseAct(${i.phase_id},'accept')" title="Accept the phase as it is; later phases start">Accept phase</button></div>`;
   return "";
 }
 function renderInbox() {
@@ -471,6 +477,9 @@ async function goTask(projectId, taskId) {
   if (state.tasks.some(t => t.id === taskId)) await selectTask(taskId);
 }
 async function answer(id, text) { if (!text || !text.trim()) return; await act(async () => { await api("POST", `/api/questions/${id}/answer`, { answer: text.trim() }); toast("answered"); await refresh(); }); }
+async function phaseAct(id, action) { await act(async () => { await api("POST", `/api/phases/${id}/${action}`); toast(action === "accept" ? "phase accepted" : "phase validation re-run"); await refresh(); }); }
+/** Phase name as orch shows it (tasks before any heading form a phase named ""). */
+const phaseLabel = (n) => n ? n : "(no phase)";
 async function taskAct(id, action) { await act(async () => { await api("POST", `/api/tasks/${id}/${action}`); toast(action + " ok"); await refresh(); }); }
 
 function renderBoard() {
@@ -483,7 +492,7 @@ function taskCard(t) {
   const busy = t.status === "running" || t.status === "validating";
   const blocked = t.status === "pending" && t.depends_on.some(k => { const d = state.tasks.find(x => x.key === k); return d && !["done", "skipped"].includes(d.status); });
   return `<div class="task ${t.status} ${selected === t.id ? "sel" : ""}" onclick="selectTask('${t.id}')">
-    <div class="k"><span>${esc(t.key)}${t.parallel ? " [P]" : ""}</span><span>${busy ? '<span class="spin"></span> ' : ""}${t.attempt ? `try ${t.attempt}/${t.max_attempts}` : ""}</span></div>
+    <div class="k"><span>${esc(t.key)}${t.parallel ? " [P]" : ""}${t.synthetic ? ' <span class="pill fixup" title="Fix-up task created by orch after a failed phase validation; not in tasks.md">fix-up</span>' : ""}</span><span>${busy ? '<span class="spin"></span> ' : ""}${t.attempt ? `try ${t.attempt}/${t.max_attempts}` : ""}</span></div>
     <div class="n">${esc(t.title)}</div>
     <div class="m">${t.merge_policy === "manual" ? "<span title='manual merge'>👁 manual</span>" : ""}${blocked ? `<span>⏳ after ${t.depends_on.join(", ")}</span>` : ""}${t.pr_url ? `<a href="${esc(t.pr_url)}" target="_blank" onclick="event.stopPropagation()">PR</a>` : ""}${t.pr_url && t.status !== "done" ? ciBadge(t.ci_status) : ""}${t.fix_rounds ? `<span title="PR fix rounds">↻ ${t.fix_rounds}</span>` : ""}${t.status === "skipped" ? "<span>skipped</span>" : ""}</div>
   </div>`;
@@ -504,15 +513,24 @@ function renderPlan() {
   const el = $("#tab-plan");
   if (!state.run) { el.innerHTML = `<div class="empty">No plan yet.</div>`; return; }
   const phases = [];
-  for (const t of state.tasks) { let p = phases.find(x => x.name === (t.phase || "Tasks")); if (!p) { p = { name: t.phase || "Tasks", tasks: [] }; phases.push(p); } p.tasks.push(t); }
+  for (const t of state.tasks) { let p = phases.find(x => x.key === (t.phase || "")); if (!p) { p = { key: t.phase || "", name: t.phase || "Tasks", tasks: [] }; phases.push(p); } p.tasks.push(t); }
+  const phaseOn = state.config.phaseValidation ? state.config.phaseValidation.enabled : true;
+  const phaseBadge = (p) => {
+    const row = (state.phases || []).find(r => r.name === p.key);
+    if (!row) return "";
+    const rounds = row.fixup_rounds ? `<span class="ph-note">${row.fixup_rounds} fix-up round${row.fixup_rounds > 1 ? "s" : ""}</span>` : "";
+    const label = { pending: phaseOn ? "validation pending" : "not validated", validating: "validating", passed: "passed", failed: "failed", needs_human: "needs you" }[row.status] || row.status;
+    const tip = { pending: "Validated as a whole on the base branch once all its tasks are done", validating: "Phase command and phase validator are running on the base branch", passed: "Phase validation passed (or the owner accepted it)", needs_human: "Phase validation failed after the fix-up rounds: Re-run or Accept it in the inbox", failed: "Phase validation failed" }[row.status] || "";
+    return `<span class="pill s-${row.status}" title="${esc(tip)}">${row.status === "validating" ? '<span class="spin"></span> ' : ""}${label}</span>${rounds}`;
+  };
   const editable = ["plan_pending", "ready", "paused", "stopped", "running"].includes(state.run.status);
   const refused = approveError && approveError.runId === state.run.id && state.run.status === "plan_pending"
     ? `<div id="approveError" style="color:var(--bad);border:1px solid var(--bad);border-radius:6px;padding:6px 10px;margin-bottom:10px">Approval refused: ${esc(approveError.message)}</div>` : "";
   const planQs = state.questions.filter(q => !q.task_id && !q.answer);
   const held = planQs.length ? `<div style="color:var(--warn);font-size:12px;margin-bottom:10px"><span class="pill s-plan_pending">Plan</span> ${planQs.length} open plan question${planQs.length > 1 ? "s" : ""} in the inbox; no task starts until answered.</div>` : "";
   el.innerHTML = refused + held + `<div style="color:var(--muted);font-size:12px;margin-bottom:10px">Spec: <code>${esc(state.run.spec_dir)}</code>${editable ? " · click a task to edit acceptance criteria, dependencies, merge policy or owned files (pending tasks only)" : ""}</div>` +
-    phases.map(p => `<div class="plan-phase"><h3>${esc(p.name)}</h3>${p.tasks.map(t => `<div class="plan-row" onclick="selectTask('${t.id}')">
-      <div><div class="mono">${esc(t.key)}</div><span class="pill s-${t.status}">${t.status.replace("_", " ")}</span></div>
+    phases.map(p => `<div class="plan-phase"><h3><span>${esc(p.name)}</span>${phaseBadge(p)}</h3>${p.tasks.map(t => `<div class="plan-row" onclick="selectTask('${t.id}')">
+      <div><div class="mono">${esc(t.key)}</div><span class="pill s-${t.status}">${t.status.replace("_", " ")}</span>${t.synthetic ? '<div><span class="pill fixup" title="Created by orch after a failed phase validation; never ticked in tasks.md">fix-up</span></div>' : ""}</div>
       <div><div>${esc(t.title)}</div>${t.acceptance.length ? `<ul>${t.acceptance.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : `<div class="empty" style="padding:2px 0">no acceptance criteria (validator will use the description)</div>`}</div>
       <div><div class="deps">${t.depends_on.length ? "after " + t.depends_on.join(", ") : "no deps"}</div><div class="deps">${t.merge_policy}${t.validate_cmd ? " · " + esc(t.validate_cmd) : ""}</div>${(t.files_owned || []).length ? `<div class="deps mono" title="Owned files">owns ${t.files_owned.map(esc).join(", ")}</div>` : ""}${overlapKeys(t).length ? `<div class="deps" style="color:var(--warn)" title="Owned files overlap: these tasks never run at the same time">⇄ not with ${overlapKeys(t).join(", ")}</div>` : ""}</div>
     </div>`).join("")}</div>`).join("");

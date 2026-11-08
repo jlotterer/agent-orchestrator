@@ -2587,5 +2587,545 @@
       ],
       "heldForOverlap": []
     }
+  },
+  {
+    "name": "phase gate: later-phase tasks wait while an earlier phase is validating",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 1,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true,
+          "phases": [
+            {
+              "name": "Phase 1: Setup",
+              "idx": 1,
+              "status": "validating"
+            },
+            {
+              "name": "Phase 2: Core",
+              "idx": 2,
+              "status": "pending"
+            }
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t1",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "done",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 1: Setup"
+        },
+        {
+          "id": "a-t2",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [
+            "T001"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 2: Core"
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "phase gate: later-phase tasks wait while an earlier phase needs the owner",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true,
+          "phases": [
+            {
+              "name": "Phase 1: Setup",
+              "idx": 1,
+              "status": "needs_human"
+            },
+            {
+              "name": "Phase 2: Core",
+              "idx": 2,
+              "status": "pending"
+            }
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t1",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "done",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 1: Setup"
+        },
+        {
+          "id": "a-t2",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [
+            "T001"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 2: Core"
+        }
+      ]
+    },
+    "expected": {
+      "start": [],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "phase gate: a fix-up task of the pending phase starts; later-phase tasks without deps still wait",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true,
+          "phases": [
+            {
+              "name": "Phase 1: Setup",
+              "idx": 1,
+              "status": "pending"
+            },
+            {
+              "name": "Phase 2: Core",
+              "idx": 2,
+              "status": "pending"
+            }
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t1",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "done",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 1: Setup"
+        },
+        {
+          "id": "a-fix",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "FIX-1.1",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 1: Setup"
+        },
+        {
+          "id": "a-t2",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 2: Core"
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-fix",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "phase gate: once the earlier phase passed, later-phase tasks start",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true,
+          "phases": [
+            {
+              "name": "Phase 1: Setup",
+              "idx": 1,
+              "status": "passed"
+            },
+            {
+              "name": "Phase 2: Core",
+              "idx": 2,
+              "status": "pending"
+            }
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t1",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "done",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 1: Setup"
+        },
+        {
+          "id": "a-t2",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [
+            "T001"
+          ],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 2: Core"
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t2",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "phase gate: tasks of the first unpassed phase itself are not held",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true,
+          "phases": [
+            {
+              "name": "Phase 1: Setup",
+              "idx": 1,
+              "status": "passed"
+            },
+            {
+              "name": "Phase 2: Core",
+              "idx": 2,
+              "status": "pending"
+            },
+            {
+              "name": "Phase 3: Polish",
+              "idx": 3,
+              "status": "pending"
+            }
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t2",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 2: Core"
+        },
+        {
+          "id": "a-t3",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T003",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 3: Polish"
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t2",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "phase gate: no phase rows (phase validation off) gates nothing",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t1",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 1: Setup"
+        },
+        {
+          "id": "a-t2",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 2: Core"
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t1",
+          "resume": false
+        },
+        {
+          "taskId": "a-t2",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
+  },
+  {
+    "name": "phase gate: a null phase matches the row named \"\"; a task whose phase has no row is not held",
+    "input": {
+      "maxAgents": 4,
+      "busyAgents": 0,
+      "projects": [
+        {
+          "id": "A",
+          "runId": "run-A",
+          "runStatus": "running",
+          "maxParallel": 3,
+          "lastStartAt": null,
+          "planQuestionsOpen": 0,
+          "resumeOnRetry": true,
+          "phases": [
+            {
+              "name": "",
+              "idx": 1,
+              "status": "validating"
+            },
+            {
+              "name": "Phase 2: Core",
+              "idx": 2,
+              "status": "pending"
+            }
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "id": "a-t1",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T001",
+          "orderIdx": 0,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": null
+        },
+        {
+          "id": "a-t2",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T002",
+          "orderIdx": 1,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Phase 2: Core"
+        },
+        {
+          "id": "a-t9",
+          "projectId": "A",
+          "runId": "run-A",
+          "key": "T009",
+          "orderIdx": 2,
+          "status": "pending",
+          "dependsOn": [],
+          "filesOwned": [],
+          "openQuestions": 0,
+          "attempt": 0,
+          "fixRounds": 0,
+          "hasSession": false,
+          "adapterSupportsResume": true,
+          "phase": "Unlisted"
+        }
+      ]
+    },
+    "expected": {
+      "start": [
+        {
+          "taskId": "a-t1",
+          "resume": false
+        },
+        {
+          "taskId": "a-t9",
+          "resume": false
+        }
+      ],
+      "heldForOverlap": []
+    }
   }
 ]

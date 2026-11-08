@@ -46,7 +46,7 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 | `GET /api/projects` | `?archived=1` to include archived projects | A list of `{id, name, repo, archived, error, run, inboxCount}` |
 | `POST /api/projects` | `{path, name?}` | The project, with `configCreated` set to the starter settings path if one was created |
 | `DELETE /api/projects/:id` | None | `{ok}`. Archives the project. |
-| `GET /api/projects/:id/state` | `?run=<run-id>` | A snapshot of the project and run: tasks, decisions, questions, inbox, runs and settings |
+| `GET /api/projects/:id/state` | `?run=<run-id>` | A snapshot of the project and run: tasks, decisions, questions, phases, inbox, runs and settings |
 | `POST /api/projects/:id/plan` | `{specDir, llm, dryRun?}` | The new run. With `dryRun`, the parsed tasks instead. |
 | `GET /api/inbox` | None | Inbox items from every project, each with `project_id` and `project_name` |
 
@@ -89,7 +89,7 @@ Task IDs in these paths are the internal IDs in snapshots, not task keys such as
 
 ## Phases
 
-**Planned.**
+The phase ids are in the `phases` list of the project state and in phase inbox items (`phase_id`). Both actions need a phase that waits on you; otherwise they return `400`.
 
 | Method and path | Body | Returns |
 | :--- | :--- | :--- |

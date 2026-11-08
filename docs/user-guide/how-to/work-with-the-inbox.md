@@ -16,7 +16,7 @@ The inbox shows these kinds of items.
 | `<task>` asks | A worker or the planner asked a question. | One button per offered answer, or your own answer and **Send** |
 | **failed** `<task>` | A task used up its attempts, or failed for another reason. | **Inspect**, **Retry**, **Skip** |
 | **review** `<task>` | A task passed validation and waits for you, or merging needs you. | **Inspect**, **Merge now**, **Send back**, **Merged elsewhere**, **Re-run** |
-| Phase needs you (**Planned**) | A phase failed validation more times than allowed. | Re-run phase validation, accept the phase |
+| **phase** `<phase>` | A phase failed validation more times than allowed, or its validation couldn't run. | **Re-run validation**, **Accept phase** |
 
 ## Answer a question
 
@@ -76,4 +76,9 @@ From the command line, run `orch merge <task-key>`.
 
 ## Handle a phase that needs you
 
-**Planned.** When a phase fails validation more times than its fix-up limit allows, orch stops creating fix-up tasks and puts the phase in your inbox. You can re-run the phase validation, or accept the phase as it is so later phases can continue. See [Validate whole phases](validate-phases.md).
+When a phase fails validation more times than its fix-up limit allows, orch stops creating fix-up tasks and puts the phase in your inbox with the latest failure. Tasks in later phases wait until you act:
+
+- Select **Re-run validation** to validate the phase again, for example after you fixed the base branch by hand.
+- Select **Accept phase** to take the phase as it is, so later phases can continue.
+
+See [Validate whole phases](validate-phases.md).

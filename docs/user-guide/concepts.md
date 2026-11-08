@@ -61,7 +61,7 @@ orch launches an AI coding agent program, such as Claude Code or Gemini CLI, for
 | Planner | Reads the whole spec once per feature. Adds acceptance criteria, checks dependencies, sets merge policies, and asks you about anything ambiguous. |
 | Worker | Writes the code for one task in that task's working copy and commits it. |
 | Validator | Checks one task's changes against its acceptance criteria and runs the tests itself. It never sees the worker's reasoning. |
-| Phase validator (**Planned**) | Checks a whole phase on the base branch after all of its tasks merge. |
+| Phase validator | Checks a whole phase on the base branch after all of its tasks merge. |
 
 You choose the agent program and model for each role. For example, you can use Claude Code for workers and Gemini CLI for validators, so the checker shares fewer blind spots with the author. See [Choose agents and models](how-to/configure-agents.md).
 
@@ -98,7 +98,7 @@ The **Inbox** lists everything that needs you:
 - A question from an agent
 - A failed task
 - A task that waits for review or merge, including merge failures and pull request problems
-- A phase that failed validation too many times (**Planned**)
+- A phase that failed validation too many times
 
 Each inbox item has its actions right on it. When a new item appears, orch also sends a push notification if you set one up. When a worker asks a question, only that task pauses. Answering doesn't use up an attempt, and the worker continues in its own session.
 
