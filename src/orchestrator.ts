@@ -12,7 +12,7 @@ import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
 import { notify, type NotifyOptions } from "./notify.js";
 import { readSpecDir, parseTasksMd, markTaskDoneInFile, type ImportedTask } from "./speckit.js";
 import type { Decision, Phase, Project, Question, Run, Task, TaskStatus } from "./types.js";
-import { phaseList, phaseName, phaseLabel, phasesToValidate, planFixup, type PhaseVerdict } from "./core/phases.js";
+import { newPhaseRows, phaseName, phaseLabel, phasesToValidate, planFixup, type PhaseVerdict } from "./core/phases.js";
 import { formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
 import { selectReady } from "./core/readiness.js";
 import { ownedOverlap, outOfScope } from "./core/ownership.js";
@@ -955,12 +955,23 @@ export class Orchestrator extends EventEmitter {
     return undefined;
   }
 
-  /** The run's phase rows, created `pending` from its tasks' phases when missing. */
-  private ensurePhases(run: Run, tasks: Task[]): Phase[] {
+  /**
+   * The run's phase rows, created from its tasks' phases when missing (`newPhaseRows`). A phase already
+   * finished at that point (tasks ticked before the run, or a run in flight across the upgrade) starts
+   * `passed` without validation, recorded as a decision when validation is on.
+   */
+  private ensurePhases(run: Run, tasks: Task[], enabled: boolean): Phase[] {
     const have = this.store.listPhases(run.id);
-    const wanted = phaseList(tasks.map((t) => ({ key: t.key, phase: t.phase, status: t.status, orderIdx: t.order_idx })));
-    if (wanted.every((w) => have.some((p) => p.name === w.name))) return have;
-    for (const w of wanted) this.store.upsertPhase(run.id, w.name, w.idx);
+    const facts = tasks.map((t) => ({ key: t.key, phase: t.phase, status: t.status, orderIdx: t.order_idx }));
+    const rows = newPhaseRows(facts, have.map((p) => p.name));
+    if (!rows.length) return have;
+    for (const r of rows) {
+      const p = this.store.upsertPhase(run.id, r.name, r.idx);
+      if (r.status !== "passed") continue;
+      this.store.updatePhase(p.id, { status: "passed" });
+      if (enabled) this.decide(run, null, "orchestrator", `Phase "${phaseLabel(r.name)}" passed without validation: ${r.reason}`, null);
+    }
+    this.changed("phases", { runId: run.id });
     return this.store.listPhases(run.id);
   }
 
@@ -971,7 +982,7 @@ export class Orchestrator extends EventEmitter {
    */
   private checkPhases(run: Run, ctx: ProjectContext, runIds: string[]) {
     const tasks = this.store.listTasks(run.id);
-    const phases = this.ensurePhases(run, tasks);
+    const phases = this.ensurePhases(run, tasks, ctx.phase.enabled);
     if (!ctx.phase.enabled) {
       const open = phases.filter((p) => p.status === "pending");
       for (const p of open) this.store.updatePhase(p.id, { status: "passed" });

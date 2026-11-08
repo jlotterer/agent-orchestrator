@@ -299,7 +299,8 @@ When every task of a phase is done or skipped (at least one done), orch validate
 on the base branch: a detached worktree at `origin/<base>` (or `<base>`), `git.setupCommand`, then
 `validation.phase.command` (else `validation.command`), then the phase validator agent. Phases are
 validated one at a time, in order, and each validation takes one of the `scheduler.maxAgents` slots.
-Tasks of later phases wait until the phase has passed. A PASS is a decision; a FAIL creates a fix-up
+Tasks of later phases wait until the phase has passed. A phase already finished when the run starts (all
+ticked `[x]`, or finished by a run that was in flight across the upgrade) passes without a check. A PASS is a decision; a FAIL creates a fix-up
 task `FIX-<phase>.<round>` (description = the failure, acceptance = the unmet criteria plus "phase
 validation passes", merge auto) that every later unfinished task now depends on, also recorded as a
 decision. Fix-up tasks run like any task, are never ticked in `tasks.md`, and carry a **fix-up** badge.
@@ -447,7 +448,9 @@ question twice, and editing acceptance criteria before approval. Run a subset by
 `scripts/e2e-phase.mjs` checks phase validation: phase 1 fails (`PHASE_TRAP` in the spec), `FIX-1.1`
 appears with the failure while phase 2 waits, the fix-up merges, phase 1 passes on re-validation and
 phase 2 runs; `tasks.md` never gets a `FIX-` key. With `maxFixups: 0` the failure is a phase inbox
-item: Re-run validates again, Accept lets phase 2 proceed. Run one scenario with `node scripts/e2e-phase.mjs b`.
+item: Re-run validates again, Accept lets phase 2 proceed. A phase ticked before the run, and a run in flight
+across the upgrade (`kill -9`, phase rows deleted, restart), pass their finished phase without a check.
+Run one scenario with `node scripts/e2e-phase.mjs b`.
 
 `scripts/e2e-multi.mjs` runs one daemon over two registered repos with `scheduler.maxAgents: 1`: never
 more than one active task, the second project's task starting before the first project's third,

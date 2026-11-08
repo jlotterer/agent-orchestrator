@@ -6,12 +6,18 @@
  *       FIX-1.1 done → re-validation PASS → phase 2 runs → run done; tasks.md never gets a FIX- key
  *   (b) maxFixups 0: the failure becomes a phase inbox item; Re-run validates again (still failing),
  *       Accept lets phase 2 proceed
+ *   (c) phase 1 ticked [x] in tasks.md before the run: it passes without validation (PHASE_TRAP would
+ *       fail it), phase 2 is validated
+ *   (d) a run in flight across the upgrade: phase 1 finished and phase 2 mid-task with phase validation
+ *       off, then kill -9, phase rows deleted (as before TASK-15), validation on, restart: phase 1 passes
+ *       without validation, phase 2 finishes and is validated
  *
- *   node scripts/e2e-phase.mjs          # both scenarios
+ *   node scripts/e2e-phase.mjs          # all scenarios
  *   node scripts/e2e-phase.mjs b        # only (b)
  */
 import fs from "node:fs";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, FAKE_AGENT } from "./lib/e2e.mjs";
 
 const BASE_PORT = 4861;
@@ -22,16 +28,16 @@ const P1 = "Phase 1: Core", P2 = "Phase 2: Polish";
 
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
-async function setup(port, phase = {}) {
+async function setup(port, phase = {}, { tasks = TASKS } = {}) {
   const { repo, home, sh } = makeRepo({
     prefix: "orch-e2e-phase-",
     files: {
       "README.md": "# demo\n", "check.sh": CHECK_SH,
       [`${SPEC}/spec.md`]: "# Feature Specification: Phases\n\nFiles in impl/ must work together.\n\nPHASE_TRAP: the first phase misses an integration step.\n",
-      [`${SPEC}/tasks.md`]: TASKS,
+      [`${SPEC}/tasks.md`]: tasks,
     },
   });
-  writeConfig(repo, {
+  const config = (ph) => ({
     port, publicUrl: `http://localhost:${port}`,
     agents: {
       timeoutMinutes: 2,
@@ -39,13 +45,24 @@ async function setup(port, phase = {}) {
       roles: { planner: { adapter: "claude", model: "" }, worker: { adapter: "claude", model: "" }, validator: { adapter: "claude", model: "" } },
     },
     scheduler: { maxParallel: 2, tickSeconds: 1, maxAttempts: 2, resumeOnRetry: true },
-    validation: { command: "sh check.sh", agent: true, phase: { enabled: true, command: "", maxFixups: 2, ...phase } },
+    validation: { command: "sh check.sh", agent: true, phase: { enabled: true, command: "", maxFixups: 2, ...ph } },
     git: { pr: false, mergePolicy: "auto", squash: true, copyFiles: [], setupCommand: "" },
   });
-  await startDaemon({ cwd: repo, port, env: { ORCH_HOME: home }, name: `d${port}` });
+  writeConfig(repo, config(phase));
+  let daemon = await startDaemon({ cwd: repo, port, env: { ORCH_HOME: home }, name: `d${port}` });
   const api = apiFor(port);
   const h = {
-    repo, sh, api,
+    repo, sh, api, home,
+    /** kill -9 the daemon, apply `between()` while it is down, rewrite the settings with `phase`, start it again. */
+    restart: async (between, ph) => {
+      daemon.kill("SIGKILL");
+      await new Promise((r) => daemon.once("exit", r));
+      between();
+      // The first start split the legacy file: server keys now live in server.json, so write project keys only.
+      const { agents, port: _p, publicUrl, ...project } = config(ph);
+      writeConfig(repo, project);
+      daemon = await startDaemon({ cwd: repo, port, env: { ORCH_HOME: home }, name: `d${port}'` });
+    },
     state: () => api("GET", "/api/state"),
     raw: async (p) => { const r = await fetch(`http://127.0.0.1:${port}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }); return { status: r.status, body: await r.json() }; },
     planAndStart: async () => {
@@ -65,6 +82,8 @@ async function setup(port, phase = {}) {
   };
   return h;
 }
+/** Phase validator verdict events of the run for phase `name`. */
+const phaseVerdicts = async (h, runId, name) => (await h.api("GET", `/api/runs/${runId}/events?limit=5000`)).filter((e) => e.kind === "verdict" && e.data.role === "phase_validator" && e.data.phase === name);
 const phaseOf = (s, name) => s.phases.find((p) => p.name === name);
 const task = (s, key) => s.tasks.find((t) => t.key === key);
 const decided = (s, prefix) => s.decisions.filter((d) => d.text.startsWith(prefix));
@@ -152,6 +171,41 @@ const scenarios = {
     assert(decided(s, `Phase "${P2}" passed validation`).length === 1, "phase 2 validated");
     assert(!s.inbox.some((i) => i.type === "phase"), "no phase item left");
     console.log("  Re-run failed again; Accept let phase 2 run");
+  },
+
+  async c(port) {
+    const tasks = TASKS.replace("- [ ] T001", "- [x] T001").replace("- [ ] T005", "- [x] T005"); // phase 1 finished before the run
+    const h = await setup(port, {}, { tasks });
+    const run = await h.planAndStart();
+    const s = await h.waitState((s) => s.run.status === "done", "run done");
+    assert(s.phases.every((p) => p.status === "passed"), `all phases passed: ${JSON.stringify(s.phases)}`);
+    const auto = decided(s, `Phase "${P1}" passed without validation: all its tasks were finished before`);
+    assert(auto.length === 1 && auto[0].actor === "orchestrator", "orchestrator decision: phase 1 passed without validation");
+    assert(!decided(s, `Phase "${P1}" failed validation`).length, "phase 1 was not validated (PHASE_TRAP would have failed it)");
+    assert(!(await phaseVerdicts(h, run.id, P1)).length, "no phase validator ran for phase 1");
+    assert((await phaseVerdicts(h, run.id, P2)).length === 1 && decided(s, `Phase "${P2}" passed validation`).length === 1, "phase 2 validated once");
+    assert(!s.tasks.some((t) => t.synthetic), "no fix-up task");
+    console.log("  pre-ticked phase 1 passed without validation; phase 2 validated");
+  },
+
+  async d(port) {
+    // Before the upgrade: no phase validation. T006 sleeps so the run is in flight when the daemon dies.
+    const tasks = TASKS.replace("T006 Create impl/T006.txt", "T006 Create impl/T006.txt SLEEP_LONG");
+    const h = await setup(port, { enabled: false }, { tasks });
+    const run = await h.planAndStart();
+    await h.waitState((s) => task(s, "T006").status === "running" && task(s, "T001").status === "done" && task(s, "T005").status === "done", "phase 1 done, T006 running");
+    await h.restart(() => {
+      const db = new Database(path.join(h.home, "orch.db"));
+      db.prepare("DELETE FROM phases WHERE run_id = ?").run(run.id); // the run as an older orch left it
+      db.close();
+    }, { enabled: true });
+    const s = await h.waitState((s) => s.run.status === "done", "run done after the upgrade", 120_000);
+    assert(task(s, "T006").status === "done", "T006 finished after the restart");
+    assert(decided(s, `Phase "${P1}" passed without validation: all its tasks were finished before`).length === 1, "phase 1 passed without validation");
+    assert(!(await phaseVerdicts(h, run.id, P1)).length, "phase 1 was not validated again");
+    assert(decided(s, `Phase "${P2}" passed validation`).length === 1, "phase 2 (finished after the upgrade) was validated");
+    assert(!s.tasks.some((t) => t.synthetic), "no fix-up task");
+    console.log("  in-flight run: phase 1 not re-validated, phase 2 validated after the restart");
   },
 };
 

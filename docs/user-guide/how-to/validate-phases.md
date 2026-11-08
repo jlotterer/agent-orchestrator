@@ -15,6 +15,8 @@ Phases are validated one at a time, in order. A phase validation counts as one a
 
 If every task in a phase was skipped, there's nothing to validate: the phase passes, and orch records that as a decision.
 
+A phase that was already finished when the run started also passes without a check, for example when all of its tasks were ticked `- [x]` in `tasks.md`, or when a run that was in progress before you upgraded orch had already finished it. orch records that as a decision too. A phase that was only partly finished is validated as usual once its remaining tasks are done.
+
 ## What happens when a phase fails
 
 If the phase fails and fix-up rounds remain (`validation.phase.maxFixups`, 2 by default), orch:

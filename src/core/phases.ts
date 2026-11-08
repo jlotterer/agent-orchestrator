@@ -52,6 +52,33 @@ export function phaseList(tasks: PhaseTaskFact[]): { name: string; idx: number }
   return names.map((name, i) => ({ name, idx: i + 1 }));
 }
 
+export interface NewPhaseRow {
+  name: string;
+  idx: number;
+  /** `passed`: every task of the phase was already finished when orch started tracking the run's phases. */
+  status: "pending" | "passed";
+  reason: string | null;
+}
+
+/**
+ * Phase rows to create for the run's phases that have none yet (`existing` = names that have a row).
+ * Rows are created at the run's first phase check, before any task of the run starts. A phase whose tasks
+ * are all done or skipped at that point was finished before this run (ticked `[x]` in tasks.md), or before
+ * orch validated phases at all (a run in flight across the upgrade). There is no new work to judge, so it
+ * starts `passed` instead of being validated again.
+ */
+export function newPhaseRows(tasks: PhaseTaskFact[], existing: string[]): NewPhaseRow[] {
+  return phaseList(tasks)
+    .filter((p) => !existing.includes(p.name))
+    .map((p) => {
+      const own = tasks.filter((t) => phaseName(t.phase) === p.name);
+      const finished = own.length > 0 && own.every((t) => FINISHED.has(t.status));
+      return finished
+        ? { ...p, status: "passed", reason: "all its tasks were finished before phase validation started for this run" }
+        : { ...p, status: "pending", reason: null };
+    });
+}
+
 /**
  * Phases to act on now, in order. Phases are validated one at a time in `idx` order: walking the rows,
  * a `passed` phase is skipped over, and the first phase that is not `pending` (validating, failed,
