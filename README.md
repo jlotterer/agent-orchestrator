@@ -7,6 +7,9 @@ in its own git worktree with a **fresh-context worker**, checks the result with 
 validator**, opens the PR, merges it, and moves on. Every decision an agent makes is logged.
 Anything that needs *you* lands in an inbox and pings your phone.
 
+**User manual:** [docs/user-guide/](docs/user-guide/index.md) covers installation, concepts, how-to guides and
+reference for every feature, including planned ones.
+
 ```
 spec.md / plan.md / tasks.md  ──►  orch plan  ──►  [you approve]  ──►  orch run
                                                                         │
