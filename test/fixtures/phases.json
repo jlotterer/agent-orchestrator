@@ -771,5 +771,299 @@
         ]
       }
     }
+  ],
+  "newRows": [
+    {
+      "name": "new run, nothing done yet: every row starts pending",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "pending",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "pending",
+          "orderIdx": 1
+        }
+      ],
+      "existing": [],
+      "expected": [
+        {
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "reason": null
+        },
+        {
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "name": "phase ticked [x] in tasks.md before the run starts passed",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 1
+        },
+        {
+          "key": "T003",
+          "phase": "Phase 2: Core",
+          "status": "pending",
+          "orderIdx": 2
+        }
+      ],
+      "existing": [],
+      "expected": [
+        {
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "passed",
+          "reason": "all its tasks were finished before phase validation started for this run"
+        },
+        {
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "name": "partly ticked phase starts pending (new work will be validated)",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 1: Setup",
+          "status": "pending",
+          "orderIdx": 1
+        }
+      ],
+      "existing": [],
+      "expected": [
+        {
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "pending",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "name": "done and skipped tasks count as finished",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 1: Setup",
+          "status": "skipped",
+          "orderIdx": 1
+        },
+        {
+          "key": "T003",
+          "phase": "Phase 2: Core",
+          "status": "pending",
+          "orderIdx": 2
+        }
+      ],
+      "existing": [],
+      "expected": [
+        {
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "passed",
+          "reason": "all its tasks were finished before phase validation started for this run"
+        },
+        {
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "name": "run in flight across the upgrade: finished phase passed, phase with a running task pending",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "running",
+          "orderIdx": 1
+        },
+        {
+          "key": "T003",
+          "phase": "Phase 2: Core",
+          "status": "done",
+          "orderIdx": 2
+        }
+      ],
+      "existing": [],
+      "expected": [
+        {
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "passed",
+          "reason": "all its tasks were finished before phase validation started for this run"
+        },
+        {
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "name": "every phase finished before tracking: all passed",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "done",
+          "orderIdx": 1
+        }
+      ],
+      "existing": [],
+      "expected": [
+        {
+          "name": "Phase 1: Setup",
+          "idx": 1,
+          "status": "passed",
+          "reason": "all its tasks were finished before phase validation started for this run"
+        },
+        {
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "passed",
+          "reason": "all its tasks were finished before phase validation started for this run"
+        }
+      ]
+    },
+    {
+      "name": "phases that already have a row are left alone",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "FIX-1.1",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 1
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "pending",
+          "orderIdx": 2
+        }
+      ],
+      "existing": [
+        "Phase 1: Setup",
+        "Phase 2: Core"
+      ],
+      "expected": []
+    },
+    {
+      "name": "only the missing row is created, keeping its plan-order idx",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": "Phase 1: Setup",
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 2: Core",
+          "status": "pending",
+          "orderIdx": 1
+        }
+      ],
+      "existing": [
+        "Phase 1: Setup"
+      ],
+      "expected": [
+        {
+          "name": "Phase 2: Core",
+          "idx": 2,
+          "status": "pending",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "name": "tasks before any heading: the row named \"\"",
+      "tasks": [
+        {
+          "key": "T001",
+          "phase": null,
+          "status": "done",
+          "orderIdx": 0
+        },
+        {
+          "key": "T002",
+          "phase": "Phase 1: Setup",
+          "status": "pending",
+          "orderIdx": 1
+        }
+      ],
+      "existing": [],
+      "expected": [
+        {
+          "name": "",
+          "idx": 1,
+          "status": "passed",
+          "reason": "all its tasks were finished before phase validation started for this run"
+        },
+        {
+          "name": "Phase 1: Setup",
+          "idx": 2,
+          "status": "pending",
+          "reason": null
+        }
+      ]
+    }
   ]
 }

@@ -14,7 +14,7 @@ import { selectReady } from "../../dist/core/readiness.js";
 import { nextTaskState } from "../../dist/core/transitions.js";
 import { decidePrAction } from "../../dist/core/prpoll.js";
 import { ownedOverlap, outOfScope } from "../../dist/core/ownership.js";
-import { phasesToValidate, planFixup, phaseList } from "../../dist/core/phases.js";
+import { phasesToValidate, planFixup, phaseList, newPhaseRows } from "../../dist/core/phases.js";
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures");
 const load = (f) => JSON.parse(fs.readFileSync(path.join(FIXTURES, f), "utf8"));
@@ -122,13 +122,15 @@ describe("ownership fixtures (ownedOverlap, outOfScope)", () => {
   });
 });
 
-describe("phases fixtures (phasesToValidate, planFixup)", () => {
-  const { toValidate, fixup } = load("phases.json");
+describe("phases fixtures (phasesToValidate, planFixup, newPhaseRows)", () => {
+  const { toValidate, fixup, newRows } = load("phases.json");
   uniqueNames(toValidate, "phases.json toValidate");
   uniqueNames(fixup, "phases.json fixup");
   test("there are at least 8 cases", () => assert.ok(toValidate.length + fixup.length >= 8));
   for (const c of toValidate) test(`toValidate: ${c.name}`, opts(c), () => assert.deepStrictEqual(phasesToValidate(c.tasks, c.phases), c.expected));
   for (const c of fixup) test(`fixup: ${c.name}`, opts(c), () => assert.deepStrictEqual(planFixup(c.phase, c.round, c.verdict, c.laterTasks), c.expected));
+  uniqueNames(newRows, "phases.json newRows");
+  for (const c of newRows) test(`newRows: ${c.name}`, opts(c), () => assert.deepStrictEqual(newPhaseRows(c.tasks, c.existing), c.expected));
   test("phaseList numbers phases from 1 in plan order; tasks before any heading are the phase named ''", () => {
     const tasks = [{ key: "T003", phase: "B", status: "pending", orderIdx: 2 }, { key: "T001", phase: null, status: "done", orderIdx: 0 }, { key: "T002", phase: "A", status: "done", orderIdx: 1 }, { key: "FIX-2.1", phase: "A", status: "pending", orderIdx: 3 }];
     assert.deepStrictEqual(phaseList(tasks), [{ name: "", idx: 1 }, { name: "A", idx: 2 }, { name: "B", idx: 3 }]);
