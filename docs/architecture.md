@@ -91,7 +91,9 @@ Single-threaded JS: DB writes are synchronous (better-sqlite3), so no row-level 
 
 **Project context** (`src/orchestrator.ts`, `ProjectContext`): per project id, `{project, cfg, git, warnings}`, where `cfg` = `toLegacyConfig(server, loadProjectConfig(repo, server).config, repo, {projectId, home})` (the effective settings as a `Config`: worktrees under `worktreesDir(project)`, roles resolved per project) and `git` = `new Git(repo, baseBranch, ghCommand)`. Rebuilt by `plan()` and `start()` (REQ-PROJ-06), built lazily on first use otherwise (e.g. a run that was running at daemon restart), never rebuilt mid-run. Each project has its own merge lock. A context fails to build when the repo directory is missing or the settings are invalid; the error names the project, `plan`/`start` refuse with it, the tick skips that project (stderr once per distinct error), and the snapshot's `config.error` shows it. Settings warnings are logged as `info` events on the run when the context is rebuilt. All run-scoped code takes the context from `run.project_id`.
 
-**Legacy routes** (until TASK-10's project API): they act on the **default project** = the first non-archived project by name, then id. `POST /api/plan` picks `body.project`, else the project whose repo contains `specDir` (deepest match), else the default project.
+**Legacy routes** (kept beside the project API of §15.1 until the dashboard moves to it in TASK-11): they act on the **default project** = the first non-archived project by name, then id. `POST /api/plan` picks `body.project`, else the project whose repo contains `specDir` (deepest match), else the default project. The CLI uses only project-scoped routes (§15.2).
+
+**Project API** (`src/orchestrator.ts`, built: TASK-10): `snapshot(projectId?, runId?)` (a `runId` of another project → 404; no project → the run's project, else the default project), `listProjectSummaries({archived?})`, `globalInbox()`, `addProject(path, {name?})` (wraps `registerProject`), `archiveProject(id)` (wraps the registry's, 404 for an unknown id). All four read tasks, questions and decisions per run, never the events table (REQ-NFR-06). The **shown run** of a project, used by its snapshot, its `inboxCount` and the global inbox, is its current run, else its newest. `plan()` refuses an archived project. Every SSE `change` payload carries `projectId` (null only when the change concerns no run of a project).
 
 ### 5.1 ORCH_HOME layout
 ```
@@ -121,6 +123,7 @@ Missing repo on disk → project `error` field set at load; views show it; plan/
 
 ### 5.4 CLI project resolution
 `--project <id>` > `ORCH_PROJECT` env > the registered project whose `repo_path` contains `cwd` (deepest match) > the only non-archived project > error exit 2 listing projects.
+_(→ code: `resolveProject` in `src/cli.ts`; built: TASK-10)_ The CLI reads the list from `GET /api/projects?archived=1` and applies `resolveProjectForCwd` locally. An explicit id (flag or env) may name an archived project (so its history can be read) but must exist, else exit 2 listing the projects. `orch plan <specDir>` tries the spec dir before the cwd. No registered project → exit 2. `answer`, `decide` and `ask` need no project.
 
 ### 5.5 Legacy upgrade
 `[ASSUMED]` Applies to single-repo installs.
@@ -293,7 +296,7 @@ All roles end with one fenced ```json block; `extractJson` takes the last parsea
 `orch decide "<text>" --why "<r>"` → `POST /api/decide`; `orch ask "<q>" --options "A,B"` → `POST /api/ask` (requires `ORCH_TASK_ID`), prints "STOP working now…".
 
 ## 14. Inbox, Decisions & Notifications
-- Inbox is **derived** on read, never stored: per project/run: `approve_plan` (run `plan_pending`), `question` (unanswered; `task_id` null = plan question), `failed` tasks, `merge` (`pr_open` tasks, with `pr_url`, `feedback`, `ci_status`, `fix_rounds`), `phase` (`needs_human` phase rows) [TASK-15]. Global inbox = union over non-archived projects' current runs, each item with `project_id`, `project_name` [TASK-10].
+- Inbox is **derived** on read, never stored: per project/run: `approve_plan` (run `plan_pending`), `question` (unanswered; `task_id` null = plan question), `failed` tasks, `merge` (`pr_open` tasks, with `pr_url`, `feedback`, `ci_status`, `fix_rounds`), `phase` (`needs_human` phase rows) [TASK-15]. Items of a run carry `run_id`. Global inbox = union over non-archived projects' shown runs (current, else newest), each item with `project_id`, `project_name` [built: TASK-10].
 - Decisions: append-only rows (actor ∈ planner|worker|validator|phase_validator|orchestrator|human).
 - Notifications (`src/notify.ts`): ntfy POST with Title, Priority, Click (task PR url or `publicUrl`), Tags. Title prefix `[<project name>] ` (registry name; built: TASK-09). Failures logged to stderr, never thrown.
 
@@ -306,13 +309,13 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 | :--- | :--- | :--- | :--- |
 | GET `/api/health` | — | `{ok, version, uptimeSec}` (no auth) | built: TASK-08 |
 | POST `/api/login` | `{token}` | right token: sets cookie, `{ok, auth:true}`; wrong: 401; auth off: `{ok, auth:false}` (no auth) | built: TASK-08 |
-| GET `/api/projects` | `?archived=1` | `[{id, name, repo, archived, error, run:{id,status}\|null, inboxCount}]` | TASK-10 |
-| POST `/api/projects` | `{path, name?}` | project (+ `configCreated` path) | TASK-10 |
-| DELETE `/api/projects/:id` | — | `{ok}` (archive) | TASK-10 |
-| GET `/api/projects/:id/state` | `?run=<id>` | snapshot `{project, run, tasks, decisions, questions, inbox, runs, config, costs}` | TASK-10 |
-| GET `/api/inbox` | — | global inbox items | TASK-10 |
-| POST `/api/projects/:id/plan` | `{specDir, llm, dryRun?}` | run, or `{tasks}` for dry run | TASK-10/12 |
-| GET `/api/state`, GET `/api/runs/:id` | `/api/state?project=<id>` | legacy snapshot `{project:{id,name,repo}, run, tasks, decisions, questions, inbox, runs, config}`: the run by id, else the project's current (or newest) run; `runs` and `config` are that project's; no project → default project | built (`project`, `?project=`: TASK-09) |
+| GET `/api/projects` | `?archived=1` (include archived) | `[{id, name, repo, archived, error, run:{id,status,title}\|null, inboxCount}]`; `run` = shown run (§5), `error` = missing repo or invalid settings, else null; `inboxCount` 0 when archived | built: TASK-10 |
+| POST `/api/projects` | `{path, name?}` | project row `{id, name, repo_path, archived, …}` + `configCreated` (starter settings path, when written) + `unarchived: true` (when an archived project was restored); 400 with the registry's message (§5.3) | built: TASK-10 |
+| DELETE `/api/projects/:id` | — | `{ok}` (archive); 400 naming the unfinished run; 404 unknown id | built: TASK-10 |
+| GET `/api/projects/:id/state` | `?run=<id>` | snapshot `{project:{id,name,repo,archived}, run, tasks, decisions, questions, inbox, inboxCount, runs, config}` of that run (404 if not in the project), else of the shown run; `costs` added by TASK-17 | built: TASK-10 |
+| GET `/api/inbox` | — | global inbox items (§14), each with `project_id`, `project_name`, `run_id` | built: TASK-10 |
+| POST `/api/projects/:id/plan` | `{specDir, llm, dryRun?}` | run; 400 for an archived project or an unfinished run; `dryRun` → `{tasks}` (until TASK-13: 400) | built: TASK-10 (dry run: TASK-13) |
+| GET `/api/state`, GET `/api/runs/:id` | `/api/state?project=<id>` | legacy snapshot, same shape as the project state: the run by id (404 if unknown), else the project's shown run; `runs` and `config` are that project's; no project → default project | built (`project`, `?project=`: TASK-09) |
 | POST `/api/plan`, POST `/api/{start,pause,stop}` | plan: `{specDir, llm, project?}` | legacy: plan resolves the project per §5; start/pause/stop act on the default project's current run | built |
 | POST `/api/runs/:id/{approve,start,pause,stop}` | — | `{ok}` | built |
 | POST `/api/tasks/:id/{retry,skip,stop,merge,mark-merged,edit}` | edit: patch | `{ok}` | built |
@@ -322,10 +325,10 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 | POST `/api/questions/:id/answer` | `{answer}` | `{ok}` | built |
 | POST `/api/ask`, `/api/decide` | agent payloads | question / decision | built |
 | POST `/api/phases/:id/{revalidate,accept}` | — | `{ok}` | TASK-15 |
-| GET `/api/events/stream` | — | SSE: `event` (event rows), `change` (`{what, projectId?, runId?, …}`); `: ping` every 25 s | built |
+| GET `/api/events/stream` | — | SSE: `event` (event rows), `change` (`{what, projectId, runId?, …}`; `what` ∈ run, tasks, questions, decision, projects); `: ping` every 25 s | built |
 
 ### 15.2 CLI
-`orch serve | project add <path> [--name n] | project list | project remove <id> | plan <specDir> [--no-llm] [--dry-run] | approve [runId] | run | pause | stop | status | answer <qid> <text> | retry|skip|merge|stop-task <key> | archive-events | decide | ask`. Global `--project <id>` (§5.4). Exit codes: 0 ok, 1 error (`error: <msg>` on stderr), 2 usage. Token from `ORCH_TOKEN` or `$ORCH_HOME/server.json` when readable. Base URL from `ORCH_URL` or server config host/port.
+`orch serve | project add <path> [--name n] | project list [--archived] | project remove <id> | plan <specDir> [--no-llm] [--dry-run] | approve [runId] | run | pause | stop | status | answer <qid> <text> | retry|skip|merge|stop-task <key> | archive-events | decide | ask`. Global `--project <id>` (§5.4). Exit codes: 0 ok, 1 error (`error: <msg>` on stderr, including API errors and an unreachable daemon), 2 usage (`UsageError`: missing arguments, unknown command or subcommand, flag without a value, project not determinable; the message is on stderr after `error:`). `orch`, `orch help` and `--help` print the help and exit 0. Project commands use the project routes: `status`, `approve`, `run|pause|stop` and the task actions read `GET /api/projects/:id/state` and act on its run or tasks by id; `plan` posts `/api/projects/:id/plan`. Token from `ORCH_TOKEN` or `$ORCH_HOME/server.json` when readable. Base URL from `ORCH_URL`, else `http://127.0.0.1:<port>` from the server settings. [built: TASK-10, except `--dry-run` (TASK-13) and `archive-events` (TASK-12)]
 
 ### 15.3 Dashboard
 Single `dashboard/index.html`. Regions: top bar (project switcher with status dot + inbox count, Add project, run selector, run controls, cost tile), Inbox (global, project tag), Board (lanes: Pending, Running, Validating, Needs input, Waiting on CI, Review / merge, Failed, Done), Plan (phases, criteria, deps incl. implicit overlap edges, policy, mode, owned files; edit dialog), Decisions, Activity, Task drawer (meta, criteria, summary, feedback, actions; Send back textarea for `pr_open|pr_checks`; Diff section loaded on expand: file list with status and +/− counts, collapsible unified diff per file with added/removed lines coloured, binary note, truncation notice; live log). The drawer keeps stable regions so a refresh does not clear a draft or collapse open files. The inbox merge card has **Send back…** (dialog) [built: TASK-06]. SSE reconnect: on error close, retry with backoff 1 s doubling to 30 s, on open do a full refresh [TASK-11]. On any 401 show a token prompt that POSTs `/api/login`, then refresh and reconnect SSE [built: TASK-08].

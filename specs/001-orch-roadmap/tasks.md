@@ -22,7 +22,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T009 Multi-project orchestration and global agent cap. Brief: docs/tasks/TASK-09.md.
 
 ## Phase 6: Wave 6
-- [ ] T010 Projects API, global inbox and CLI scoping. Brief: docs/tasks/TASK-10.md.
+- [x] T010 Projects API, global inbox and CLI scoping. Brief: docs/tasks/TASK-10.md.
 
 ## Phase 7: Wave 7
 - [ ] T011 [P] Dashboard: projects, global inbox, reconnect. Brief: docs/tasks/TASK-11.md.

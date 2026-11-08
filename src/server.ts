@@ -21,9 +21,27 @@ export function startServer(orch: Orchestrator) {
     routes.push({ method, pattern, keys, handler });
   };
 
+  const query = (req: http.IncomingMessage) => new URL(req.url!, "http://x").searchParams;
+
+  // ---- projects (§15.1) ----
+  route("GET", "/api/projects", (req) => orch.listProjectSummaries({ archived: ["1", "true"].includes(query(req).get("archived") ?? "") }));
+  route("POST", "/api/projects", async (_r, _s, _p, b) => {
+    if (typeof b.path !== "string" || !b.path.trim()) throw new Error("path is required");
+    const r = await orch.addProject(b.path, { name: typeof b.name === "string" ? b.name : undefined });
+    return { ...r.project, ...(r.configCreated ? { configCreated: r.configCreated } : {}), ...(r.unarchived ? { unarchived: true } : {}) };
+  });
+  route("DELETE", "/api/projects/:id", (_r, _s, p) => { orch.archiveProject(p.id); return { ok: true }; });
+  route("GET", "/api/projects/:id/state", (req, _s, p) => orch.snapshot(p.id, query(req).get("run") ?? undefined));
+  route("POST", "/api/projects/:id/plan", async (_r, _s, p, b) => {
+    if (b.dryRun) throw new Error("dryRun is not supported yet"); // TASK-13
+    if (typeof b.specDir !== "string" || !b.specDir) throw new Error("specDir is required");
+    return orch.plan(p.id, b.specDir, { llm: b.llm !== false });
+  });
+  route("GET", "/api/inbox", () => orch.globalInbox());
+
   // ---- read ----
-  route("GET", "/api/state", (req) => orch.snapshot(undefined, new URL(req.url!, "http://x").searchParams.get("project") ?? undefined));
-  route("GET", "/api/runs/:id", (_r, _s, p) => orch.snapshot(p.id));
+  route("GET", "/api/state", (req) => orch.snapshot(query(req).get("project") ?? undefined));
+  route("GET", "/api/runs/:id", (_r, _s, p) => orch.snapshot(undefined, p.id));
   route("GET", "/api/tasks/:id/events", (req, _s, p) => {
     const u = new URL(req.url!, "http://x");
     return orch.store.listEvents({ taskId: p.id, afterId: Number(u.searchParams.get("after") ?? 0) || undefined, limit: Number(u.searchParams.get("limit") ?? 400) });

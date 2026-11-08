@@ -158,6 +158,12 @@ docker compose exec orch orch approve && docker compose exec orch orch run
 
 Or alias it: `alias orch='docker compose -f ~/orch/docker-compose.yml exec orch orch'`.
 
+To add another repo, clone it under `work/repos/` and register it by its path inside the container:
+`docker compose exec orch orch project add /work/repos/otherapp`. `docker compose exec` starts in
+`/work`, which is not inside any repo, so once two projects are registered, name the project:
+`orch status --project otherapp`, or pass `-e ORCH_PROJECT=otherapp` to `exec`. `orch plan` still
+finds the project from the spec folder's path.
+
 ## 5. Upgrading
 
 ```bash

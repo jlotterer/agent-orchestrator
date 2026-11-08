@@ -49,10 +49,10 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-PROJ-01 | The owner MUST be able to register a project by giving the path of a git repository on the server, from both the CLI and the dashboard. A path that is not a git repository MUST be rejected with a message saying so. | built (registry, TASK-07) / new (CLI + dashboard, TASK-10) |
-| REQ-PROJ-02 | When a registered project has no project settings file, orch MUST create a starter settings file in the repo and say where it is. | built (registry returns the path, TASK-07; shown by CLI/dashboard in TASK-10) |
-| REQ-PROJ-03 | The owner MUST be able to see every registered project with its name, current run status, and number of open inbox items, and switch the dashboard between projects. | new |
-| REQ-PROJ-04 | The owner MUST be able to remove (archive) a project. Archiving MUST NOT delete the repository. The project's history MUST remain stored, and it MUST be possible to re-register the project later. Archiving a project with an active run MUST be refused. | built (registry, TASK-07) / new (CLI + dashboard, TASK-10) |
+| REQ-PROJ-01 | The owner MUST be able to register a project by giving the path of a git repository on the server, from both the CLI and the dashboard. A path that is not a git repository MUST be rejected with a message saying so. | built (registry, TASK-07; API + CLI `orch project add`, TASK-10) / new (dashboard, TASK-11) |
+| REQ-PROJ-02 | When a registered project has no project settings file, orch MUST create a starter settings file in the repo and say where it is. | built (registry returns the path, TASK-07; API + CLI print it, TASK-10) / new (shown by the dashboard, TASK-11) |
+| REQ-PROJ-03 | The owner MUST be able to see every registered project with its name, current run status, and number of open inbox items, and switch the dashboard between projects. | built (API `GET /api/projects` + `orch project list`, TASK-10) / new (dashboard switcher, TASK-11) |
+| REQ-PROJ-04 | The owner MUST be able to remove (archive) a project. Archiving MUST NOT delete the repository. The project's history MUST remain stored, and it MUST be possible to re-register the project later. Archiving a project with an active run MUST be refused. | built (registry, TASK-07; API + CLI `orch project remove`, TASK-10) / new (dashboard, TASK-11) |
 | REQ-PROJ-05 | Per-project settings MUST be read from a file inside the project's repository. Server-wide settings MUST be kept separately and MUST NOT be overridable from a project file in ways that change how agent CLIs are launched or which credentials they get. | built (loaders TASK-05, daemon TASK-09) |
 | REQ-PROJ-06 | Changes to a project's settings file MUST take effect no later than the next run start for that project, without restarting orch. | built (TASK-05, TASK-09: settings re-read at run creation and start) |
 | REQ-PROJ-07 | Each project MUST have at most one unfinished run (planning, awaiting approval, ready, running, or paused). Creating or starting another run in that project while one is unfinished MUST be refused with a message naming the unfinished run. | built (TASK-09) |
@@ -209,7 +209,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-HITL-01 | One inbox MUST list everything that needs the owner across all projects, each item labelled with its project: plan approvals, open questions (task and plan), failed tasks, tasks awaiting review or merge (including merge failures and PR problems), and phases needing the owner. Each item MUST offer its relevant actions. | built (single project) / new (all projects, labels, phase items) |
+| REQ-HITL-01 | One inbox MUST list everything that needs the owner across all projects, each item labelled with its project: plan approvals, open questions (task and plan), failed tasks, tasks awaiting review or merge (including merge failures and PR problems), and phases needing the owner. Each item MUST offer its relevant actions. | built (single project; all projects with project labels via `GET /api/inbox`, TASK-10) / new (dashboard, TASK-11; phase items, TASK-15) |
 | REQ-HITL-02 | Every new inbox item and every run completion MUST trigger a push notification (when configured) whose text names the project and the task. | built (project name in the title, TASK-09) |
 | REQ-HITL-03 | A worker MUST be able to ask the owner a question, optionally with answer options. Only that task pauses, the owner is notified, and after the answer the worker continues in its own session. Answering MUST NOT consume an attempt. | built |
 | REQ-HITL-04 | Agents MUST be able to record a decision with a rationale without pausing. | built |
@@ -314,8 +314,8 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-UI-04 | For a task awaiting review, the owner MUST be able to send it back to the worker with written feedback from the task view (see REQ-HITL-07). | built |
 | REQ-UI-05 | The owner MUST be able to view past runs of a project. | built |
 | REQ-UI-06 | The dashboard MUST show cost and agent time per task, per run and per project where the agent CLI reports them, and "n/a" where it doesn't. | new |
-| REQ-UI-07 | The CLI MUST offer the owner's main actions: register, list and archive projects; plan (and preview); approve; run, pause, stop; status; answer; retry, skip, merge. Commands MUST act on the project given explicitly, else the project whose repo contains the current directory, else the only project. Otherwise they fail, listing the projects. | built (actions) / new (projects, scoping) |
-| REQ-UI-08 | CLI commands MUST exit 0 on success, 1 on failure (with the error on stderr), and 2 on usage errors. `[ASSUMED]` | new |
+| REQ-UI-07 | The CLI MUST offer the owner's main actions: register, list and archive projects; plan (and preview); approve; run, pause, stop; status; answer; retry, skip, merge. Commands MUST act on the project given explicitly, else the project whose repo contains the current directory, else the only project. Otherwise they fail, listing the projects. | built (actions; projects and scoping, TASK-10) / new (plan preview `--dry-run`, TASK-13) |
+| REQ-UI-08 | CLI commands MUST exit 0 on success, 1 on failure (with the error on stderr), and 2 on usage errors. `[ASSUMED]` | built (TASK-10) |
 
 **Edge cases:**
 - Very large diffs → truncated with a visible notice and the total size.
@@ -367,7 +367,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-NFR-03 | Portability | orch MUST run on Linux and in Docker; development and tests MUST also work on macOS and WSL2. | CI on Linux (`.github/workflows/ci.yml`, Node 22 and 24); e2e in `node:22` container |
 | REQ-NFR-04 | Vendor independence | Agent-vendor-specific code MUST live only in the adapter layer. | `npm run check`: vendor names outside `src/adapters/` fail CI (allowlisted defaults in `src/config.ts`) |
 | REQ-NFR-05 | Determinism | Scheduling, state transitions and PR-loop decisions MUST be decided by pure functions with fixture-driven tests. | `test/unit/core.test.mjs` runs every fixture table; `npm run check` keeps `src/core/` free of fs, child processes, DB and clock reads |
-| REQ-NFR-06 | Performance | The dashboard state for a run of 200 tasks MUST load in under 1 second on the server, regardless of the size of the event log. | unit/perf test with seeded DB |
+| REQ-NFR-06 | Performance | The dashboard state for a run of 200 tasks MUST load in under 1 second on the server, regardless of the size of the event log. | `test/unit/perf.test.mjs`: 200 tasks, 100,000 events, project snapshot < 1 s (TASK-10) |
 | REQ-NFR-07 | Observability | Every task state change MUST appear in the activity stream with a reason. | e2e assertions on events |
 | REQ-NFR-08 | Safety | orch MUST refuse to run as root where the agent CLI requires a non-root user, and MUST document that agents have full permissions in their working copy. | Docker image runs as uid 1000; README, docs/docker.md (TASK-08) |
 

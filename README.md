@@ -80,8 +80,28 @@ On its first start, `orch serve` converts the single file into the two-file layo
    past runs, decisions and questions stay visible.
 
 An existing single-repo install upgrades the same way. The upgrade runs only while `server.json`
-does not exist, and it is recorded in the **Decisions** tab. Registering more repos with the same
-daemon comes with the `orch project` commands in the next release.
+does not exist, and it is recorded in the **Decisions** tab.
+
+### More projects
+
+With the daemon running, register each further repo by the path of its top-level directory:
+
+```bash
+orch project add ~/projects/otherapp --name otherapp
+# registered project otherapp "otherapp" at /home/you/projects/otherapp
+# created starter settings file /home/you/projects/otherapp/orch.config.json; set validation.command there
+orch project list                # id, name, current run status, open inbox items, repo
+orch project remove otherapp     # archive it
+```
+
+* A path that isn't a git repository root is refused. So is a repo that is already registered; the
+  message names its project.
+* If the repo has no `orch.config.json`, orch writes a starter file with the detected base branch and
+  an empty `validation.command`. Fill in the test command before the first run.
+* `orch project remove` archives the project: it leaves the default list (see it with
+  `orch project list --archived`) and the inbox, but the repo and the project's history stay. It is
+  refused while the project has an unfinished run; stop that run first. `orch project add` with the
+  same path restores the project with its runs.
 
 ### Project settings: `<repo>/orch.config.json`
 
@@ -180,6 +200,22 @@ not capped by `maxRounds`). It is recorded as a human decision.
 
 CLI equivalents: `orch status`, `orch approve`, `orch run|pause|stop`, `orch answer <id> <text>`,
 `orch retry|skip|merge T003`.
+
+### Which project a command acts on
+
+Every project command (`status`, `plan`, `approve`, `run`, `pause`, `stop`, `retry`, `skip`, `merge`,
+`stop-task`) picks its project in this order:
+
+1. `--project <id>`
+2. the `ORCH_PROJECT` environment variable
+3. the project whose repo contains the current directory (for `orch plan`, the spec folder first)
+4. the only project, when just one is registered
+
+Otherwise the command stops and lists the projects. `orch answer` needs no project, because question
+ids are unique across projects.
+
+Exit codes: `0` success, `1` failure (the reason is on stderr, after `error:`), `2` usage error, which
+includes a missing argument, an unknown command and a project that can't be determined.
 
 ### Task files
 
@@ -322,6 +358,8 @@ CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm run typecheck` and `npm test
 Node 22 and 24 for every push to `main` and every pull request.
 
 `test/unit/` holds the `node:test` unit tests. They import the compiled modules from `dist/`.
+`perf.test.mjs` seeds a run of 200 tasks with 100,000 events and checks that the project snapshot
+the dashboard loads builds in under a second.
 
 `scripts/e2e.mjs` runs the whole loop against a fake agent (`scripts/fake-agent.mjs`) in a throwaway
 repo, with workers on the Claude adapter and the validator on the Gemini adapter: planning,
@@ -349,8 +387,12 @@ question twice, and editing acceptance criteria before approval. Run a subset by
 `scripts/e2e-multi.mjs` runs one daemon over two registered repos with `scheduler.maxAgents: 1`: never
 more than one active task, the second project's task starting before the first project's third,
 refused plans and starts naming the unfinished run, worktrees under `ORCH_HOME`, and notification
-titles carrying the project name (captured by a local HTTP sink). A second scenario upgrades a
-single-repo install with a 0.1-schema database and checks that the old run stays visible.
+titles carrying the project name (captured by a local HTTP sink). The `projects` scenario drives the
+CLI against a daemon with no projects: `orch project add` refusing a non-git directory and printing
+the starter settings path, project selection from the current directory, `--project` and
+`ORCH_PROJECT`, exit code 2 outside both repos and for usage errors, the global inbox labelled by
+project, archiving refused while a run is running, and archive and restore. The `legacy` scenario
+upgrades a single-repo install with a 0.1-schema database and checks that the old run stays visible.
 
 Every daemon an e2e script starts gets `ORCH_HOME` set to a directory in its temp folder, so a test run
 never touches `~/.orch`. Scripts that start from a single `orch.config.json` exercise the upgrade too.
