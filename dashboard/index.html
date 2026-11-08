@@ -11,12 +11,14 @@
   --add-fg: #4fd18b; --del-fg: #f36c6c; --add-bg: rgba(79, 209, 139, .12); --del-bg: rgba(243, 108, 108, .12); --hunk-fg: #9d7cf5;
   --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+  color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
-  :root { --bg: #f4f5f7; --panel: #ffffff; --panel2: #f0f2f5; --line: #dfe3e8; --text: #1b1f27; --muted: #5d6572; --dim: #8b93a1;
+  :root { color-scheme: light; --bg: #f4f5f7; --panel: #ffffff; --panel2: #f0f2f5; --line: #dfe3e8; --text: #1b1f27; --muted: #5d6572; --dim: #8b93a1;
     --add-fg: #1a7f37; --del-fg: #cf222e; --add-bg: #e6ffec; --del-bg: #ffebe9; --hunk-fg: #6f42c1; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); }
 a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
 button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
@@ -40,18 +42,49 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 .s-plan_pending, .s-planning { color: var(--warn); border-color: var(--warn); }
 .s-ready, .s-paused, .s-stopped { color: var(--muted); border-color: var(--muted); }
 
-#top { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+body { display: flex; flex-direction: column; }
+#top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 7; }
 #top h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .04em; }
 #top h1 span { color: var(--accent); }
-#runTitle { font-weight: 600; } #runMeta { color: var(--muted); font-size: 12px; }
-#controls { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-#live { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); } #live.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+#runInfo { min-width: 0; }
+#runTitle { font-weight: 600; overflow-wrap: anywhere; } #runMeta { color: var(--muted); font-size: 12px; }
+#controls { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#runSel { max-width: 260px; }
+#live { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); } #live.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); } #live.retry { background: var(--warn); }
+/* project switcher (REQ-PROJ-03) */
+#proj { position: relative; }
+#projectSwitcher { display: flex; align-items: center; gap: 8px; max-width: 260px; }
+#projectSwitcher .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#projectSwitcher .caret { color: var(--muted); font-size: 11px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
+.dot.running { background: var(--run); } .dot.attn { background: var(--warn); } .dot.done { background: var(--ok); } .dot.idle { background: var(--muted); } .dot.bad { background: var(--bad); }
+.badge { background: var(--warn); color: #0b0e14; border-radius: 999px; padding: 0 7px; font-size: 11px; font-weight: 700; flex: none; }
+#projectMenu { position: absolute; top: calc(100% + 6px); left: 0; width: 320px; max-width: calc(100vw - 32px); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.3); padding: 6px; z-index: 10; }
+#projectList { max-height: 50vh; overflow: auto; }
+.pitem { display: flex; width: 100%; gap: 8px; align-items: center; background: none; border: 0; border-radius: 6px; text-align: left; padding: 6px 8px; }
+.pitem:hover, .pitem.cur { background: var(--panel2); } .pitem .pn { flex: 1; min-width: 0; }
+.pitem .pn div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .pitem .meta { color: var(--muted); font-size: 11px; }
+.menu-actions { display: flex; gap: 6px; justify-content: space-between; border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
+.ptag { display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; font-size: 11px; font-weight: 600; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 4px; padding: 0 5px; margin-right: 4px; }
+.card.inb { cursor: pointer; } .card.inb.here { border-left: 3px solid var(--accent); }
+#projectError { background: color-mix(in srgb, var(--bad) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent); border-radius: 8px; padding: 14px 16px; max-width: 720px; }
+#projectError.plain { background: var(--panel); border-color: var(--line); }
+#projectError h3 { margin: 0 0 6px; font-size: 14px; } #projectError p { margin: 6px 0; color: var(--muted); }
+#projectError .why { color: var(--text); font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.err { color: var(--bad); min-height: 1.2em; margin-top: 6px; font-size: 13px; overflow-wrap: anywhere; }
 
-#layout { display: grid; grid-template-columns: 300px 1fr; gap: 0; height: calc(100vh - 49px); }
+#layout { display: grid; grid-template-columns: 300px 1fr; gap: 0; flex: 1; min-height: 0; }
 #layout.has-detail { grid-template-columns: 300px 1fr 420px; }
 #detail { display: none; } #layout.has-detail #detail { display: block; }
-@media (max-width: 1250px) { #layout.has-detail { grid-template-columns: 300px 1fr; } #layout.has-detail #detail { position: fixed; right: 0; top: 49px; bottom: 0; width: min(520px, 100vw); z-index: 6; box-shadow: -8px 0 24px rgba(0,0,0,.4); } }
-@media (max-width: 760px) { #layout, #layout.has-detail { grid-template-columns: 1fr; height: auto; } #inbox { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; } }
+@media (max-width: 1250px) { #layout.has-detail { grid-template-columns: 300px 1fr; } #layout.has-detail #detail { position: fixed; right: 0; top: 0; bottom: 0; width: min(520px, 100vw); z-index: 8; box-shadow: -8px 0 24px rgba(0,0,0,.4); } }
+@media (max-width: 760px) {
+  body { display: block; }
+  #layout, #layout.has-detail { grid-template-columns: 1fr; }
+  #inbox { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
+  #controls { margin-left: 0; width: 100%; }
+  #runSel { max-width: 100%; flex: 1 1 100%; }
+  #projectMenu { position: fixed; top: 52px; left: 16px; right: 16px; width: auto; max-width: none; }
+}
 .col { overflow: auto; min-width: 0; }
 #inbox { border-right: 1px solid var(--line); background: var(--panel); padding: 12px; }
 #main { padding: 12px 16px; }
@@ -103,7 +136,7 @@ h2 .count { background: var(--warn); color: #0b0e14; border-radius: 999px; paddi
 ul.acc { margin: 0; padding-left: 18px; } ul.acc li { margin: 2px 0; }
 .fb { background: color-mix(in srgb, var(--bad) 10%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 6px; padding: 8px; font-size: 12px; white-space: pre-wrap; max-height: 160px; overflow: auto; }
 .activity { font-family: var(--mono); font-size: 12px; } .activity .ev { padding: 4px 0; }
-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 420px; max-width: 90vw; }
+dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: min(420px, calc(100vw - 32px)); max-width: calc(100vw - 32px); }
 dialog::backdrop { background: rgba(0,0,0,.5); }
 label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
 /* review: diff viewer + send back (decision 0018) */
@@ -132,12 +165,22 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
 <body>
 <div id="top">
   <h1>orch<span>.</span></h1>
-  <div>
+  <div id="proj">
+    <button id="projectSwitcher" aria-haspopup="true" aria-expanded="false" aria-controls="projectMenu" title="Switch project"><span class="name">Projects</span><span class="caret">▾</span></button>
+    <div id="projectMenu" hidden>
+      <div id="projectList"></div>
+      <div class="menu-actions">
+        <button id="btnAddProject" class="small">Add project…</button>
+        <button id="btnArchiveProject" class="small danger" hidden>Archive this project…</button>
+      </div>
+    </div>
+  </div>
+  <div id="runInfo">
     <div id="runTitle">—</div>
     <div id="runMeta"></div>
   </div>
   <div id="controls">
-    <select id="runSel" title="Switch run"></select>
+    <select id="runSel" title="Switch run (past runs of this project)"></select>
     <button id="btnPlan">New plan…</button>
     <button id="btnApprove" class="primary">Approve plan</button>
     <button id="btnStart" class="primary">Start</button>
@@ -149,8 +192,8 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
 
 <div id="layout">
   <div id="inbox" class="col">
-    <h2>Inbox <span class="count" id="inboxCount" hidden>0</span></h2>
-    <div id="inboxList"></div>
+    <h2>Inbox · all projects <span class="count" id="inboxCount" hidden>0</span></h2>
+    <div id="globalInbox"></div>
     <h2 style="margin-top:18px">Setup</h2>
     <div id="cfg" class="mono" style="color:var(--muted);font-size:11px;line-height:1.6"></div>
   </div>
@@ -162,7 +205,7 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
       <button data-tab="decisions">Decisions</button>
       <button data-tab="activity">Activity</button>
     </div>
-    <div id="tab-board"><div id="board"></div></div>
+    <div id="tab-board"><div id="projectError" hidden></div><div id="board"></div></div>
     <div id="tab-plan" hidden></div>
     <div id="tab-decisions" hidden></div>
     <div id="tab-activity" hidden><div class="activity" id="activity"></div></div>
@@ -202,6 +245,18 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button id="sendCancel">Cancel</button><button id="sendGo" class="primary">Send back</button></div>
 </dialog>
 
+<dialog id="addProjectDlg">
+  <form id="addProjectForm" method="dialog">
+    <h3 style="margin:0 0 8px">Add project</h3>
+    <label for="apPath">Path to a git repository on the orch host</label>
+    <input id="apPath" style="width:100%" class="mono" placeholder="/home/me/src/my-app" autocomplete="off">
+    <label for="apName">Name (optional; defaults to the folder name)</label>
+    <input id="apName" style="width:100%" autocomplete="off">
+    <div id="addProjectErr" class="err" role="alert"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button id="apCancel" type="button">Cancel</button><button id="apGo" class="primary" type="submit">Add project</button></div>
+  </form>
+</dialog>
+
 <dialog id="loginDlg">
   <form id="loginForm" method="dialog">
     <h3 style="margin:0 0 8px">Sign in to orch</h3>
@@ -218,8 +273,17 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const fmtTs = (ts) => ts ? new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
 const LANES = [["pending", "Pending"], ["running", "Running"], ["validating", "Validating"], ["needs_input", "Needs input"], ["pr_checks", "Waiting on CI"], ["pr_open", "Review / merge"], ["failed", "Failed"], ["done", "Done"]];
 const ciBadge = (s) => s ? `<span class="ci ${esc(s)}" title="PR checks">CI ${esc(s)}</span>` : "";
-let state = { run: null, tasks: [], decisions: [], questions: [], inbox: [], runs: [], config: {} };
-let selected = null, selectedRun = null, lastEventId = 0, activity = [];
+const EMPTY = { project: null, run: null, tasks: [], decisions: [], questions: [], inbox: [], runs: [], config: {} };
+let state = EMPTY;
+let projects = [], gInbox = [];   // GET /api/projects, GET /api/inbox (all projects)
+// The selected project persists per browser; storage can be missing or throw (private mode, blocked site data).
+const LS_PROJECT = "orch.project";
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* not persisted */ } };
+let selectedProject = lsGet(LS_PROJECT) || null;
+// selectedRun: a run the owner picked in the run selector; null = the project's shown run (current, else newest).
+let selected = null, selectedRun = null, lastEventId = 0, activity = [], activityRun = null;
+const enc = encodeURIComponent;
 let detailFor = null, reviewKey = null;
 const diffs = {};   // task id -> { open, loading, data, error, files: Set<path> }
 const drafts = {};  // task id -> unsent Send back text
@@ -255,40 +319,154 @@ function login() {
 function toast(msg, err) { const t = document.createElement("div"); t.className = "toast" + (err ? " err" : ""); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), err ? 6000 : 2500); }
 async function act(fn) { try { await fn(); } catch (e) { toast(e.message, true); } }
 
+// Full refresh: the project list, the global inbox and the selected project's snapshot (§15.1).
 async function refresh() {
-  state = await api("GET", selectedRun ? `/api/runs/${selectedRun}` : "/api/state");
-  if (state.run) selectedRun = state.run.id;
+  const [ps, inbox] = await Promise.all([api("GET", "/api/projects"), api("GET", "/api/inbox")]);
+  projects = ps; gInbox = inbox;
+  if (!projects.some(p => p.id === selectedProject)) setProject(projects[0]?.id ?? null);
+  if (selectedProject) {
+    const pid = selectedProject;
+    let s;
+    try { s = await api("GET", `/api/projects/${enc(pid)}/state${selectedRun ? `?run=${enc(selectedRun)}` : ""}`); }
+    catch (e) {
+      if (!selectedRun) throw e;
+      selectedRun = null; // the picked run is gone or not in this project: fall back to the shown run
+      s = await api("GET", `/api/projects/${enc(pid)}/state`);
+    }
+    if (pid !== selectedProject) return; // switched while loading; that switch refreshes
+    state = s;
+  } else state = EMPTY;
   render();
+  loadActivity().catch(() => {});
 }
+const quietRefresh = () => refresh().catch(() => {}); // timers and SSE: a down daemon is shown by the live dot
+
+function setProject(id) {
+  if (id === selectedProject) return;
+  selectedProject = id; selectedRun = null; activityRun = null; state = EMPTY;
+  lsSet(LS_PROJECT, id);
+  closeDetail();
+}
+async function switchProject(id) {
+  closeMenu();
+  if (id === selectedProject) return;
+  setProject(id);
+  await act(refresh);
+}
+const curProject = () => projects.find(p => p.id === selectedProject) || null;
 
 function render() {
-  const run = state.run;
-  $("#runTitle").textContent = run ? run.title : "No run yet";
-  $("#runMeta").innerHTML = run ? `<span class="pill s-${run.status}">${run.status.replace("_", " ")}</span> &nbsp;run ${run.id} · ${state.tasks.filter(t => t.status === "done").length}/${state.tasks.length} done · base ${esc(run.base_branch)}` : "Create a plan from a Spec Kit feature directory to begin.";
+  const run = state.run, proj = curProject();
+  renderProjects();
+  $("#runTitle").textContent = !proj ? "No project yet" : run ? run.title : "No run yet";
+  $("#runMeta").innerHTML = !proj ? "Add a git repository as a project to begin." : run ? `<span class="pill s-${run.status}">${run.status.replace("_", " ")}</span> &nbsp;run ${esc(run.id)} · ${state.tasks.filter(t => t.status === "done").length}/${state.tasks.length} done · base ${esc(run.base_branch)}` : proj.error ? "This project cannot be used until the problem below is fixed." : "Create a plan from a Spec Kit feature directory to begin.";
   const sel = $("#runSel");
-  sel.innerHTML = state.runs.map(r => `<option value="${r.id}" ${run && r.id === run.id ? "selected" : ""}>${esc(r.title)} (${r.status})</option>`).join("");
+  sel.innerHTML = state.runs.map(r => `<option value="${esc(r.id)}" ${run && r.id === run.id ? "selected" : ""}>${esc(r.title)} (${r.status})</option>`).join("");
   sel.hidden = state.runs.length < 2;
+  $("#btnPlan").disabled = !proj || !!proj.error;
   $("#btnApprove").hidden = !(run && run.status === "plan_pending");
   $("#btnStart").hidden = !(run && ["ready", "paused", "stopped"].includes(run.status));
   $("#btnPause").hidden = !(run && run.status === "running");
   $("#btnStop").hidden = !(run && ["running", "paused"].includes(run.status));
   const c = state.config || {};
-  $("#cfg").innerHTML = `repo ${esc(c.repo)}<br>base ${esc(c.baseBranch)} · parallel ${c.maxParallel} · attempts ${c.maxAttempts}<br>merge ${c.pr ? "via PR" : "local"} · default ${c.mergePolicy}<br>gate ${esc(c.validationCommand || "—")} · validator ${c.validatorAgent ? "on" : "off"}${c.prFeedback ? `<br>PR loop: ${c.prFeedback.waitForChecks ? "wait for CI" : "no CI wait"} · ${c.prFeedback.maxRounds} rounds${c.prFeedback.trigger ? ` · comment <code>${esc(c.prFeedback.trigger)}</code>` : ""}` : ""}<br>ntfy ${c.ntfy ? "on" : "off"}<br>${Object.entries(c.roles || {}).map(([r, a]) => `${r} ${esc(a)}`).join(" · ")}`;
-  renderInbox(); renderBoard(); renderPlan(); renderDecisions();
+  $("#cfg").innerHTML = !proj ? "no project selected" : c.error ? `repo ${esc(c.repo)}<br><span style="color:var(--bad)">${esc(c.error)}</span>` : `project ${esc(proj.name)} (${esc(proj.id)})<br>repo ${esc(c.repo)}<br>base ${esc(c.baseBranch)} · parallel ${c.maxParallel} · attempts ${c.maxAttempts}${c.maxAgents ? ` · agents ${c.maxAgents} (all projects)` : ""}<br>merge ${c.pr ? "via PR" : "local"} · default ${c.mergePolicy}<br>gate ${esc(c.validationCommand || "—")} · validator ${c.validatorAgent ? "on" : "off"}${c.prFeedback ? `<br>PR loop: ${c.prFeedback.waitForChecks ? "wait for CI" : "no CI wait"} · ${c.prFeedback.maxRounds} rounds${c.prFeedback.trigger ? ` · comment <code>${esc(c.prFeedback.trigger)}</code>` : ""}` : ""}<br>ntfy ${c.ntfy ? "on" : "off"}<br>${Object.entries(c.roles || {}).map(([r, a]) => `${r} ${esc(a)}`).join(" · ")}`;
+  renderInbox(); renderProjectError(); renderBoard(); renderPlan(); renderDecisions();
   if (selected) renderDetail(selected, false);
 }
 
+// ---- projects: switcher, add, archive, error state (REQ-PROJ-03; §15.3) ----
+function dotOf(p) {
+  if (p.error) return ["bad", "error: " + p.error];
+  if (!p.run) return ["", "no runs yet"];
+  const s = p.run.status;
+  return [s === "running" ? "running" : ["plan_pending", "planning"].includes(s) ? "attn" : s === "done" ? "done" : "idle", "run " + s.replace("_", " ")];
+}
+function renderProjects() {
+  const cur = curProject();
+  const [dc, dt] = cur ? dotOf(cur) : ["", ""];
+  const others = projects.filter(p => p !== cur).reduce((n, p) => n + p.inboxCount, 0);
+  $("#projectSwitcher").innerHTML = cur
+    ? `<span class="dot ${dc}" title="${esc(dt)}"></span><span class="name">${esc(cur.name)}</span>${cur.inboxCount ? `<span class="badge" title="items in this project's inbox">${cur.inboxCount}</span>` : ""}<span class="caret">▾</span>`
+    : `<span class="name">No projects</span><span class="caret">▾</span>`;
+  $("#projectSwitcher").title = `Switch project${others ? ` (${others} inbox item${others > 1 ? "s" : ""} in other projects)` : ""}`;
+  $("#projectList").innerHTML = projects.length ? projects.map(p => {
+    const [c, t] = dotOf(p);
+    return `<button class="pitem ${p === cur ? "cur" : ""}" data-project="${esc(p.id)}" title="${esc(p.repo)}"><span class="dot ${c}" title="${esc(t)}"></span><span class="pn"><div>${esc(p.name)}</div><div class="meta">${p.error ? esc(p.error) : p.run ? `${esc(p.run.title)} · ${esc(p.run.status.replace("_", " "))}` : "no runs yet"}</div></span>${p.inboxCount ? `<span class="badge">${p.inboxCount}</span>` : ""}</button>`;
+  }).join("") : `<div class="empty">No projects yet. Add a git repository to start.</div>`;
+  $("#btnArchiveProject").hidden = !cur;
+}
+function renderProjectError() {
+  const el = $("#projectError"), cur = curProject();
+  let html = "";
+  if (!cur) html = `<h3>No projects yet</h3><p>Register a git repository on the orch host. orch writes a starter <code>orch.config.json</code> there if it has none.</p><button class="primary" onclick="openAddProject()">Add project…</button>`;
+  else if (cur.error) html = `<h3>${esc(cur.name)} cannot be used</h3><p class="why">${esc(cur.error)}</p><p>Fix the repository path or the project's <code>orch.config.json</code>; this view updates by itself. Other projects keep running.</p>`;
+  el.hidden = !html; el.className = cur ? "" : "plain"; el.innerHTML = html;
+  $("#board").hidden = !!html;
+}
+function closeMenu() { $("#projectMenu").hidden = true; $("#projectSwitcher").setAttribute("aria-expanded", "false"); }
+$("#projectSwitcher").onclick = (e) => { e.stopPropagation(); const m = $("#projectMenu"); m.hidden = !m.hidden; $("#projectSwitcher").setAttribute("aria-expanded", String(!m.hidden)); };
+$("#projectMenu").onclick = (e) => { e.stopPropagation(); const b = e.target.closest(".pitem"); if (b) switchProject(b.dataset.project); };
+document.addEventListener("click", closeMenu);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+function openAddProject() {
+  closeMenu();
+  $("#apPath").value = ""; $("#apName").value = ""; $("#addProjectErr").textContent = "";
+  $("#addProjectDlg").showModal(); $("#apPath").focus();
+}
+$("#btnAddProject").onclick = openAddProject;
+$("#apCancel").onclick = () => $("#addProjectDlg").close();
+$("#addProjectForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const path = $("#apPath").value.trim(), name = $("#apName").value.trim();
+  if (!path) { $("#addProjectErr").textContent = "Enter the path of a git repository."; return; }
+  $("#apGo").disabled = true; $("#addProjectErr").textContent = "";
+  try {
+    const p = await api("POST", "/api/projects", name ? { path, name } : { path });
+    $("#addProjectDlg").close();
+    toast(p.unarchived ? `restored archived project ${p.name}` : p.configCreated ? `added ${p.name}; starter settings written to ${p.configCreated}` : `added ${p.name}`);
+    setProject(p.id); await act(refresh);
+  } catch (err) { $("#addProjectErr").textContent = err.message; } // registry message, e.g. not a git repository
+  finally { $("#apGo").disabled = false; }
+};
+$("#btnArchiveProject").onclick = () => act(async () => {
+  const cur = curProject(); if (!cur) return;
+  closeMenu();
+  if (!confirm(`Archive project "${cur.name}"?\n\nIt leaves the project list and the inbox. Its runs, decisions and repository are kept, and Add project with the same path restores it.`)) return;
+  await api("DELETE", `/api/projects/${enc(cur.id)}`); // 400 names an unfinished run
+  toast(`archived ${cur.name}`);
+  setProject(null); await refresh();
+});
+
+// ---- global inbox (REQ-HITL-01): every project's items, tagged; clicking one switches to its project ----
+function inboxBody(i) {
+  const tag = `<span class="ptag" title="project ${esc(i.project_id)}">${esc(i.project_name)}</span>`;
+  const pid = `this.closest('[data-project]').dataset.project`;
+  if (i.type === "approve_plan") return `<div class="t">${tag}Plan awaits your approval</div><div class="d">${esc(i.detail)}. Review the Plan tab, edit tasks if needed, then approve.</div><div class="actions"><button class="primary small" onclick="act(()=>api('POST','/api/runs/${enc(i.run_id)}/approve').then(refresh))">Approve plan</button></div>`;
+  if (i.type === "question") return `<div class="t">${tag}${i.task_key ? `<span class="mono">${esc(i.task_key)}</span> asks` : "Plan question"}</div><div class="d">${esc(i.title)}</div><div class="actions">${(i.options || []).map(o => `<button class="small" onclick="answer(${i.id}, ${esc(JSON.stringify(o))})">${esc(o)}</button>`).join("")}</div><div class="actions"><input placeholder="or type an answer…" style="flex:1" id="qa-${i.id}" onkeydown="if(event.key==='Enter')answer(${i.id}, this.value)"><button class="small" onclick="answer(${i.id}, document.getElementById('qa-${i.id}').value)">Send</button></div>`;
+  if (i.type === "failed") return `<div class="t">${tag}<span class="pill s-failed">failed</span> ${esc(i.task_key)}</div><div class="d">${esc((i.detail || "").slice(0, 400))}</div><div class="actions"><button class="small" onclick="goTask(${pid}, '${esc(i.task_id)}')">Inspect</button><button class="small good" onclick="taskAct('${esc(i.task_id)}','retry')">Retry</button><button class="small" onclick="taskAct('${esc(i.task_id)}','skip')">Skip</button></div>`;
+  if (i.type === "merge") return `<div class="t">${tag}<span class="pill s-pr_open">review</span> ${esc(i.task_key)} ${ciBadge(i.ci_status)}${i.fix_rounds ? ` <span class="ci">· ${i.fix_rounds} fix round${i.fix_rounds > 1 ? "s" : ""}</span>` : ""}</div><div class="d">${i.pr_url ? `<a href="${esc(i.pr_url)}" target="_blank">${esc(i.pr_url)}</a>` : esc(i.detail)}${i.feedback ? "\n" + esc(i.feedback.slice(0, 300)) : ""}</div><div class="actions"><button class="small" onclick="goTask(${pid}, '${esc(i.task_id)}')">Inspect</button><button class="small good" onclick="taskAct('${esc(i.task_id)}','merge')">Merge now</button><button class="small" onclick="openSendBack('${esc(i.task_id)}', ${pid})">Send back…</button><button class="small" onclick="taskAct('${esc(i.task_id)}','mark-merged')">Merged elsewhere</button><button class="small" onclick="taskAct('${esc(i.task_id)}','retry')">Re-run</button></div>`;
+  return "";
+}
 function renderInbox() {
-  const list = $("#inboxList"), n = state.inbox.length;
+  const list = $("#globalInbox"), n = gInbox.length;
   $("#inboxCount").hidden = !n; $("#inboxCount").textContent = n;
-  if (!n) { list.innerHTML = `<div class="empty">Nothing needs you right now.</div>`; return; }
-  list.innerHTML = state.inbox.map(i => {
-    if (i.type === "approve_plan") return `<div class="card hot"><div class="t">Plan awaits your approval</div><div class="d">${esc(i.detail)}. Review the Plan tab, edit tasks if needed, then approve.</div><div class="actions"><button class="primary small" onclick="act(()=>api('POST','/api/runs/${i.run_id}/approve').then(refresh))">Approve plan</button></div></div>`;
-    if (i.type === "question") return `<div class="card hot" data-q="${i.id}"><div class="t"><span class="mono">${esc(i.task_key || "")}</span> asks</div><div class="d">${esc(i.title)}</div><div class="actions">${(i.options || []).map(o => `<button class="small" onclick="answer(${i.id}, ${JSON.stringify(o).replace(/"/g, "&quot;")})">${esc(o)}</button>`).join("")}</div><div class="actions"><input placeholder="or type an answer…" style="flex:1" id="qa-${i.id}" onkeydown="if(event.key==='Enter')answer(${i.id}, this.value)"><button class="small" onclick="answer(${i.id}, document.getElementById('qa-${i.id}').value)">Send</button></div></div>`;
-    if (i.type === "failed") return `<div class="card hot"><div class="t"><span class="pill s-failed">failed</span> ${esc(i.task_key)}</div><div class="d">${esc((i.detail || "").slice(0, 400))}</div><div class="actions"><button class="small" onclick="selectTask('${i.task_id}')">Inspect</button><button class="small good" onclick="taskAct('${i.task_id}','retry')">Retry</button><button class="small" onclick="taskAct('${i.task_id}','skip')">Skip</button></div></div>`;
-    if (i.type === "merge") return `<div class="card hot"><div class="t"><span class="pill s-pr_open">review</span> ${esc(i.task_key)} ${ciBadge(i.ci_status)}${i.fix_rounds ? ` <span class="ci">· ${i.fix_rounds} fix round${i.fix_rounds > 1 ? "s" : ""}</span>` : ""}</div><div class="d">${i.pr_url ? `<a href="${esc(i.pr_url)}" target="_blank">${esc(i.pr_url)}</a>` : esc(i.detail)}${i.feedback ? "\n" + esc(i.feedback.slice(0, 300)) : ""}</div><div class="actions"><button class="small" onclick="selectTask('${i.task_id}')">Inspect</button><button class="small good" onclick="taskAct('${i.task_id}','merge')">Merge now</button><button class="small" onclick="openSendBack('${i.task_id}')">Send back…</button><button class="small" onclick="taskAct('${i.task_id}','mark-merged')">Merged elsewhere</button><button class="small" onclick="taskAct('${i.task_id}','retry')">Re-run</button></div></div>`;
-    return "";
-  }).join("");
+  if (!n) { list.innerHTML = `<div class="empty">Nothing needs you right now${projects.length > 1 ? " in any project" : ""}.</div>`; return; }
+  // Keep a half-typed answer across re-renders.
+  const typed = {}; list.querySelectorAll("input[id^='qa-']").forEach(el => { if (el.value) typed[el.id] = el.value; });
+  const focused = document.activeElement && list.contains(document.activeElement) ? document.activeElement.id : null;
+  list.innerHTML = gInbox.map(i => { const body = inboxBody(i); return body ? `<div class="card hot inb ${i.project_id === selectedProject ? "here" : ""}" data-project="${esc(i.project_id)}" ${i.task_id ? `data-task="${esc(i.task_id)}"` : ""} title="${esc(i.project_name)}: click to open">${body}</div>` : ""; }).join("");
+  for (const [id, v] of Object.entries(typed)) { const el = document.getElementById(id); if (el) el.value = v; }
+  if (focused) document.getElementById(focused)?.focus();
+}
+$("#globalInbox").onclick = (e) => {
+  if (e.target.closest("button, input, a, textarea, select")) return; // the item's own actions
+  const card = e.target.closest(".card.inb"); if (!card) return;
+  if (card.dataset.task) goTask(card.dataset.project, card.dataset.task);
+  else switchProject(card.dataset.project);
+};
+async function goTask(projectId, taskId) {
+  if (projectId !== selectedProject) await switchProject(projectId);
+  if (state.tasks.some(t => t.id === taskId)) await selectTask(taskId);
 }
 async function answer(id, text) { if (!text || !text.trim()) return; await act(async () => { await api("POST", `/api/questions/${id}/answer`, { answer: text.trim() }); toast("answered"); await refresh(); }); }
 async function taskAct(id, action) { await act(async () => { await api("POST", `/api/tasks/${id}/${action}`); toast(action + " ok"); await refresh(); }); }
@@ -450,7 +628,8 @@ async function sendBack(id, text) {
     toast("sent back to the worker"); await refresh();
   });
 }
-function openSendBack(id) {
+async function openSendBack(id, projectId) {
+  if (projectId && projectId !== selectedProject) await switchProject(projectId); // a global inbox item of another project
   const t = state.tasks.find(x => x.id === id); if (!t) return;
   $("#sendKey").textContent = t.key; $("#sendText").value = drafts[id] || ""; $("#sendDlg").dataset.id = id; $("#sendDlg").showModal(); $("#sendText").focus();
 }
@@ -484,52 +663,88 @@ $("#editSave").onclick = () => act(async () => {
 $("#btnPlan").onclick = () => $("#planDlg").showModal();
 $("#planCancel").onclick = () => $("#planDlg").close();
 $("#planGo").onclick = () => act(async () => {
-  const specDir = $("#specDir").value.trim(); if (!specDir) return;
+  const specDir = $("#specDir").value.trim(), pid = selectedProject; if (!specDir || !pid) return;
   $("#planDlg").close(); toast($("#useLlm").checked ? "drafting plan (planner agent running)…" : "importing tasks…");
-  selectedRun = null;
-  const run = await api("POST", "/api/plan", { specDir, llm: $("#useLlm").checked });
-  selectedRun = run.id; await refresh(); toast("plan ready");
+  const run = await api("POST", `/api/projects/${enc(pid)}/plan`, { specDir, llm: $("#useLlm").checked });
+  if (pid === selectedProject) selectedRun = null; // the new run is the project's current run
+  await refresh(); toast("plan ready");
 });
 $("#btnApprove").onclick = () => act(async () => { await api("POST", `/api/runs/${state.run.id}/approve`); toast("approved — press Start"); await refresh(); });
 $("#btnStart").onclick = () => act(async () => { await api("POST", `/api/runs/${state.run.id}/start`); await refresh(); });
 $("#btnPause").onclick = () => act(async () => { await api("POST", `/api/runs/${state.run.id}/pause`); await refresh(); });
 $("#btnStop").onclick = () => act(async () => { if (!confirm("Stop the run and kill active agents? Worktrees are kept.")) return; await api("POST", `/api/runs/${state.run.id}/stop`); await refresh(); });
-$("#runSel").onchange = (e) => { selectedRun = e.target.value; selected = null; refresh(); };
-$("#closeDetail").onclick = () => { selected = null; detailFor = null; $("#layout").classList.remove("has-detail"); renderBoard(); $("#detailBody").innerHTML = `<div class="empty">Select a task to see its plan, log, and actions.</div>`; };
+$("#runSel").onchange = (e) => { selectedRun = e.target.value; closeDetail(); act(refresh); };
+function closeDetail() {
+  selected = null; detailFor = null; $("#layout").classList.remove("has-detail");
+  $("#detailBody").className = "empty"; $("#detailBody").innerHTML = "Select a task to see its plan, log, and actions.";
+}
+$("#closeDetail").onclick = () => { closeDetail(); renderBoard(); };
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b)); for (const t of ["board", "plan", "decisions", "activity"]) $(`#tab-${t}`).hidden = t !== b.dataset.tab; });
 
-// Live updates
+// Activity: the shown run's notable events; reloaded when the shown run changes (project or run switch, reconnect).
+const ACTIVITY_KINDS = ["state", "git", "error", "verdict", "decision", "question"];
+async function loadActivity() {
+  const rid = state.run ? state.run.id : null;
+  if (rid === activityRun) return;
+  activityRun = rid; activity = [];
+  if (!rid) { $("#activity").innerHTML = `<div class="empty">No activity yet.</div>`; return; }
+  const evs = await api("GET", `/api/runs/${enc(rid)}/events?limit=150`);
+  if (activityRun !== rid) return;
+  $("#activity").innerHTML = evs.filter(e => ACTIVITY_KINDS.includes(e.kind)).reverse().map(e => evLine(e, true)).join("") || `<div class="empty">No activity yet.</div>`;
+}
+
+// Live updates (§15.3): on error close the stream and retry with backoff 1 s doubling to 30 s;
+// every (re)open does a full refresh, so nothing missed while disconnected stays stale.
 let refreshTimer = null;
-function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); }
-let es = null, sseStarted = false;
+function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(quietRefresh, 150); }
+const BACKOFF_MIN = 1000, BACKOFF_MAX = 30000;
+let es = null, sseStarted = false, backoff = BACKOFF_MIN, retryTimer = null, opened = false;
+function setLive(on, title) { const l = $("#live"); l.classList.toggle("on", on); l.classList.toggle("retry", !on && !!title); l.title = title || (on ? "live" : "not connected"); }
 function connect() {
   sseStarted = true;
+  clearTimeout(retryTimer); retryTimer = null;
   if (es) es.close();
-  es = new EventSource("/api/events/stream");
-  es.onopen = () => $("#live").classList.add("on");
-  es.onerror = () => {
-    $("#live").classList.remove("on");
-    // A refused stream (e.g. 401 after the token changed) is closed for good: check auth via a
-    // normal request (which prompts on 401), then reconnect.
-    if (es.readyState === EventSource.CLOSED) setTimeout(() => act(async () => { await refresh(); if (es.readyState === EventSource.CLOSED) connect(); }), 3000);
+  const src = es = new EventSource("/api/events/stream");
+  src.onopen = () => {
+    if (src !== es) return;
+    backoff = BACKOFF_MIN; setLive(true);
+    if (opened) { activityRun = null; scheduleRefresh(); } // a reconnect: reload everything
+    opened = true;
   };
-  es.addEventListener("change", () => scheduleRefresh());
-  es.addEventListener("event", (m) => {
+  src.onerror = () => {
+    if (src !== es) return;
+    src.close(); // no browser auto-retry: we pace retries ourselves
+    const wait = backoff; backoff = Math.min(backoff * 2, BACKOFF_MAX);
+    setLive(false, `connection lost; retrying in ${wait / 1000} s`);
+    clearTimeout(retryTimer); retryTimer = setTimeout(reconnect, wait);
+  };
+  src.addEventListener("change", () => scheduleRefresh());
+  src.addEventListener("event", (m) => {
     const ev = JSON.parse(m.data);
     if (!state.run || ev.run_id !== state.run.id) return;
     if (ev.task_id === selected) appendLog([ev]);
-    if (["state", "git", "error", "verdict", "decision", "question"].includes(ev.kind)) {
+    if (ACTIVITY_KINDS.includes(ev.kind)) {
       activity.push(ev); if (activity.length > 300) activity.shift();
+      $("#activity").querySelector(".empty")?.remove();
       $("#activity").insertAdjacentHTML("afterbegin", evLine(ev, true));
       if (ev.kind === "question" || ev.kind === "state") scheduleRefresh();
     }
   });
 }
-(async () => {
-  await refresh();
-  if (state.run) { const evs = await api("GET", `/api/runs/${state.run.id}/events?limit=150`); $("#activity").innerHTML = evs.filter(e => ["state", "git", "error", "verdict", "decision", "question"].includes(e.kind)).reverse().map(e => evLine(e, true)).join(""); }
+// Before reopening, probe with a normal request: a 401 (token changed while away) prompts for the token,
+// and login() reconnects; an unreachable daemon waits for the next, longer backoff.
+async function reconnect() {
+  retryTimer = null;
+  let r;
+  try { r = await fetch("/api/projects"); }
+  catch { es = null; const wait = backoff; backoff = Math.min(backoff * 2, BACKOFF_MAX); setLive(false, `daemon unreachable; retrying in ${wait / 1000} s`); retryTimer = setTimeout(reconnect, wait); return; }
+  if (r.status === 401) { es = null; login(); return; }
   connect();
-  setInterval(refresh, 30000);
+}
+(async () => {
+  await act(refresh);
+  connect();
+  setInterval(quietRefresh, 30000);
 })();
 </script>
 </body>

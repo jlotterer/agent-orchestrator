@@ -103,6 +103,15 @@ orch project remove otherapp     # archive it
   refused while the project has an unfinished run; stop that run first. `orch project add` with the
   same path restores the project with its runs.
 
+The dashboard does the same from the project switcher at the top left. It shows the selected
+project with a status dot for its run and its open inbox count; its menu lists every project and
+has **Add project…** (path, optional name; errors such as "not a git repository" appear in the
+dialog) and **Archive this project…**. Board, Plan, Decisions, Activity and the run selector show
+the selected project only, and the browser remembers your choice. A project whose repo is missing or
+whose settings don't load shows the error in place of the board; the others keep running. The
+**Inbox** on the left is global: every item carries its project's name, and clicking one switches to
+that project.
+
 ### Project settings: `<repo>/orch.config.json`
 
 | key | what |
@@ -193,7 +202,12 @@ sudo systemctl enable --now orch
    * a PR's CI keeps failing, or its checks hang → look at the PR
    * the run finishes
 5. **Decisions** tab is the audit trail: every planner, worker, validator and human decision with
-   its rationale, in order. **Activity** is the run-level event stream.
+   its rationale, in order. **Activity** is the run-level event stream. Past runs of the project are
+   in the run selector next to the run controls.
+
+The green dot at the top right means live updates are connected. If the connection drops (for
+example while orch restarts) it turns amber and the dashboard retries after 1 s, then 2, 4, … up to
+every 30 s, and reloads everything once it is back. No page reload is needed.
 
 Sending a task back starts a fix round with your text under "Feedback from the owner": the worker
 resumes its session, then the gate and validator run again and the task returns to your inbox (it is
@@ -405,8 +419,11 @@ titles carrying the project name (captured by a local HTTP sink). The `projects`
 CLI against a daemon with no projects: `orch project add` refusing a non-git directory and printing
 the starter settings path, project selection from the current directory, `--project` and
 `ORCH_PROJECT`, exit code 2 outside both repos and for usage errors, the global inbox labelled by
-project, archiving refused while a run is running, and archive and restore, plus `orch archive-events`
-on a run backdated 40 days (gzip file, "Log archived to" from the log endpoints, decisions kept). The `legacy` scenario
+project, archiving refused while a run is running, archive and restore, plus `orch archive-events`
+on a run backdated 40 days (gzip file, "Log archived to" from the log endpoints, decisions kept), and
+the dashboard's stable element ids (`projectSwitcher`, `projectMenu`, `projectList`, `btnAddProject`,
+`btnArchiveProject`, `addProjectDlg`, `addProjectErr`, `globalInbox`, `inboxCount`, `projectError`,
+`runSel`, `board`, `live`). The `legacy` scenario
 upgrades a single-repo install with a 0.1-schema database and checks that the old run stays visible.
 
 Every daemon an e2e script starts gets `ORCH_HOME` set to a directory in its temp folder, so a test run

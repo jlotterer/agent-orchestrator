@@ -11,8 +11,9 @@
  *             starter settings path is printed), resolves the project from the cwd, --project and ORCH_PROJECT,
  *             and exits 2 outside both repos (listing both) and for `orch answer` without arguments. GET /api/inbox
  *             holds items of both projects with project_name; DELETE on a project with a running run is 400; an
- *             archived project leaves the default list and `project add` restores it
- *             (REQ-PROJ-01, -02, -04, REQ-UI-07, -08, REQ-HITL-01). Alpha's finished run, backdated 40 days, is
+ *             archived project leaves the default list and `project add` restores it; the served dashboard
+ *             has the project switcher and global inbox element ids (REQ-PROJ-01, -02, -03, -04, REQ-UI-07,
+ *             -08, REQ-HITL-01). Alpha's finished run, backdated 40 days, is
  *             archived by `orch archive-events`: a gzip file under ORCH_HOME/archive, one "Log archived to"
  *             event from the log endpoints, decisions kept (TASK-12, REQ-OPS-04).
  *   legacy  : an old-style orch.config.json plus a 0.1-schema database holding a finished run. On first
@@ -35,6 +36,8 @@ const PORT = 4841;
 const LEGACY_PORT = 4842;
 const PROJECTS_PORT = 4843;
 const ACTIVE = ["running", "validating"];
+/** Stable dashboard element ids (architecture §15.3; TASK-11). */
+const DASHBOARD_IDS = ["projectSwitcher", "projectMenu", "projectList", "btnAddProject", "btnArchiveProject", "addProjectDlg", "addProjectErr", "globalInbox", "inboxCount", "projectError", "runSel", "board", "live"];
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 const AGENTS = {
   timeoutMinutes: 2,
@@ -249,6 +252,12 @@ async function projects() {
   assert(inbox.every((i) => i.project_id === (i.project_name === "alpha" ? pa.id : pb.id)), "inbox items need project_id");
   const counts = Object.fromEntries((await api("GET", "/api/projects")).map((p) => [p.id, p.inboxCount]));
   assert(counts[pa.id] === 1 && counts[pb.id] === 1, "project list inbox counts: " + JSON.stringify(counts));
+
+  // REQ-PROJ-03, REQ-HITL-01 (TASK-11): the served dashboard has the project switcher, the add/archive
+  // controls, the global inbox and the project error panel under stable ids (architecture §15.3).
+  const html = await (await fetch(`http://127.0.0.1:${PROJECTS_PORT}/`)).text();
+  for (const id of DASHBOARD_IDS) assert(html.includes(`id="${id}"`), `the dashboard has no #${id}`);
+  assert(html.includes("/api/projects/${enc(pid)}/state") && html.includes(`"/api/inbox"`), "the dashboard should read the project state and the global inbox");
 
   // Run A through the CLI; while it runs, archiving it is refused (REQ-PROJ-04).
   expectExit(run(["approve"], a.repo), 0, "approve in repo A");
