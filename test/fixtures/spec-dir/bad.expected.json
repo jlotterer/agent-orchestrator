@@ -1,0 +1,213 @@
+{
+  "folder": "bad",
+  "description": "The same shape as `full` with exactly four problems: a TBD marker in spec.md (error), two parallel tasks sharing a target file, one brief over 8,000 characters, one test-only task (warnings).",
+  "tasks": [
+    {
+      "key": "T001",
+      "title": "Session store and types",
+      "phase": "Phase 1: Foundation",
+      "done": false,
+      "brief": "tasks/T001.md",
+      "briefChars": 1090,
+      "orch": 1,
+      "depends_on": [],
+      "parallel": false,
+      "merge_policy": "manual",
+      "validate_mode": "standard",
+      "validate_cmd": null,
+      "files_owned": ["src/auth/store.ts", "src/auth/types.ts", "test/auth/store.test.ts"],
+      "acceptance": [
+        "Given a store and `now = 0`, When `create(\"u1\", 0)` is called with `sessionMinutes: 30`, Then the session has a 32-character hex id and `expiresAt` of 1,800,000.",
+        "Given a session that expires at 1,800,000, When `get(id, 1_800_000)` is called, Then it returns `null`.",
+        "Given a session that expires at 1,800,000, When `get(id, 1_799_999)` is called, Then the session is returned unchanged."
+      ],
+      "cites": ["REQ-AUTH-01"],
+      "contracts": [{ "name": "SessionStore", "resolved": "spec.md#SessionStore" }],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "files_owned", "acceptance"],
+      "tasksMd": { "parallel": false, "depends_on": [] }
+    },
+    {
+      "key": "T002",
+      "title": "Login and logout endpoints",
+      "phase": "Phase 2: Core",
+      "done": false,
+      "brief": "tasks/T002.md",
+      "briefChars": 1188,
+      "orch": 1,
+      "depends_on": ["T001"],
+      "parallel": true,
+      "merge_policy": "manual",
+      "validate_mode": "ui",
+      "validate_cmd": null,
+      "files_owned": ["src/auth/routes.ts", "src/auth/session.ts", "src/auth/pages/login.html", "test/auth/routes.test.ts"],
+      "acceptance": [
+        "Given a registered user, When `POST /api/login` is called with the right password, Then the response is 204 and sets an `HttpOnly` `sid` cookie.",
+        "Given a wrong password or an unknown user, When `POST /api/login` is called, Then the response is 401 with body `{ \"error\": \"invalid credentials\" }`.",
+        "Given a signed-in user, When `POST /api/logout` is called, Then the response is 204 and the session is removed from the store."
+      ],
+      "cites": ["REQ-AUTH-02"],
+      "contracts": [
+        { "name": "contracts/auth-api.md", "resolved": "contracts/auth-api.md" },
+        { "name": "TokenCodec", "resolved": "spec.md#TokenCodec" }
+      ],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "files_owned", "acceptance"],
+      "tasksMd": { "parallel": true, "depends_on": ["T001"] }
+    },
+    {
+      "key": "T003",
+      "title": "Session refresh near expiry",
+      "phase": "Phase 2: Core",
+      "done": false,
+      "brief": "tasks/T003.md",
+      "briefChars": 1188,
+      "orch": 1,
+      "depends_on": ["T001"],
+      "parallel": true,
+      "merge_policy": "auto",
+      "validate_mode": "standard",
+      "validate_cmd": "npm test -- test/auth/refresh",
+      "files_owned": ["src/auth/refresh.ts", "src/auth/session.ts", "test/auth/refresh.test.ts"],
+      "acceptance": [
+        "Given `sessionMinutes: 30`, `refreshWindowMinutes: 5` and a session expiring at 1,800,000, When `touch(id, 1_500_001)` is called, Then `expiresAt` becomes 3,300,001.",
+        "Given the same session, When `touch(id, 1_500_000)` is called, Then `expiresAt` stays 1,800,000.",
+        "Given the same session, When `touch(id, 1_800_000)` is called, Then the result is `null`."
+      ],
+      "cites": ["REQ-AUTH-03"],
+      "contracts": [{ "name": "SessionStore", "resolved": "spec.md#SessionStore" }],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "validate_cmd", "files_owned", "acceptance"],
+      "tasksMd": { "parallel": true, "depends_on": ["T001"] }
+    },
+    {
+      "key": "T004",
+      "title": "Auth middleware for protected routes",
+      "phase": "Phase 2: Core",
+      "done": false,
+      "brief": "tasks/T004.md",
+      "briefChars": 8265,
+      "orch": 1,
+      "depends_on": ["T001"],
+      "parallel": true,
+      "merge_policy": "auto",
+      "validate_mode": "standard",
+      "validate_cmd": null,
+      "files_owned": ["src/auth/middleware.ts", "src/server.ts", "test/auth/middleware.test.ts"],
+      "acceptance": [
+        "Given no cookie, When `GET /api/me` is requested, Then the response is 401 `{ \"error\": \"not signed in\" }`.",
+        "Given a cookie whose signature does not verify, When any protected route is requested, Then the response is 401 and the store is not consulted.",
+        "Given a valid session, When `GET /api/me` is requested, Then the response is 200 and `req.session` was set for the handler.",
+        "Given a valid session inside the refresh window, When any protected route is requested, Then `refreshIfDue` was called once with the session id.",
+        "Given `/login`, `/api/login`, `/healthz` and `/static/app.css`, When requested without a cookie, Then none of them is answered 401 by the middleware."
+      ],
+      "cites": ["REQ-AUTH-02", "REQ-AUTH-04"],
+      "contracts": [
+        { "name": "SessionStore", "resolved": "spec.md#SessionStore" },
+        { "name": "contracts/auth-api.md", "resolved": "contracts/auth-api.md" }
+      ],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "files_owned", "acceptance"],
+      "tasksMd": { "parallel": true, "depends_on": ["T001"] }
+    },
+    {
+      "key": "T005",
+      "title": "Add session tests",
+      "phase": "Phase 3: Hardening",
+      "done": false,
+      "brief": "tasks/T005.md",
+      "briefChars": 888,
+      "orch": 1,
+      "depends_on": ["T001", "T002", "T003", "T004"],
+      "parallel": false,
+      "merge_policy": "auto",
+      "validate_mode": "standard",
+      "validate_cmd": null,
+      "files_owned": ["test/auth/session.test.ts", "test/auth/refresh.test.ts"],
+      "acceptance": [
+        "Given a running app and a registered user, When the test signs in and calls `/api/me` inside the refresh window, Then `expiresAt` moved forward.",
+        "Given the same run, When the test calls `/api/logout` and then `/api/me`, Then the second call is 401."
+      ],
+      "cites": ["REQ-AUTH-01", "REQ-AUTH-03"],
+      "contracts": [{ "name": "contracts/auth-api.md", "resolved": "contracts/auth-api.md" }],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "files_owned", "acceptance"],
+      "tasksMd": { "parallel": false, "depends_on": ["T001", "T002", "T003", "T004"] }
+    }
+  ],
+  "conflicts": [],
+  "problems": [
+    {
+      "kind": "error",
+      "rule": "marker",
+      "file": "spec.md",
+      "line": 15,
+      "message": "unresolved marker \"TBD\""
+    },
+    {
+      "kind": "warning",
+      "rule": "parallel-overlap",
+      "file": "tasks/T003.md",
+      "line": 22,
+      "message": "T002 and T003 are both parallel and both list src/auth/session.ts",
+      "tasks": ["T002", "T003"],
+      "path": "src/auth/session.ts"
+    },
+    {
+      "kind": "warning",
+      "rule": "brief-size",
+      "file": "tasks/T004.md",
+      "line": 1,
+      "message": "brief is 8265 characters; handoff.briefChars is 8000",
+      "chars": 8265,
+      "limit": 8000
+    },
+    {
+      "kind": "warning",
+      "rule": "test-only",
+      "file": "tasks/T005.md",
+      "line": 9,
+      "message": "task appears to add only tests: every target file is a test path"
+    }
+  ],
+  "context": {
+    "task": "T004",
+    "budgets": { "briefChars": 8000, "reqChars": 4000, "contractChars": 6000, "rulesChars": 6000, "specChars": 12000, "historyChars": 6000 },
+    "inputs": {
+      "requirementsFile": "docs/requirements.md",
+      "requirementsFixture": "test/fixtures/requirements.sample.md",
+      "projectFiles": ["AGENTS.md"],
+      "projectFilesFixture": ["test/fixtures/spec-dir/AGENTS.sample.md"]
+    },
+    "parts": [
+      {
+        "part": "brief",
+        "header": "### Brief: tasks/T004.md",
+        "source": "tasks/T004.md",
+        "budget": 8000,
+        "chars": 8265,
+        "cut": true,
+        "kept": 8000,
+        "dropped": 265,
+        "marker": "… (truncated, 265 more chars)"
+      },
+      {
+        "part": "requirements",
+        "header": "### Requirements: REQ-AUTH-02, REQ-AUTH-04 (docs/requirements.md)",
+        "source": "docs/requirements.md",
+        "ids": ["REQ-AUTH-02", "REQ-AUTH-04"],
+        "budget": 4000,
+        "chars": 680,
+        "cut": false,
+        "lines": [
+          "| REQ-AUTH-02 | The app MUST provide a login page, a login endpoint and a logout endpoint; invalid credentials MUST be answered without revealing whether the user exists. | new |",
+          "- `REQ-AUTH-02`: Given a wrong password, When `POST /api/login` is called, Then the response is 401 `{ \"error\": \"invalid credentials\" }` and no cookie is set.",
+          "| REQ-AUTH-04 | Every route outside the public list MUST answer 401 to a request without a valid session. | new |",
+          "- A cookie whose signature does not verify is treated as missing, with no hint of forgery (REQ-AUTH-04).",
+          "- `REQ-AUTH-04`: Given no cookie, When `GET /api/me` is requested, Then the response is 401 `{ \"error\": \"not signed in\" }`."
+        ]
+      },
+      { "part": "contract", "header": "### Contract: SessionStore (spec.md)", "source": "spec.md#SessionStore", "budget": 6000, "chars": 338, "cut": false },
+      { "part": "contract", "header": "### Contract: contracts/auth-api.md", "source": "contracts/auth-api.md", "budget": 6000, "chars": 678, "cut": false },
+      { "part": "rules", "header": "### Rules: AGENTS.md", "source": "AGENTS.md", "budget": 6000, "chars": 647, "cut": false },
+      { "part": "handoff", "header": null, "source": "orchestrator (REQ-WORK-02: summaries, decisions, answers, feedback)", "budget": 6000, "chars": null, "cut": null }
+    ],
+    "cuts": [{ "part": "brief", "source": "tasks/T004.md", "from": 8265, "to": 8000 }],
+    "decisions": ["T004: brief cut from 8265 to 8000 characters (handoff.briefChars)"]
+  }
+}

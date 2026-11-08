@@ -1,0 +1,37 @@
+{
+  "folder": "version",
+  "description": "One brief written for a later brief format (orch: 2). Import is an error naming the file and the line; the brief's fields are not applied.",
+  "tasks": [
+    {
+      "key": "T001",
+      "title": "Health page that polls /healthz",
+      "phase": "Phase 1: Page",
+      "done": false,
+      "brief": "tasks/T001.md",
+      "briefChars": 712,
+      "orch": 2,
+      "depends_on": [],
+      "parallel": false,
+      "merge_policy": null,
+      "validate_mode": null,
+      "validate_cmd": null,
+      "files_owned": [],
+      "acceptance": [],
+      "cites": [],
+      "contracts": [],
+      "fromBrief": [],
+      "tasksMd": { "parallel": false, "depends_on": [] }
+    }
+  ],
+  "conflicts": [],
+  "problems": [
+    {
+      "kind": "error",
+      "rule": "version",
+      "file": "tasks/T001.md",
+      "line": 2,
+      "message": "unsupported brief format orch: 2; this orch reads orch: 1"
+    }
+  ],
+  "context": null
+}

@@ -1,0 +1,164 @@
+{
+  "folder": "full",
+  "description": "A complete feature folder: every task has a brief, nothing is cut, no warnings. T004 is the [P]-versus-brief conflict case.",
+  "tasks": [
+    {
+      "key": "T001",
+      "title": "Session store, types and expiry fixtures",
+      "phase": "Phase 1: Foundation",
+      "done": false,
+      "brief": "tasks/T001.md",
+      "briefChars": 1902,
+      "orch": 1,
+      "depends_on": [],
+      "parallel": false,
+      "merge_policy": "manual",
+      "validate_mode": "standard",
+      "validate_cmd": null,
+      "files_owned": ["src/auth/store.ts", "src/auth/types.ts", "test/auth/store.test.ts", "test/fixtures/sessions.json"],
+      "acceptance": [
+        "Given a store and `now = 0`, When `create(\"u1\", 0)` is called with `sessionMinutes: 30`, Then the session has a 32-character hex id and `expiresAt` of 1,800,000.",
+        "Given a session that expires at 1,800,000, When `get(id, 1_800_000)` is called, Then it returns `null` and a second `get` at any time also returns `null`.",
+        "Given a session that expires at 1,800,000, When `get(id, 1_799_999)` is called, Then the session is returned unchanged.",
+        "Given the fixture table `test/fixtures/sessions.json`, When the unit tests run, Then every `get` case passes and every `touch` case is reported as skipped, not failed."
+      ],
+      "cites": ["REQ-AUTH-01"],
+      "contracts": [{ "name": "SessionStore", "resolved": "spec.md#SessionStore" }],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "files_owned", "acceptance"],
+      "tasksMd": { "parallel": false, "depends_on": [] }
+    },
+    {
+      "key": "T002",
+      "title": "Login and logout endpoints with the login page",
+      "phase": "Phase 2: Core",
+      "done": false,
+      "brief": "tasks/T002.md",
+      "briefChars": 1862,
+      "orch": 1,
+      "depends_on": ["T001"],
+      "parallel": true,
+      "merge_policy": "manual",
+      "validate_mode": "ui",
+      "validate_cmd": "npm test -- test/auth/routes",
+      "files_owned": ["src/auth/routes.ts", "src/auth/pages/login.html", "test/auth/routes.test.ts"],
+      "acceptance": [
+        "Given a registered user, When `POST /api/login` is called with the right password, Then the response is 204 and sets an `HttpOnly` `sid` cookie whose value decodes to a session in the store.",
+        "Given a wrong password or an unknown user, When `POST /api/login` is called, Then the response is 401 with body `{ \"error\": \"invalid credentials\" }` and no cookie is set.",
+        "Given a signed-in user, When `POST /api/logout` is called, Then the response is 204, the session is removed from the store and the cookie is cleared.",
+        "Given a browser, When it opens `/login`, Then it sees a form with fields `user` and `password` and a submit button labelled \"Sign in\"."
+      ],
+      "cites": ["REQ-AUTH-02"],
+      "contracts": [
+        { "name": "contracts/auth-api.md", "resolved": "contracts/auth-api.md" },
+        { "name": "TokenCodec", "resolved": "spec.md#TokenCodec" }
+      ],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "validate_cmd", "files_owned", "acceptance"],
+      "tasksMd": { "parallel": true, "depends_on": ["T001"] }
+    },
+    {
+      "key": "T003",
+      "title": "Session refresh near expiry",
+      "phase": "Phase 2: Core",
+      "done": false,
+      "brief": "tasks/T003.md",
+      "briefChars": 2300,
+      "orch": 1,
+      "depends_on": ["T001"],
+      "parallel": true,
+      "merge_policy": "auto",
+      "validate_mode": "standard",
+      "validate_cmd": "npm test -- test/auth/refresh",
+      "files_owned": ["src/auth/refresh.ts", "test/auth/refresh.test.ts"],
+      "acceptance": [
+        "Given `sessionMinutes: 30`, `refreshWindowMinutes: 5` and a session expiring at 1,800,000, When `touch(id, 1_500_001)` is called, Then `expiresAt` becomes 3,300,001.",
+        "Given the same session, When `touch(id, 1_500_000)` is called, Then `expiresAt` stays 1,800,000 and the returned session is the stored one.",
+        "Given the same session, When `touch(id, 1_800_000)` is called, Then the result is `null` and the session is gone from the store.",
+        "Given a signed-in request inside the refresh window, When `GET /api/me` is handled, Then the body's `expiresAt` equals the refreshed value and the `sid` cookie is unchanged.",
+        "Given the fixture table `test/fixtures/sessions.json`, When the unit tests run, Then every `touch` case passes and none is skipped."
+      ],
+      "cites": ["REQ-AUTH-03", "REQ-AUTH-04"],
+      "contracts": [
+        { "name": "SessionStore", "resolved": "spec.md#SessionStore" },
+        { "name": "TokenCodec", "resolved": "spec.md#TokenCodec" },
+        { "name": "contracts/auth-api.md", "resolved": "contracts/auth-api.md" }
+      ],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "validate_cmd", "files_owned", "acceptance"],
+      "tasksMd": { "parallel": true, "depends_on": ["T001"] }
+    },
+    {
+      "key": "T004",
+      "title": "Auth middleware for protected routes",
+      "phase": "Phase 2: Core",
+      "done": false,
+      "brief": "tasks/T004.md",
+      "briefChars": 1824,
+      "orch": 1,
+      "depends_on": ["T001", "T002", "T003"],
+      "parallel": false,
+      "merge_policy": "auto",
+      "validate_mode": "standard",
+      "validate_cmd": null,
+      "files_owned": ["src/auth/middleware.ts", "src/server.ts", "test/auth/middleware.test.ts"],
+      "acceptance": [
+        "Given no cookie, When `GET /api/me` is requested, Then the response is 401 `{ \"error\": \"not signed in\" }`.",
+        "Given a cookie whose signature does not verify, When any protected route is requested, Then the response is 401 and the store is not consulted.",
+        "Given a valid session, When `GET /api/me` is requested, Then the response is 200 and `req.session` was set for the handler.",
+        "Given a valid session inside the refresh window, When any protected route is requested, Then `refreshIfDue` was called once with the session id.",
+        "Given `/login`, `/api/login`, `/healthz` and `/static/app.css`, When requested without a cookie, Then none of them is answered 401 by the middleware."
+      ],
+      "cites": ["REQ-AUTH-02", "REQ-AUTH-04"],
+      "contracts": [
+        { "name": "SessionStore", "resolved": "spec.md#SessionStore" },
+        { "name": "contracts/auth-api.md", "resolved": "contracts/auth-api.md" }
+      ],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "files_owned", "acceptance"],
+      "tasksMd": { "parallel": true, "depends_on": ["T001"] }
+    }
+  ],
+  "conflicts": [
+    {
+      "key": "T004",
+      "field": "parallel",
+      "tasksMd": true,
+      "brief": false,
+      "decision": "T004: tasks.md marks [P] but the brief says parallel: false; the brief wins"
+    }
+  ],
+  "problems": [],
+  "context": {
+    "task": "T003",
+    "budgets": { "briefChars": 8000, "reqChars": 4000, "contractChars": 6000, "rulesChars": 6000, "specChars": 12000, "historyChars": 6000 },
+    "inputs": {
+      "requirementsFile": "docs/requirements.md",
+      "requirementsFixture": "test/fixtures/requirements.sample.md",
+      "projectFiles": ["AGENTS.md"],
+      "projectFilesFixture": ["test/fixtures/spec-dir/AGENTS.sample.md"]
+    },
+    "parts": [
+      { "part": "brief", "header": "### Brief: tasks/T003.md", "source": "tasks/T003.md", "budget": 8000, "chars": 2300, "cut": false },
+      {
+        "part": "requirements",
+        "header": "### Requirements: REQ-AUTH-03, REQ-AUTH-04 (docs/requirements.md)",
+        "source": "docs/requirements.md",
+        "ids": ["REQ-AUTH-03", "REQ-AUTH-04"],
+        "budget": 4000,
+        "chars": 688,
+        "cut": false,
+        "lines": [
+          "| REQ-AUTH-03 | A session used within the refresh window before its expiry MUST be extended by the session lifetime from that request. | new |",
+          "- `REQ-AUTH-03`: Given a session expiring at 1,800,000 and a 5-minute window, When it is used at 1,500,001, Then its expiry becomes 3,300,001; When it is used at 1,500,000, Then its expiry is unchanged.",
+          "| REQ-AUTH-04 | Every route outside the public list MUST answer 401 to a request without a valid session. | new |",
+          "- A cookie whose signature does not verify is treated as missing, with no hint of forgery (REQ-AUTH-04).",
+          "- `REQ-AUTH-04`: Given no cookie, When `GET /api/me` is requested, Then the response is 401 `{ \"error\": \"not signed in\" }`."
+        ]
+      },
+      { "part": "contract", "header": "### Contract: SessionStore (spec.md)", "source": "spec.md#SessionStore", "budget": 6000, "chars": 925, "cut": false },
+      { "part": "contract", "header": "### Contract: TokenCodec (spec.md)", "source": "spec.md#TokenCodec", "budget": 6000, "chars": 475, "cut": false },
+      { "part": "contract", "header": "### Contract: contracts/auth-api.md", "source": "contracts/auth-api.md", "budget": 6000, "chars": 1060, "cut": false },
+      { "part": "rules", "header": "### Rules: AGENTS.md", "source": "AGENTS.md", "budget": 6000, "chars": 647, "cut": false },
+      { "part": "handoff", "header": null, "source": "orchestrator (REQ-WORK-02: summaries, decisions, answers, feedback)", "budget": 6000, "chars": null, "cut": null }
+    ],
+    "cuts": [],
+    "decisions": []
+  }
+}

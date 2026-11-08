@@ -1,8 +1,8 @@
 # Fixtures: the executable spec for orch's risky logic
 
-These tables define correct behaviour for the parts of orch that are easy to get subtly wrong: the `tasks.md` parser, JSON extraction from agent output, task readiness, the task state machine, the PR-poll decision, file ownership and phase validation ([decision 0020](../../docs/decisions/0020-pure-core-and-fixtures.md), [architecture §21.2](../../docs/architecture.md#212-testing-architecture)).
+These tables define correct behaviour for the parts of orch that are easy to get subtly wrong: the `tasks.md` parser, JSON extraction from agent output, task readiness, the task state machine, the PR-poll decision, file ownership, phase validation and, since TASK-18, the feature-folder briefs and the context built from them ([decision 0020](../../docs/decisions/0020-pure-core-and-fixtures.md), [architecture §21.2](../../docs/architecture.md#212-testing-architecture)).
 
-They were written spec-first (TASK-01), before the pure functions in `src/core/` existed. **Changing an expected output is a behaviour change and needs the owner's review in the PR.** Adding cases is fine.
+They were written spec-first (TASK-01; `spec-dir/` by TASK-18), before the pure functions in `src/core/` existed. **Changing an expected output is a behaviour change and needs the owner's review in the PR.** Adding cases is fine.
 
 ## Conventions for every file
 
@@ -132,6 +132,29 @@ Step mapping (architecture §12.2):
 | 6 fail | new head → CI fix round; failure wins over pending; `ci_head` already acted on in pr_checks → inbox; in pr_open → wait (REQ-PRFB-02); rounds exhausted → inbox (REQ-PRFB-05) |
 | 7 pass/none | auto task merges (REQ-PRFB-01); changes requested still open → inbox; manual task waits; `none` on a manual task waits |
 
+### `spec-dir/<folder>/` + `spec-dir/<folder>.expected.json`
+Added by TASK-18 as the executable form of [architecture §6.4](../../docs/architecture.md#64-feature-folder-and-brief-contract) (the feature folder and brief contract, decision [0023](../../docs/decisions/0023-orch-owns-spec-skill.md)). Consumers: `src/core/brief.ts` (TASK-20: parse, checks, preview) and `src/core/context.ts` (TASK-21: context assembly); until they land, no runner reads these files. Each folder is a feature folder exactly as `orch plan <dir>` sees it; the expected JSON beside it is what reading that folder must produce. Sizes are characters after CRLF→LF normalization; `.gitattributes` keeps the folder LF in every checkout so the numbers hold on Windows too.
+
+Shared inputs: `requirements.sample.md` (one level up; rows REQ-AUTH-01..04 and REQ-OPS-01 with edge-case and acceptance bullets, standing in for a project's `docs/requirements.md`) and `spec-dir/AGENTS.sample.md` (standing in for the project rules file `AGENTS.md`).
+
+| Folder | What it shows | Problems |
+| :--- | :--- | :--- |
+| `full` | A complete folder: `spec.md` with two named contracts (`SessionStore`, `TokenCodec`), `contracts/auth-api.md`, two phases, T001 / T002 `[P]` / T003 `[P]` / T004 `[P]`, one brief per task with every frontmatter key in use (`manual`/`auto`, `standard`/`ui`, an optional `validate_command`). T004 is `[P]` in `tasks.md` but `parallel: false` in its brief: one **conflict**, no warning. Context expectation for T003: nothing cut. | none |
+| `bad` | The same shape with exactly four problems: `TBD` in `spec.md` line 15 (error); T002 and T003 both `[P]` and both listing `src/auth/session.ts`; T004's brief at 8,265 characters; T005 (`Add session tests`) with test-only target files. Context expectation for T004: the brief is cut to 8,000 with a marker and a decision. | 1 error, 3 warnings |
+| `speckit` | A plain Spec Kit folder (no `tasks/`): `spec.md` (2,985 chars), `plan.md` (15,089), `data-model.md`, `contracts/one.md`; T001 ticked. No briefs, no problems; the planner writes criteria. Context expectation: `spec.md`, `data-model.md`, `plan.md` (cut to 12,000), `contracts/one.md`, each under its own `specChars` budget. `plan.md` mentions "NEEDS CLARIFICATION" without the opening bracket and is not a scanned file: no marker error. | none |
+| `version` | One brief with `orch: 2`. The task keeps its `tasks.md` values; `fromBrief` is empty. | 1 error |
+
+Expected JSON shape:
+
+| Field | Meaning |
+| :--- | :--- |
+| `tasks[]` | One per `tasks.md` task, in file order: `key`, `title`, `phase`, `done` (from `tasks.md`); `brief` (path or `null`), `briefChars`, `orch`; the effective `depends_on` (sorted), `parallel`, `merge_policy`, `validate_mode`, `validate_cmd`, `files_owned`, `acceptance` (verbatim bullets), `cites`, `contracts: [{name, resolved}]` (`spec.md#<Heading>`, a file path, or `null`); `fromBrief` (the fields the brief set, for the preview); `tasksMd: {parallel, depends_on}` (what §6.1 alone would give, so the conflict and precedence rules are checkable). Fields a brief did not set are `null` / `[]`. |
+| `conflicts[]` | `{key, field, tasksMd, brief, decision}`: frontmatter values that differ from the `tasks.md` marks; the brief wins and `decision` is the text recorded at plan time. |
+| `problems[]` | `{kind: error\|warning, rule, file, line, message, …}` in the order §6.4 defines (`spec.md`, then briefs by key, then line). `rule` is one of `marker`, `version`, `parallel-overlap` (+ `tasks`, `path`), `brief-size` (+ `chars`, `limit`), `test-only`. |
+| `context` | For one task (`task`): `budgets` (the §19 `handoff.*` values used), `inputs` (which files stand in for `docs/requirements.md` and `AGENTS.md`, or `contextFiles` without a brief), `parts[]` in prompt order (`part`, `header`, `source`, `budget`, `chars`, `cut`; a cut part adds `kept`, `dropped`, `marker`; the requirements part adds `ids` and the exact `lines`), `cuts[]` (`{part, source, from, to}`) and `decisions[]` (the decision texts). The `handoff` part is listed for order only; its content comes from the orchestrator (§9). `null` when the folder cannot be planned (`version`). |
+
+Runner (TASK-20/21): read the folder, `deepStrictEqual` the parsed tasks, conflicts and problems with the JSON; assemble the context for `context.task` with `context.budgets`, using `requirements.sample.md` and `AGENTS.sample.md` as the project files, and compare the part headers, sizes, cuts and decisions.
+
 ## Behaviour changes
 
 Cases whose expected output differs from what the code did when the fixtures were written. TASK-03 (or the task named) makes the code match. TASK-03 is done: the `extract-json`, T14 and readiness `maxAgents`/`busyAgents` rows below now pass; the `pending` rows wait for their tasks.
@@ -144,6 +167,7 @@ Cases whose expected output differs from what the code did when the fixtures wer
 | `readiness.json` | global `maxAgents` and `busyAgents` cases | New inputs. Since TASK-09 the orchestrator passes `server.json` `scheduler.maxAgents` and the running planners as `busyAgents`. |
 | `readiness.json` | fairness cases (built by TASK-09; pass), plan question (built by TASK-13; passes), ownership overlap (`pending: TASK-14`) | New behaviour built by those tasks. |
 | `transitions.json` | T17 (built by TASK-06; passes), T19 (built by TASK-16; passes), fix-up tasks (built by TASK-15; pass) | New behaviour built by those tasks. |
+| `spec-dir/*.expected.json` | all | New behaviour (decision 0023), built by TASK-20 (tasks, conflicts, problems) and TASK-21 (context). No runner reads them until then; the `tasksMd` values were checked against `parseTasksMd` when written. |
 | `readiness.json` | phase gate cases (added and built by TASK-15; pass) | New optional inputs `phases` (project) and `phase` (task); existing cases leave them out and are unchanged. |
 
 Everything else (all 15 `tasks-md` cases, the other 13 `extract-json` cases, all 36 `pr-poll` cases and the non-pending transitions) matches the code's behaviour when the fixtures were written. The `tasks-md`, `extract-json` and `pr-poll` cases were checked mechanically against `parseTasksMd`, `extractJson` and a transcription of `pollPr` on the real `prfeedback.ts` helpers.

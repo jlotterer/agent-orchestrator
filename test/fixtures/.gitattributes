@@ -1,2 +1,5 @@
 # The CRLF parser fixture must keep its CRLF line endings in every checkout.
 tasks-md/crlf-line-endings.md -text
+# The spec-dir fixtures and the sample requirements file are measured in characters; keep LF in every checkout.
+spec-dir/** text eol=lf
+requirements.sample.md text eol=lf

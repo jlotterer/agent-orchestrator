@@ -151,6 +151,66 @@ Prompt `prompts/planner.md` receives title, spec files (except tasks.md, clipped
 
 Dry run (`previewPlan(specDir)`, REQ-INTAKE-10) [built: TASK-13]: read the spec dir, parse `tasks.md` and derive dependencies exactly as `plan` does; returns `{dir, title, tasks: ImportedTask[], cycle}` (`cycle` = `findCycle` result, else null). No run, no agent, nothing written; the same errors as `plan` for a missing dir, `tasks.md` or tasks.
 
+### 6.4 Feature folder and brief contract
+_(→ fixtures: `test/fixtures/spec-dir/` [TASK-18]; code: `src/core/brief.ts` [TASK-20], `src/core/context.ts` [TASK-21], wiring [TASK-22]. Decision [0023](decisions/0023-orch-owns-spec-skill.md). This is what `orch plan` reads and what the `orch-spec` skill writes. It is a superset of the Spec Kit layout, so [0008](decisions/0008-speckit-input-contract.md) holds.)_
+
+```
+specs/NNN-name/
+  spec.md            Goal, Covers, Out of scope, ## Contracts (one ### per named contract), Risky logic
+  tasks.md           - [ ] T001 [P] <title>   (## headings = phases; unchanged Spec Kit format, §6.1)
+  tasks/T001.md      brief for task key T001 (optional per task; orch falls back without it)
+  contracts/*.md     files a brief may name as a contract
+  *.md               anything else (Spec Kit's plan.md, data-model.md, …) is read as context when there is no brief
+```
+
+**Brief file** (`tasks/<key>.md`): YAML frontmatter between `---` lines, then markdown sections.
+
+| Frontmatter key | Type | Sets | Notes |
+| :--- | :--- | :--- | :--- |
+| `orch` | int | — | Brief format version. Required. Anything but `1` is an import **error** at the `orch:` line (line 1 when missing): `unsupported brief format orch: 2; this orch reads orch: 1`. The brief's other fields are not applied. |
+| `covers` | list | `cites` | REQ IDs. `cites` = `covers` plus every `REQ-<DOMAIN>-NN` found in the body, in order of first appearance, deduplicated. |
+| `depends_on` | list | `depends_on` | Effective dependencies = tasks in earlier phases (phase order comes from `tasks.md` and cannot be overridden) ∪ this list, sorted. It replaces the within-phase "previous task" rule and any `depends on` text of §6.1. Unknown keys are dropped as in §6.1. |
+| `parallel` | bool | `parallel` | Wins over `[P]`. A difference is a **conflict**, not a warning: `T004: tasks.md marks [P] but the brief says parallel: false; the brief wins` is recorded as a decision at plan time and shown in the preview. |
+| `merge_policy` | `auto` \| `manual` | `merge_policy` | |
+| `validate` | `standard` \| `ui` | `validate_mode` | |
+| `validate_command` | string | `validate_cmd` | Optional. |
+
+Parsing rules: the YAML subset is scalars (`int`, `true`/`false`, unquoted or quoted strings) and flow lists (`[a, b]`); `#` comments are allowed. Unknown keys are kept and reported as warnings; anything else is a parse error with a line. The parser is pure and fixture-driven ([0020](decisions/0020-pure-core-and-fixtures.md)).
+
+| Section (`## …`) | Sets | Rule |
+| :--- | :--- | :--- |
+| `Acceptance criteria` | `acceptance` | One criterion per `-`/`*` bullet, the text after the bullet, verbatim. A brief without this section keeps its other fields and the planner writes the criteria for that task only (decision recorded). |
+| `Target files` | `files_owned` | One path per bullet, surrounding backticks stripped. |
+| `Contracts` | `contracts` | One per bullet; the name is the text before ` (`. Resolution: a path that exists in the folder (`contracts/auth-api.md`) → that file; else a `### <name>` heading under spec.md's `## Contracts` → that section, from its heading line to the line before the next `##`/`###` heading, trailing blank lines removed; both → the section wins and a warning names both; neither → a warning naming the brief and the contract. Non-bullet text (`None.`) names nothing. |
+| `Goal`, `Out of scope`, `Notes for the worker`, the `# <key>: <title>` H1 | — | Not parsed; the worker reads them as part of the brief. The task title stays the one from `tasks.md`. |
+
+**Folder checks** (`checkFeature`; run by `plan`, `plan --dry-run` and the skill's check script; REQ-INTAKE-13/14, REQ-SPEC-03). Each problem is `{kind, rule, file, line, message}` with the path relative to the folder and a 1-based line; the list is ordered `spec.md` first, then `tasks/<key>.md` by key, then by line. Sizes are counted in characters after normalizing CRLF to LF.
+
+| `rule` | `kind` | Where | Message |
+| :--- | :--- | :--- | :--- |
+| `marker` | error | each line of `spec.md` and of every brief that contains `[NEEDS CLARIFICATION`, or `TBD` / `TODO` as a whole word (case-sensitive) | `unresolved marker "TBD"`. Errors stop `plan` unless `--allow-open` is given (then a decision records the override). Other files (`plan.md`, `contracts/*`) are not scanned. |
+| `version` | error | the brief's `orch:` line | see the frontmatter table |
+| `parallel-overlap` | warning | the later task's brief, at the line of the shared entry | `T002 and T003 are both parallel and both list src/auth/session.ts`. Both tasks effectively parallel (after the brief); paths compared with `ownedOverlap` (§7.2). Also carries `tasks` and `path`. |
+| `brief-size` | warning | the brief, line 1 | `brief is 8265 characters; handoff.briefChars is 8000`; also carries `chars` and `limit`. The brief is still used; the context marks the cut (below). |
+| `test-only` | warning | the brief, at its H1 line | `task appears to add only tests: every target file is a test path`. A test path starts with or contains a `test/`, `tests/`, `__tests__/` or `spec/` directory, or its name matches `*.test.*` / `*.spec.*`. Needs at least one target file. |
+
+Warnings appear in the preview and are recorded as decisions at plan time. A folder without `tasks/` is a plain Spec Kit folder: no briefs, no conflicts, no problems from the briefs; the planner writes the criteria as before.
+
+**Preview** (REQ-INTAKE-15): per task, `brief: tasks/T003.md (fields: depends_on, parallel, merge_policy, validate_mode, validate_cmd, files_owned, acceptance)` or `brief: no`, then the conflicts, then the problems.
+
+**Context each agent receives** (REQ-WORK-09/10/11, REQ-VAL-10). Every part has its own budget (§19 `handoff.*`); a part over budget is clipped to the budget with the existing marker `… (truncated, N more chars)` appended, and the orchestrator records one decision per cut (`T004: brief cut from 8265 to 8000 characters (handoff.briefChars)`; `T002: plan.md cut from 15089 to 12000 characters (handoff.specChars)`). A part's `chars` is the length of its content without the header.
+
+| Agent | Parts, in order | Headers |
+| :--- | :--- | :--- |
+| Worker and task validator, task **with** a brief | the brief in full (`briefChars`) → requirement rows for `cites` (`reqChars`) → each named contract, one part each (`contractChars`) → each project rules file (`rulesChars`) → the hand-off of §9 (`historyChars`; worker only) | `### Brief: tasks/T003.md` · `### Requirements: REQ-AUTH-03, REQ-AUTH-04 (docs/requirements.md)` · `### Contract: SessionStore (spec.md)` / `### Contract: contracts/auth-api.md` · `### Rules: AGENTS.md` |
+| Worker, task **without** a brief | `handoff.contextFiles` in order (default `spec.md`, `data-model.md`, `plan.md`), then the folder's other root `*.md` alphabetically, then `contracts/*` alphabetically, each clipped to `specChars` on its own; `tasks.md` and `tasks/*` never → rules → hand-off | `### spec.md` · `### contracts/one.md` |
+| Planner | runs only for tasks without a brief, or for the whole plan with `--review`: `spec.md`, every brief, other `*.md`, the `tasks.md` parse (§6.2) → rules | |
+| Phase validator | `spec.md` in full, each task's header and criteria, rules (§10.3) | |
+
+Requirement rows: for each cited ID, from `handoff.requirementsFile` (default `docs/requirements.md`): the table rows whose first cell is the ID, then the bullet lines (`-`/`*`) that contain the ID as a whole word (edge cases and acceptance criteria), all verbatim in file order, IDs in `cites` order, joined with newlines. An ID with no row and no bullet contributes the line `REQ-X-NN: not found in docs/requirements.md`; it is not an error. Rules files that are absent are skipped without error (REQ-WORK-11). Validators never get the worker's transcript ([0004](decisions/0004-independent-validation.md)).
+
+Fixtures: `test/fixtures/spec-dir/<folder>/` with `<folder>.expected.json` beside it (`full`, `bad`, `speckit`, `version`), `test/fixtures/requirements.sample.md` and `test/fixtures/spec-dir/AGENTS.sample.md`; field semantics in `test/fixtures/README.md`.
+
 ## 7. Scheduler
 ### 7.1 Readiness
 `selectReady(input) → ReadinessResult`
@@ -444,6 +504,7 @@ _(→ code: `src/db.ts`)_
   - `pr-poll.json`: `[{name, step, task, pr, localSha, now, config, expected: {action, kind?, reasonContains?, patch?, itemBodies?, failedChecks?}}]`, at least one case per step of §12.2.
   - Any case may carry `"pending": "TASK-NN"`: runners skip it until that task removes the marker. Field semantics, row/step mapping and the Behaviour changes list: `test/fixtures/README.md`.
   - `ownership.json` [TASK-14]; `phases.json` [TASK-15]: `{toValidate: [{name, tasks, phases, expected}], fixup: [{name, phase, round, verdict, laterTasks, expected}], newRows: [{name, tasks, existing, expected}]}`.
+  - `spec-dir/<folder>/` + `spec-dir/<folder>.expected.json` [TASK-18] (`full`, `bad`, `speckit`, `version`), with `requirements.sample.md` and `spec-dir/AGENTS.sample.md` as the project files: `{tasks: [{key, …, brief, fromBrief, tasksMd}], conflicts, problems: [{kind, rule, file, line, message}], context: {task, budgets, parts: [{part, header, source, budget, chars, cut}], cuts, decisions}}`, the executable form of §6.4. Runners: `brief.test.mjs` [TASK-20], `context.test.mjs` [TASK-21].
 - **E2E** (`scripts/e2e*.mjs`, Linux/macOS or `node:22` container): throwaway repos, real git, the daemon via `dist/cli.js serve`, fakes: `fake-agent.mjs` (Claude and Gemini dialects, scripted by task key/prompt markers), `fake-gh.mjs` (PR state files + local bare `origin`), `fake-app.mjs` (HTTP server on `PORT`; `NEVER_READY` answers 503; records its pid in `FAKE_APP_PIDS`). Notifications captured with a local HTTP sink when asserted.
   - `e2e.mjs`: full happy-path loop (Claude worker, Gemini validator); since TASK-13 it also runs `orch plan --dry-run` first (exit 0, every key printed, no run), checks the planner's plan question has no task, has approval refuse a T001↔T004 cycle with 400, and checks no task starts until the plan question is answered. `e2e-pr.mjs`: PR mode and feedback loop. `e2e-lifecycle.mjs` [TASK-04]: 13 independent regression scenarios (a)–(m), each its own repo, daemon and port (`node scripts/e2e-lifecycle.mjs b h` runs a subset): stop, `kill -9` + restart, timeout, setup failure, no commits, missing `tasks.md`, planner failure, answer while paused, dirty main checkout, merge conflict, skipped dependency, double answer, criteria edit. Scenario (h2) is `todo`: answering while paused still costs an attempt (T11, owner decision pending). `e2e-phase.mjs` [TASK-15]: (a) phase 1 FAIL → `FIX-1.1` with the failure, phase 2 waits → fix-up done → PASS → phase 2 → run done, decisions for both results and the fix-up, `tasks.md` without `FIX-`; (b) `maxFixups: 0` → phase inbox item, Re-run fails again, Accept lets phase 2 run; (c) phase 1 ticked `[x]` before the run → passed without validation; (d) run in flight across the upgrade (validation off, `kill -9`, phase rows deleted, validation on, restart) → finished phase 1 not re-validated, phase 2 validated. `e2e-ui.mjs` [TASK-16]: (a) a UI task PASSes only on HTTP 200 from `fake-app.mjs`, a standard task gets no app, both validator prompts contain the gate output, planner/owner `validate_mode`; (b) `NEVER_READY` + 3 s timeout → failed with the app's output; (c) BLOCKED → failed on attempt 1, in the inbox; (d) `kill -9` during UI validation + restart → leftover app killed; (e) stop the task → app stopped; (f) SIGTERM the daemon → app stopped. Every scenario checks that no app process or pidfile is left.
   - `e2e-multi.mjs` [TASK-09]: (multi) one daemon, two projects registered through `dist/projects.js` before start, `server.json` with `maxAgents: 1` and ntfy pointed at a local HTTP sink: never more than one active task (polled), the second project's task starts before the first's third (worker-start event ids), refused plan/start naming the unfinished run, worktrees under `ORCH_HOME/worktrees/<id>/`, titles prefixed with the project name; (legacy) a legacy `orch.config.json` plus a 0.1-schema DB with a done run → project registered, old run + decisions visible, files split, a new run completes. Every e2e daemon gets `ORCH_HOME=<tmp>/home` (`makeRepo()` returns it); scripts that write a legacy config exercise the upgrade on each start.

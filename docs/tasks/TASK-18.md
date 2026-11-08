@@ -1,5 +1,5 @@
 # TASK-18: Feature-folder fixtures and the brief contract
-**Status:** todo · **Wave:** 13 · **Depends on:** — · **Parallel:** Yes · **Merge policy:** manual (owner reviews the expected outputs, as for TASK-01)
+**Status:** done (2026-11-08; expected outputs checked mechanically against `parseTasksMd` and a scratch transcription of §6.4; owner review of the expected outputs is the manual merge step) · **Wave:** 13 · **Depends on:** — · **Parallel:** Yes · **Merge policy:** manual (owner reviews the expected outputs, as for TASK-01)
 
 ## Goal
 Pin down, before any code, what orch reads from a feature folder that contains authored task briefs (`tasks/T00N.md`), what it warns about, and in what order it assembles a worker's context. The fixtures are the executable spec for TASK-19, TASK-20 and TASK-21. The contract itself moves from the proposal into architecture.md so it has one home.

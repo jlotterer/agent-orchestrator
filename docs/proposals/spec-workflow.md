@@ -117,68 +117,9 @@ The skill sets those REQs to `built`, writes decision records for run decisions 
 
 # Part 2: The feature folder contract
 
-This is what orch reads. It is a superset of the Spec Kit layout, so decision 0008 holds.
+The contract lives in [architecture.md §6.4 "Feature folder and brief contract"](../architecture.md#64-feature-folder-and-brief-contract) (moved there by TASK-18), with its executable form in `test/fixtures/spec-dir/`. That section is the single home for the folder layout, the brief frontmatter and sections, the folder checks (errors, warnings, conflicts) and the order and budgets of the context each agent receives. This part is kept as a pointer so links into the proposal keep working.
 
-```
-specs/NNN-name/
-  spec.md            feature summary, Covers, Out of scope, Contracts, Risky logic
-  tasks.md           - [ ] T001 [P] <title>          (## headings = phases; unchanged Spec Kit format)
-  tasks/T001.md      brief for task key T001 (optional per task; orch falls back without it)
-  *.md, contracts/*  any other files (Spec Kit's plan.md, data-model.md, …) are read as context
-```
-
-## Brief format (`tasks/T00N.md`)
-
-```markdown
----
-orch: 1                      # brief format version; a different major is an import error
-covers: [REQ-AUTH-03, REQ-AUTH-04]
-depends_on: [T001, T002]
-parallel: true
-merge_policy: auto           # auto | manual
-validate: standard           # standard | ui
-validate_command: npm test -- test/auth   # optional
----
-# T003: Session refresh
-
-## Goal
-One paragraph: what exists when this task is done, and why.
-
-## Acceptance criteria
-- Given …, When …, Then …   (2–6 items; each becomes an automated test)
-
-## Target files
-- src/auth/session.ts
-- test/auth/session.test.ts
-
-## Contracts
-- SessionStore (spec.md §Contracts)
-- contracts/auth-api.md
-
-## Out of scope
-- Token rotation (T005)
-
-## Notes for the worker
-Anything else a fresh agent needs: order of work, gotchas, where to look.
-```
-
-Rules orch applies when importing:
-
-- The frontmatter is parsed deterministically (pure function, fixture-tested; the subset of YAML needed is scalars and flow lists, so no dependency). It sets the task's dependencies, parallel flag, merge policy, validate mode and validate command; `## Target files` sets owned files. Frontmatter wins over `tasks.md` marks; a conflict is recorded as a decision. A missing or unsupported `orch:` version is an import error naming the file.
-- Acceptance criteria are taken from the `## Acceptance criteria` section verbatim.
-- REQ rows are pulled from `handoff.requirementsFile` (default `docs/requirements.md`) by matching the `REQ-<DOMAIN>-NN` ID in a table row, plus the acceptance-criteria bullets that cite the same ID.
-- `## Contracts` entries are resolved to a section of `spec.md` or to a file in the folder, and included in the worker's and validator's context in full.
-- A brief over `handoff.briefChars` (default 8,000) is a warning in the preview and a decision at plan time; it is still used, and anything cut is marked.
-- Missing brief: the task falls back to today's behaviour (planner writes criteria; worker gets spec excerpts).
-
-## Context each agent receives
-
-| Agent | Receives |
-| :--- | :--- |
-| Planner | Runs only for tasks without a brief, or for the whole plan with `--review`. Gets `spec.md`, all briefs (frontmatter + goal + criteria), other `*.md`, `tasks.md` parse. |
-| Worker | Brief in full → REQ rows cited (from `docs/requirements.md`, pattern match) → contracts named → project rules (`handoff.projectFiles`, default `["AGENTS.md"]`) → hand-off (summaries, decisions, answers, feedback). Each part has its own budget; a cut is a decision. |
-| Task validator | The same brief, REQ rows, contracts and rules, plus today's diff, summary and gate output. Never the worker's transcript ([0004](../decisions/0004-independent-validation.md)). |
-| Phase validator | `spec.md` in full, each task's header + criteria, project rules. |
+A complete, reviewed example of a brief is `test/fixtures/spec-dir/full/tasks/T003.md`; the same folder's `spec.md` shows the `## Contracts` section with named contracts, and `test/fixtures/spec-dir/bad/` shows each problem the checks report.
 
 ---
 
