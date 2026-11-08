@@ -133,7 +133,7 @@ To make this shorter, add an alias: `alias orch='docker compose -f ~/orch/docker
 
 State is in `work/` and sign-ins are in named volumes, so a rebuild loses nothing. Tasks that were active go back to pending with their working copies kept.
 
-If you upgrade from a single-repo container, the first start of the new image upgrades it as described in [Install orch](../install.md#upgrade-from-a-single-repo-installation). It also copies `work/.orch/orch.db` to `work/orch.db`. Once the run history looks right, you can delete `work/.orch/`.
+If you upgrade from a single-repo container, the first start of the new image upgrades it as described in [Install orch](../install.md#upgrade-from-a-single-repo-installation). It also copies `work/.orch/orch.db` to `work/orch.db`. When the run history looks right, delete `work/.orch/`.
 
 ## Things to know
 

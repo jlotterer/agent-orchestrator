@@ -4,7 +4,7 @@ Planning turns a feature's `tasks.md` into a run that orch can execute. orch imp
 
 ## Prepare the feature folder
 
-orch reads a Spec Kit feature folder, such as `specs/003-checkout/`. It needs:
+orch reads a feature folder, such as `specs/003-checkout/`. It needs:
 
 - `tasks.md` (required): the task list. See [Task file format](../reference/tasks-file.md).
 - `spec.md` and `plan.md` (recommended): the planner reads them, and workers get an excerpt of them.

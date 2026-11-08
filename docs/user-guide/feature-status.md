@@ -1,6 +1,6 @@
 # Feature status
 
-This page summarizes what orch does in the current release, and what it doesn't do.
+This page summarizes what orch does in the current release, what's coming next, and what it doesn't do.
 
 ## Available now
 
@@ -18,11 +18,29 @@ This page summarizes what orch does in the current release, and what it doesn't 
 | Projects | Several projects in one server; `orch project add`, `list` and `remove`; `--project` and `ORCH_PROJECT` ([Add and manage projects](how-to/manage-projects.md)); per-project settings file in the repo; server settings kept apart from project settings; automatic upgrade of single-repo installations |
 | Operations | Archive of old agent logs to compressed files ([Archive old activity logs](how-to/archive-event-logs.md)); access token for the dashboard, API and command line; refusal to listen on a network without a token; open health check; systemd unit; Docker image; automatic database upgrades |
 
+## Coming later
+
+Today, a worker starts each task from a one-line entry in `tasks.md`, plus whatever the planner agent and a spec excerpt add. That's the weakest point in the process: the spec is often cut short, and the validator sees even less. The next group of releases replaces it with *task briefs* that you write once and that orch reads directly.
+
+None of this is in the current release. Names, commands and settings may change before they ship. The reasoning is recorded in [decision 0023](../decisions/0023-orch-owns-spec-skill.md).
+
+| Area | What's planned |
+| :--- | :--- |
+| Task briefs | A feature folder can hold one brief per task, such as `tasks/T001.md` beside `tasks.md`. A brief carries the task's goal, acceptance criteria, dependencies, merge policy, validation mode and the files it changes. When a brief exists, orch takes these values from it. |
+| Planning without an agent | When every task has a brief, `orch plan` builds the plan from the briefs and calls no agent. The planner runs only for tasks without a brief, or for the whole plan when you ask for a review. Every change the reviewing planner makes is recorded as a decision with its reason. |
+| Import checks | The preview shows which tasks have a brief and which fields came from it. It warns when two parallel tasks change the same file, when a brief is too long, and when a task adds only tests. Import refuses a spec that still contains an unresolved marker such as `TBD`, unless you override. |
+| More context for agents | Workers receive the brief in full, the requirements it cites, the interfaces it names, and a project rules file (`AGENTS.md` by default). Validators receive the same, but never the worker's transcript. Without a brief, workers get `spec.md` before `plan.md`, each within its own size limit. |
+| Validation against project rules | The validator rejects a change that breaks a project rule or a named interface, and quotes the rule in its verdict. |
+| Fold-back after a run | When a run completes, an inbox item named **Update project docs** lists the requirements the merged tasks covered, the decisions made during the run, the plan edits you made in the dashboard, and the interfaces that changed. You use it to bring the project's documents up to date. |
+| The `orch-spec` skill | A Claude Code skill that ships with orch and writes everything orch reads. Its project mode interviews you once per project and writes requirements, architecture, decision records, project rules and a roadmap. Its feature mode writes the feature folder and its briefs. Its fold-back mode updates the project documents after a run. Its adopt mode adds briefs to an existing Spec Kit folder without changing its tasks. |
+
+Spec Kit folders keep working as they do today, with or without briefs.
+
 ## Not planned
 
 These are outside orch's scope:
 
-- Writing specs from free text. orch starts from Spec Kit's `tasks.md`.
+- Writing specs inside orch. orch starts from a `tasks.md` task list. Writing it is the job of a separate tool: Spec Kit today, and the `orch-spec` skill when it ships.
 - Running agents in a vendor's cloud. orch runs agents on your own machine.
 - Several users or teams with roles. orch has one owner.
 - Spending limits. orch shows cost but doesn't enforce limits.

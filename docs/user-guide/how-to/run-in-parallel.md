@@ -1,6 +1,6 @@
 # Run tasks in parallel
 
-By default, orch runs one task at a time per project. Once you trust a feature's dependency graph, you can let it run several tasks at once. Two limits control this: one per project and one for the whole server.
+By default, orch runs one task at a time per project. When you trust a feature's dependency graph, you can let it run several tasks at once. Two limits control this: one per project and one for the whole server.
 
 ## Raise a project's parallel limit
 

@@ -1,16 +1,16 @@
 # orch user manual
 
-orch runs AI coding agents through your Spec Kit task lists, one task at a time or several in parallel, and merges the results for you. You approve the plan, answer the questions the agents can't settle, and review the changes you marked as risky. orch does the rest: it schedules tasks, retries failures, opens and merges pull requests, and records every decision it makes.
+orch runs AI coding agents through a feature's task list, one task at a time or several in parallel, and merges the results for you. You approve the plan, answer the questions the agents can't settle, and review the changes you marked as risky. orch does the rest: it schedules tasks, retries failures, opens and merges pull requests, and records every decision it makes.
 
 orch runs on your own server. One orch serves all of your projects, and you use it from a browser dashboard or from the `orch` command line.
 
 ## Who this manual is for
 
-This manual is for the owner who installs and operates orch. You should be comfortable with a terminal, git, and GitHub, and you should already use an AI coding agent such as Claude Code. You don't need to know how orch is built.
+This manual is for the owner who installs and operates orch. It assumes you're comfortable with a terminal, git and GitHub, and that you already use an AI coding agent such as Claude Code. You don't need to know how orch is built.
 
 ## How a feature moves through orch
 
-1. You write a feature spec with Spec Kit. It produces a `tasks.md` file.
+1. You write a feature spec that ends in a `tasks.md` task list. Spec Kit produces one, and so does any tool that follows the same format.
 2. You ask orch to plan the feature. A planner agent adds acceptance criteria to each task and checks the order.
 3. You review the plan, edit it if you want, and approve it.
 4. You start the run. For each task, a worker agent writes the code in its own copy of the repo. A test command checks it, and a separate validator agent checks it against the acceptance criteria.
@@ -19,7 +19,7 @@ This manual is for the owner who installs and operates orch. You should be comfo
 
 ## Feature availability
 
-Every feature in this manual is available in the current release. For a summary, and for what orch doesn't do, see [Feature status](feature-status.md).
+Every feature in this manual is available in the current release. One larger change is decided but not yet built: a spec skill that writes task briefs made for orch, so that agents start with everything they need. For a summary of what's available, what's coming, and what orch doesn't do, see [Feature status](feature-status.md).
 
 ## Contents
 
@@ -65,7 +65,7 @@ Every feature in this manual is available in the current release. For a summary,
 | [Task file format](reference/tasks-file.md) | How orch reads `tasks.md` and works out dependencies |
 | [What agents see and do](reference/agents.md) | Agent inputs, `orch decide` and `orch ask`, and the results agents return |
 | [HTTP API](reference/http-api.md) | Endpoints for scripts and integrations |
-| [Feature status](feature-status.md) | What's available now and what's planned |
+| [Feature status](feature-status.md) | What's available now, what's coming, and what orch doesn't do |
 
 ### Help
 
