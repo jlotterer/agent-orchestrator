@@ -1,5 +1,5 @@
 # TASK-11: Dashboard: projects, global inbox, reconnect
-**Status:** todo · **Wave:** 7 · **Depends on:** TASK-10 · **Parallel:** Yes (with TASK-12)
+**Status:** done · **Wave:** 7 · **Depends on:** TASK-10 · **Parallel:** Yes (with TASK-12)
 
 ## Goal
 Bring multi-project to the dashboard: a project switcher with status and inbox counts, adding and archiving projects, a global inbox labelled by project, per-project board, plan and decisions, and resilient live updates.

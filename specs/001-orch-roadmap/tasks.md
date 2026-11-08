@@ -25,7 +25,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T010 Projects API, global inbox and CLI scoping. Brief: docs/tasks/TASK-10.md.
 
 ## Phase 7: Wave 7
-- [ ] T011 [P] Dashboard: projects, global inbox, reconnect. Brief: docs/tasks/TASK-11.md.
+- [x] T011 [P] Dashboard: projects, global inbox, reconnect. Brief: docs/tasks/TASK-11.md.
 - [ ] T012 [P] Event archive and retention. Brief: docs/tasks/TASK-12.md.
 
 ## Phase 8: Wave 8
