@@ -15,7 +15,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T006 [P] Diff review and send back to the worker. Brief: docs/tasks/TASK-06.md.
 
 ## Phase 4: Wave 4
-- [ ] T007 [P] Project registry and versioned DB migrations. Brief: docs/tasks/TASK-07.md.
+- [x] T007 [P] Project registry and versioned DB migrations. Brief: docs/tasks/TASK-07.md.
 - [ ] T008 [P] Bearer-token auth, health check and bind guard. Brief: docs/tasks/TASK-08.md.
 
 ## Phase 5: Wave 5

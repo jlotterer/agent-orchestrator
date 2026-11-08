@@ -55,8 +55,8 @@ src/
   speckit.ts        tasks.md parser (pure) + spec dir reader + tick writer
   config.ts         server + project config loaders, forbidden keys, legacy adapter  (built: TASK-05; daemon wiring TASK-09)
   paths.ts          ORCH_HOME layout                                                  (built: TASK-05)
-  projects.ts       project registry (add/list/archive/resolve by cwd)                [planned: TASK-07]
-  db.ts             better-sqlite3 store, schema + versioned migrations
+  projects.ts       project registry (add/archive/resolve by cwd)                      (built: TASK-07; daemon use TASK-09)
+  db.ts             better-sqlite3 store, schema + `user_version` migrations           (built: TASK-07)
   git.ts            Git class: worktrees, commits, diffs, merge, gh pr/run/api helpers
   auth.ts           token check, login cookie, bind guard                             [planned: TASK-08]
   appserver.ts      UI-mode app lifecycle: port, start, readiness, stop, pidfiles     [planned: TASK-16]
@@ -87,7 +87,7 @@ scripts/            e2e*.mjs scenarios, fake-agent.mjs, fake-gh.mjs, fake-app.mj
 Single-threaded JS: DB writes are synchronous (better-sqlite3), so no row-level races. Re-read the task after every `await` before acting (status may have changed).
 
 ## 5. Projects & Configuration
-**[built: TASK-05 (loaders, paths); planned: TASK-07, TASK-09]** Today one daemon still serves one repo configured by a single legacy `orch.config.json` (`loadConfig()`). The two-level loaders below exist in `src/config.ts` and `src/paths.ts` and are unit-tested, but the daemon does not call them until TASK-09; `toLegacyConfig(server, project, repoPath)` maps the pair onto today's `Config` (worktrees under `worktrees/<project-id>/`, DB at `$ORCH_HOME/orch.db`) so that wiring needs no orchestrator change.
+**[built: TASK-05 (loaders, paths), TASK-07 (registry); planned: TASK-09]** Today one daemon still serves one repo configured by a single legacy `orch.config.json` (`loadConfig()`). The two-level loaders below exist in `src/config.ts` and `src/paths.ts` and are unit-tested, but the daemon does not call them until TASK-09; `toLegacyConfig(server, project, repoPath)` maps the pair onto today's `Config` (worktrees under `worktrees/<project-id>/`, DB at `$ORCH_HOME/orch.db`) so that wiring needs no orchestrator change.
 
 ### 5.1 ORCH_HOME layout
 ```
@@ -109,7 +109,11 @@ $ORCH_HOME (default ~/.orch)
 **Loader contract** (`src/config.ts`): `loadServerConfig(home)` reads `<home>/server.json` over the §19 server defaults (missing file = defaults); it throws if `agents.roles.*` names an undefined adapter or `defaults` holds a rejected key (named `defaults.<key>`). `loadProjectConfig(repoPath, server)` returns `{config, warnings, path}`: it re-reads the file on every call, throws on rejected keys (all named in one message) and on unknown role adapters, and drops unknown or non-object keys with a warning (unknown keys under `server.json` `defaults` are reported the same way). `validation.ui.env` is a free-form map. `writeStarterProjectConfig(repoPath, {baseBranch})` writes `{baseBranch, validation: {command: ""}}` only if no file exists. Examples: [orch.config.example.json](../orch.config.example.json) (project keys) and [examples/server.example.json](../examples/server.example.json).
 
 ### 5.3 Registry
-`projects` table (§20). `id` = slug of the repo directory name, `-2`, `-3`… on collision. `repo_path` unique (realpath). Adding: realpath → must contain `.git` (`git rev-parse --show-toplevel` equals path) → if archived row with same path exists, un-archive it → else insert → write starter `orch.config.json` if missing (keys: `baseBranch` detected from `git symbolic-ref refs/remotes/origin/HEAD` else current branch, `validation.command: ""`). Archive refuses if the project has an unfinished run. Missing repo on disk → project `error` field set at load; views show it; plan/start refused.
+`projects` table (§20). `id` = slug of the repo directory name, `-2`, `-3`… on collision. `repo_path` unique (realpath). Adding: realpath → must contain `.git` (`git rev-parse --show-toplevel` equals path) → if archived row with same path exists, un-archive it → else insert → write starter `orch.config.json` if missing (keys: `baseBranch` detected from `git symbolic-ref refs/remotes/origin/HEAD` else current branch, `validation.command: ""`). Archive refuses if the project has an unfinished run.
+
+**Contract** (`src/projects.ts`, built TASK-07): `registerProject(store, path, {name?})` → `{project, configCreated?: <settings file path>, unarchived?: true}`; errors: missing path, "<path> is not a git repository", "<path> is not a git repository root (the repository root is …)", "<path> is already registered as project '<id>'". `name` defaults to the directory name. `archiveProject(store, id)` refuses while a run is `planning|plan_pending|ready|running|paused`, naming the run; it never touches the repo or the rows. `resolveProjectForCwd(projects, cwd)` = step 3 of §5.4 (deepest non-archived `repo_path` containing `cwd`). Store: `addProject`, `getProject`, `getProjectByPath`, `listProjects({archived?})` (archived excluded unless `archived: true`), `setProjectArchived`, `touchProjectStart`, `listRuns(projectId?)`.
+
+Missing repo on disk → project `error` field set at load; views show it; plan/start refused.
 
 ### 5.4 CLI project resolution
 `--project <id>` > `ORCH_PROJECT` env > the registered project whose `repo_path` contains `cwd` (deepest match) > the only non-archived project > error exit 2 listing projects.
@@ -398,7 +402,7 @@ _(→ code: `src/db.ts`)_
 | UI-mode app processes | process + pidfile | pidfile | killed on recover |
 
 ### Migrations & versioning
-`PRAGMA user_version` holds the schema version [TASK-07]. `Store` constructor runs ordered migrations `1..N` in a transaction each. Version 1 = today's schema plus the R1 columns (applied by the existing `TASK_MIGRATIONS` column check). Making `questions.task_id` nullable needs a table rebuild (create new, copy, drop, rename). Never edit a released migration; add a new one.
+`PRAGMA user_version` holds the schema version (built: TASK-07, current version 2). The `Store` constructor calls `migrate(db)`, which runs migrations `user_version+1..N` in order, one transaction each (the version bump is in the same transaction), and refuses a DB whose version is newer than the build. Each migration tolerates a DB that already has part of it (columns are added only if missing). Version 1 = the 0.1 schema plus any missing R1 task columns. Version 2 = `projects` and `phases` tables, the `[TASK-07]`…`[TASK-17]` run/task columns above, indexes `runs_project(project_id, created_at)` and `questions_run(run_id, id)`, and a rebuild of `questions` (create new, copy with ids, drop, rename) to make `task_id` nullable. JSON columns (`acceptance`, `depends_on`, `files`, `files_owned`) map to arrays and `archived`/`synthetic` to booleans in `src/types.ts`. Never edit a released migration; add a new one.
 
 ## 21. Errors, Logging & Testing
 ### 21.1 Errors & logging

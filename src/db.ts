@@ -2,9 +2,16 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import type { Run, Task, Event, Decision, Question, TaskStatus, RunStatus } from "./types.js";
+import type { Run, Task, Event, Decision, Question, TaskStatus, RunStatus, Project, Phase } from "./types.js";
 
-const SCHEMA = `
+/*
+ * Schema versions (architecture §20 "Migrations & versioning"). `PRAGMA user_version` holds the
+ * version; the Store constructor applies migrations `user_version+1 .. SCHEMA_VERSION` in order,
+ * one transaction each. Never edit a released migration: add a new one.
+ */
+
+/** Version 1 base tables: the 0.1 schema (R1 task columns included for fresh databases). */
+const SCHEMA_V1 = `
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   spec_dir TEXT NOT NULL,
@@ -79,8 +86,8 @@ CREATE TABLE IF NOT EXISTS questions (
 );
 `;
 
-/** Columns added after 0.1; added to existing databases on open. */
-const TASK_MIGRATIONS: [string, string][] = [
+/** R1 columns added after 0.1; migration 1 adds whichever an existing database lacks. */
+const R1_TASK_COLUMNS: [string, string][] = [
   ["fix_rounds", "INTEGER NOT NULL DEFAULT 0"],
   ["pr_head", "TEXT"],
   ["pr_pushed_at", "TEXT"],
@@ -89,7 +96,107 @@ const TASK_MIGRATIONS: [string, string][] = [
   ["ci_status", "TEXT"],
 ];
 
+function addColumns(db: Database.Database, table: string, cols: [string, string][]) {
+  const have = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as any[]).map((c) => c.name));
+  for (const [col, type] of cols) if (!have.has(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+}
+
+/** Migrations by target version (index 0 → version 1). Each is safe on a DB that already has part of it. */
+const MIGRATIONS: ((db: Database.Database) => void)[] = [
+  // 1: the 0.1 schema plus the R1 PR-feedback columns.
+  (db) => {
+    db.exec(SCHEMA_V1);
+    addColumns(db, "tasks", R1_TASK_COLUMNS);
+  },
+  // 2: projects and phases; cost/time and archive columns; ownership, UI-mode and synthetic task
+  //    columns; questions.task_id nullable (plan questions).
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        repo_path TEXT NOT NULL UNIQUE,
+        archived INTEGER NOT NULL DEFAULT 0,
+        last_start_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS phases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        name TEXT NOT NULL,
+        idx INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        fixup_rounds INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        UNIQUE(run_id, name)
+      );
+    `);
+    addColumns(db, "runs", [
+      ["project_id", "TEXT"],
+      ["cost_usd", "REAL"],
+      ["agent_ms", "INTEGER"],
+      ["archived_at", "TEXT"],
+    ]);
+    addColumns(db, "tasks", [
+      ["files_owned", "TEXT NOT NULL DEFAULT '[]'"],
+      ["validate_mode", "TEXT NOT NULL DEFAULT 'standard'"],
+      ["synthetic", "INTEGER NOT NULL DEFAULT 0"],
+      ["cost_usd", "REAL"],
+      ["agent_ms", "INTEGER"],
+    ]);
+    db.exec("CREATE INDEX IF NOT EXISTS runs_project ON runs(project_id, created_at)");
+    // SQLite cannot drop NOT NULL in place: rebuild the table, keeping ids (and so the AUTOINCREMENT high-water mark).
+    const taskId = (db.prepare("PRAGMA table_info(questions)").all() as any[]).find((c) => c.name === "task_id");
+    if (taskId?.notnull) {
+      db.exec(`
+        CREATE TABLE questions_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          run_id TEXT NOT NULL,
+          task_id TEXT,
+          ts TEXT NOT NULL,
+          text TEXT NOT NULL,
+          options TEXT NOT NULL DEFAULT '[]',
+          answer TEXT,
+          answered_at TEXT
+        );
+        INSERT INTO questions_new (id, run_id, task_id, ts, text, options, answer, answered_at)
+          SELECT id, run_id, task_id, ts, text, options, answer, answered_at FROM questions;
+        DROP TABLE questions;
+        ALTER TABLE questions_new RENAME TO questions;
+      `);
+    }
+    db.exec("CREATE INDEX IF NOT EXISTS questions_run ON questions(run_id, id)");
+  },
+];
+
+/** The schema version this build writes. */
+export const SCHEMA_VERSION = MIGRATIONS.length;
+
+/** Bring `db` up to SCHEMA_VERSION. Returns the versions applied (empty when already current). */
+export function migrate(db: Database.Database): number[] {
+  const from = db.pragma("user_version", { simple: true }) as number;
+  if (from > SCHEMA_VERSION) {
+    throw new Error(`database schema version ${from} is newer than this orch supports (${SCHEMA_VERSION}); upgrade orch`);
+  }
+  const applied: number[] = [];
+  for (let v = from + 1; v <= SCHEMA_VERSION; v++) {
+    db.transaction(() => {
+      MIGRATIONS[v - 1](db);
+      db.pragma(`user_version = ${v}`);
+    })();
+    applied.push(v);
+  }
+  return applied;
+}
+
 const now = () => new Date().toISOString();
+
+/** Task fields the Store fills in when a caller leaves them out. */
+type TaskDefaulted =
+  | "fix_rounds" | "pr_head" | "pr_pushed_at" | "pr_feedback_at" | "ci_head" | "ci_status"
+  | "files_owned" | "validate_mode" | "synthetic" | "cost_usd" | "agent_ms";
+export type NewTask = Omit<Task, "id" | "created_at" | "updated_at" | TaskDefaulted> & Partial<Pick<Task, TaskDefaulted>>;
 
 function rowToTask(r: any): Task {
   return {
@@ -97,6 +204,8 @@ function rowToTask(r: any): Task {
     acceptance: JSON.parse(r.acceptance),
     depends_on: JSON.parse(r.depends_on),
     files: JSON.parse(r.files),
+    files_owned: JSON.parse(r.files_owned),
+    synthetic: !!r.synthetic,
   };
 }
 function rowToEvent(r: any): Event {
@@ -104,6 +213,9 @@ function rowToEvent(r: any): Event {
 }
 function rowToQuestion(r: any): Question {
   return { ...r, options: JSON.parse(r.options) };
+}
+function rowToProject(r: any): Project {
+  return { ...r, archived: !!r.archived };
 }
 
 export class Store {
@@ -113,15 +225,46 @@ export class Store {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
-    this.db.exec(SCHEMA);
-    const have = new Set((this.db.prepare("PRAGMA table_info(tasks)").all() as any[]).map((c) => c.name));
-    for (const [col, type] of TASK_MIGRATIONS) if (!have.has(col)) this.db.exec(`ALTER TABLE tasks ADD COLUMN ${col} ${type}`);
+    migrate(this.db);
+  }
+
+  // ---- projects ----
+  addProject(p: { id: string; name: string; repo_path: string }): Project {
+    const project: Project = { ...p, archived: false, last_start_at: null, created_at: now(), updated_at: now() };
+    this.db
+      .prepare(`INSERT INTO projects (id, name, repo_path, archived, last_start_at, created_at, updated_at)
+                VALUES (@id, @name, @repo_path, 0, NULL, @created_at, @updated_at)`)
+      .run({ id: project.id, name: project.name, repo_path: project.repo_path, created_at: project.created_at, updated_at: project.updated_at });
+    return project;
+  }
+  getProject(id: string): Project | undefined {
+    const r = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(id);
+    return r ? rowToProject(r) : undefined;
+  }
+  getProjectByPath(repoPath: string): Project | undefined {
+    const r = this.db.prepare("SELECT * FROM projects WHERE repo_path = ?").get(repoPath);
+    return r ? rowToProject(r) : undefined;
+  }
+  /** Non-archived projects by name; `{archived: true}` includes the archived ones too. */
+  listProjects(opts: { archived?: boolean } = {}): Project[] {
+    const sql = opts.archived
+      ? "SELECT * FROM projects ORDER BY name, id"
+      : "SELECT * FROM projects WHERE archived = 0 ORDER BY name, id";
+    return (this.db.prepare(sql).all() as any[]).map(rowToProject);
+  }
+  setProjectArchived(id: string, archived: boolean) {
+    this.db.prepare("UPDATE projects SET archived = ?, updated_at = ? WHERE id = ?").run(archived ? 1 : 0, now(), id);
+  }
+  /** Record that a task started in this project (fair share across projects, §7.1). */
+  touchProjectStart(id: string, at: string = now()) {
+    this.db.prepare("UPDATE projects SET last_start_at = ?, updated_at = ? WHERE id = ?").run(at, now(), id);
   }
 
   // ---- runs ----
-  createRun(specDir: string, title: string, baseBranch: string, status: RunStatus = "planning"): Run {
+  createRun(specDir: string, title: string, baseBranch: string, status: RunStatus = "planning", projectId: string | null = null): Run {
     const run: Run = {
       id: crypto.randomUUID().slice(0, 8),
+      project_id: projectId,
       spec_dir: specDir,
       title,
       status,
@@ -129,18 +272,27 @@ export class Store {
       created_at: now(),
       updated_at: now(),
       notes: null,
+      cost_usd: null,
+      agent_ms: null,
+      archived_at: null,
     };
     this.db
-      .prepare(`INSERT INTO runs (id, spec_dir, title, status, base_branch, created_at, updated_at, notes)
-                VALUES (@id, @spec_dir, @title, @status, @base_branch, @created_at, @updated_at, @notes)`)
-      .run(run);
+      .prepare(`INSERT INTO runs (id, project_id, spec_dir, title, status, base_branch, created_at, updated_at, notes)
+                VALUES (@id, @project_id, @spec_dir, @title, @status, @base_branch, @created_at, @updated_at, @notes)`)
+      .run({
+        id: run.id, project_id: run.project_id, spec_dir: run.spec_dir, title: run.title, status: run.status,
+        base_branch: run.base_branch, created_at: run.created_at, updated_at: run.updated_at, notes: run.notes,
+      });
     return run;
   }
   getRun(id: string): Run | undefined {
     return this.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Run | undefined;
   }
-  listRuns(): Run[] {
-    return this.db.prepare("SELECT * FROM runs ORDER BY created_at DESC").all() as Run[];
+  /** All runs, newest first; with `projectId`, only that project's. */
+  listRuns(projectId?: string): Run[] {
+    return projectId === undefined
+      ? (this.db.prepare("SELECT * FROM runs ORDER BY created_at DESC").all() as Run[])
+      : (this.db.prepare("SELECT * FROM runs WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as Run[]);
   }
   /** The run the scheduler should act on: the most recent one that isn't finished. */
   activeRun(): Run | undefined {
@@ -156,23 +308,28 @@ export class Store {
   }
 
   // ---- tasks ----
-  insertTask(t: Omit<Task, "id" | "created_at" | "updated_at" | "fix_rounds" | "pr_head" | "pr_pushed_at" | "pr_feedback_at" | "ci_head" | "ci_status">): Task {
+  insertTask(t: NewTask): Task {
     const task: Task = {
       fix_rounds: 0, pr_head: null, pr_pushed_at: null, pr_feedback_at: null, ci_head: null, ci_status: null,
+      files_owned: [], validate_mode: "standard", synthetic: false, cost_usd: null, agent_ms: null,
       ...t, id: crypto.randomUUID().slice(0, 8), created_at: now(), updated_at: now(),
     };
     this.db
       .prepare(`INSERT INTO tasks (id, run_id, key, title, description, acceptance, depends_on, parallel, phase, order_idx,
                 status, attempt, max_attempts, merge_policy, validate_cmd, worktree, branch, pr_url, session_id, summary, files,
-                last_feedback, fix_rounds, pr_head, pr_pushed_at, pr_feedback_at, ci_head, ci_status, created_at, updated_at)
+                last_feedback, fix_rounds, pr_head, pr_pushed_at, pr_feedback_at, ci_head, ci_status,
+                files_owned, validate_mode, synthetic, cost_usd, agent_ms, created_at, updated_at)
                 VALUES (@id, @run_id, @key, @title, @description, @acceptance, @depends_on, @parallel, @phase, @order_idx,
                 @status, @attempt, @max_attempts, @merge_policy, @validate_cmd, @worktree, @branch, @pr_url, @session_id, @summary, @files,
-                @last_feedback, @fix_rounds, @pr_head, @pr_pushed_at, @pr_feedback_at, @ci_head, @ci_status, @created_at, @updated_at)`)
+                @last_feedback, @fix_rounds, @pr_head, @pr_pushed_at, @pr_feedback_at, @ci_head, @ci_status,
+                @files_owned, @validate_mode, @synthetic, @cost_usd, @agent_ms, @created_at, @updated_at)`)
       .run({
         ...task,
         acceptance: JSON.stringify(task.acceptance),
         depends_on: JSON.stringify(task.depends_on),
         files: JSON.stringify(task.files),
+        files_owned: JSON.stringify(task.files_owned),
+        synthetic: task.synthetic ? 1 : 0,
       });
     return task;
   }
@@ -193,7 +350,7 @@ export class Store {
     for (const [k, v] of Object.entries(patch)) {
       if (k === "id") continue;
       cols.push(`${k} = @${k}`);
-      vals[k] = Array.isArray(v) ? JSON.stringify(v) : v;
+      vals[k] = Array.isArray(v) ? JSON.stringify(v) : typeof v === "boolean" ? (v ? 1 : 0) : v;
     }
     cols.push("updated_at = @updated_at");
     this.db.prepare(`UPDATE tasks SET ${cols.join(", ")} WHERE id = @id`).run(vals);
@@ -203,6 +360,33 @@ export class Store {
   }
   deleteTasks(runId: string) {
     this.db.prepare("DELETE FROM tasks WHERE run_id = ?").run(runId);
+  }
+
+  // ---- phases ----
+  /** The phase row for (run, name), created `pending` if missing. An existing row is returned unchanged. */
+  upsertPhase(runId: string, name: string, idx: number): Phase {
+    this.db
+      .prepare(`INSERT INTO phases (run_id, name, idx, status, fixup_rounds, updated_at) VALUES (?, ?, ?, 'pending', 0, ?)
+                ON CONFLICT(run_id, name) DO NOTHING`)
+      .run(runId, name, idx, now());
+    return this.db.prepare("SELECT * FROM phases WHERE run_id = ? AND name = ?").get(runId, name) as Phase;
+  }
+  getPhase(id: number): Phase | undefined {
+    return this.db.prepare("SELECT * FROM phases WHERE id = ?").get(id) as Phase | undefined;
+  }
+  listPhases(runId: string): Phase[] {
+    return this.db.prepare("SELECT * FROM phases WHERE run_id = ? ORDER BY idx, id").all(runId) as Phase[];
+  }
+  updatePhase(id: number, patch: Partial<Pick<Phase, "status" | "fixup_rounds" | "idx">>) {
+    const cols: string[] = [];
+    const vals: any = { id, updated_at: now() };
+    for (const k of ["status", "fixup_rounds", "idx"] as const) {
+      if (patch[k] === undefined) continue;
+      cols.push(`${k} = @${k}`);
+      vals[k] = patch[k];
+    }
+    cols.push("updated_at = @updated_at");
+    this.db.prepare(`UPDATE phases SET ${cols.join(", ")} WHERE id = @id`).run(vals);
   }
 
   // ---- events ----
@@ -237,7 +421,8 @@ export class Store {
   }
 
   // ---- questions ----
-  addQuestion(runId: string, taskId: string, text: string, options: string[]): Question {
+  /** `taskId` null = a question about the whole plan (§14). */
+  addQuestion(runId: string, taskId: string | null, text: string, options: string[]): Question {
     const ts = now();
     const info = this.db
       .prepare("INSERT INTO questions (run_id, task_id, ts, text, options) VALUES (?, ?, ?, ?, ?)")

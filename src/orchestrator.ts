@@ -693,10 +693,10 @@ export class Orchestrator extends EventEmitter {
     if (q.answer) throw new Error("already answered");
     this.store.answerQuestion(questionId, answer);
     const run = this.store.getRun(q.run_id)!;
-    const task = this.store.getTask(q.task_id)!;
+    const task = q.task_id ? this.store.getTask(q.task_id) ?? null : null; // null task_id = plan question (TASK-13)
     this.decide(run, task, "human", `Answered: ${clip(q.text, 120)} → ${answer}`, null);
     this.changed("questions", { runId: run.id });
-    if (task.status === "needs_input") await this.resumeAfterAnswer(run, task);
+    if (task?.status === "needs_input") await this.resumeAfterAnswer(run, task);
   }
   /**
    * T10/T11: once every question is answered, continue the worker without consuming an attempt

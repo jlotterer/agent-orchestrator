@@ -49,10 +49,10 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-PROJ-01 | The owner MUST be able to register a project by giving the path of a git repository on the server, from both the CLI and the dashboard. A path that is not a git repository MUST be rejected with a message saying so. | new |
-| REQ-PROJ-02 | When a registered project has no project settings file, orch MUST create a starter settings file in the repo and say where it is. | new |
+| REQ-PROJ-01 | The owner MUST be able to register a project by giving the path of a git repository on the server, from both the CLI and the dashboard. A path that is not a git repository MUST be rejected with a message saying so. | built (registry, TASK-07) / new (CLI + dashboard, TASK-10) |
+| REQ-PROJ-02 | When a registered project has no project settings file, orch MUST create a starter settings file in the repo and say where it is. | built (registry returns the path, TASK-07; shown by CLI/dashboard in TASK-10) |
 | REQ-PROJ-03 | The owner MUST be able to see every registered project with its name, current run status, and number of open inbox items, and switch the dashboard between projects. | new |
-| REQ-PROJ-04 | The owner MUST be able to remove (archive) a project. Archiving MUST NOT delete the repository. The project's history MUST remain stored, and it MUST be possible to re-register the project later. Archiving a project with an active run MUST be refused. | new |
+| REQ-PROJ-04 | The owner MUST be able to remove (archive) a project. Archiving MUST NOT delete the repository. The project's history MUST remain stored, and it MUST be possible to re-register the project later. Archiving a project with an active run MUST be refused. | built (registry, TASK-07) / new (CLI + dashboard, TASK-10) |
 | REQ-PROJ-05 | Per-project settings MUST be read from a file inside the project's repository. Server-wide settings MUST be kept separately and MUST NOT be overridable from a project file in ways that change how agent CLIs are launched or which credentials they get. | built (loaders, TASK-05) / new (daemon uses them, TASK-09) |
 | REQ-PROJ-06 | Changes to a project's settings file MUST take effect no later than the next run start for that project, without restarting orch. | new (loader re-reads the file on every call, TASK-05; run-start wiring TASK-09) |
 | REQ-PROJ-07 | Each project MUST have at most one unfinished run (planning, awaiting approval, ready, running, or paused). Creating or starting another run in that project while one is unfinished MUST be refused with a message naming the unfinished run. | new |
@@ -341,7 +341,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-OPS-02 | orch MUST refuse to start listening on a non-local network address without an access token, unless the owner explicitly opts out in server settings. `[ASSUMED]` | new |
 | REQ-OPS-03 | A health check MUST be available without the token, reporting that orch is up and its version. `[ASSUMED]` | new |
 | REQ-OPS-04 | Agent event logs of runs that finished more than a configured number of days ago MUST be archived to compressed files on the server, then removed from the live store. Decisions, questions, task summaries and verdicts MUST be kept. | new |
-| REQ-OPS-05 | Stored data from earlier versions MUST be upgraded automatically on start, without data loss. | built (columns) |
+| REQ-OPS-05 | Stored data from earlier versions MUST be upgraded automatically on start, without data loss. | built (`user_version` migrations, TASK-07) |
 | REQ-OPS-06 | orch MUST run as a systemd service and in Docker, keeping all of its state in one data directory. | built (per repo; ORCH_HOME layout in src/paths.ts, TASK-05) / new (daemon keeps all state there, TASK-09) |
 | REQ-OPS-07 | The access token and notification credentials MUST NOT be written to the store, the event log, or agent prompts. | new |
 
