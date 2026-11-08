@@ -41,4 +41,4 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T016 UI validation mode and gate output for validators. Brief: docs/tasks/TASK-16.md.
 
 ## Phase 12: Wave 12
-- [ ] T017 Cost and agent-time rollup. Brief: docs/tasks/TASK-17.md.
+- [x] T017 Cost and agent-time rollup. Brief: docs/tasks/TASK-17.md.

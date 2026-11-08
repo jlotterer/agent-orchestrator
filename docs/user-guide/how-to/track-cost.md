@@ -1,20 +1,17 @@
 # Track cost and agent time
 
-> [!NOTE]
-> **Planned.** Cost and agent time tracking isn't in the current release. This page describes how it will work.
-
 orch shows what each task, run and project cost, in money where the agent program reports it, and in agent time. It shows cost only. It doesn't enforce spending limits.
 
 ## See costs in the dashboard
 
-- In the top bar, a cost and time tile shows the totals for the selected run and project.
-- In the **Task** panel, each task shows its own cost and agent time.
+- In the top bar, the cost and time tile shows the totals for the selected run and project, for example **Run $0.42 · 6m 10s  Project $3.17 · 1h 2m**.
+- In the **Task** panel, the **Cost** row shows the task's own cost and agent time.
 
-Values that the agent program doesn't report show "n/a". For example, Claude Code reports a cost for each session, but some other agent programs don't.
+A cost that no agent program reported shows "n/a", not $0. For example, Claude Code reports a cost for each session, but Gemini CLI doesn't, so a run whose planner and validators use Gemini CLI shows agent time for them but no cost. Agent time is always counted.
 
 ## How totals add up
 
-- A task's total includes all of its worker and validator sessions, across every attempt and fix round.
+- A task's total includes all of its worker and validator sessions, across every attempt and fix round, including a session you stopped.
 - A run's total adds the planner and phase validator sessions to the totals of its tasks.
 - A project's total is the sum of its runs.
 

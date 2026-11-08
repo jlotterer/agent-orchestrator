@@ -22,6 +22,7 @@ import { decidePrAction } from "./core/prpoll.js";
 import { UNFINISHED_RUN_STATUSES, resolveProjectForCwd, registerProject, archiveProject, type RegisterResult } from "./projects.js";
 import { orchHome, runDir } from "./paths.js";
 import { startApp, killLeftovers, AppStartError, APP_OUTPUT_CHARS, type AppProcess } from "./appserver.js";
+import { addRunUsage, addTaskUsage, projectTotals, runTotals } from "./costs.js";
 
 const FINISHED: TaskStatus[] = ["done", "skipped"];
 const ACTIVE: TaskStatus[] = ["running", "validating"];
@@ -298,7 +299,8 @@ export class Orchestrator extends EventEmitter {
       // Needs no project settings, so stopping works even when the project's context cannot be built.
       this.procs.get(cur.id)?.kill("SIGTERM");
       this.procs.delete(cur.id);
-      void this.stopApp(cur.id); // a UI-mode app under test goes with its validator (§10.4)
+      const app = this.apps.get(cur.id);
+      if (app) void this.stopUiApp(run, cur, app); // a UI-mode app under test goes with its validator (§10.4)
       return;
     }
     const ctx = this.ctxOf(run), { cfg, git } = ctx;
@@ -383,6 +385,7 @@ export class Orchestrator extends EventEmitter {
     } finally {
       this.busyAgents--;
     }
+    addRunUsage(this.store, run.id, res); // §18: planner spend goes on the run row
     const out = res.structured;
     if (!res.ok || !out?.tasks) {
       this.log(run, null, "error", { message: "planner failed or returned no plan; using imported tasks as-is", text: clip(res.text, 2000) });
@@ -701,6 +704,7 @@ export class Orchestrator extends EventEmitter {
         },
       });
       this.procs.delete(task.id);
+      addTaskUsage(this.store, task.id, res); // §18: counted even when the task was stopped meanwhile
       if (res.sessionId) this.store.updateTask(task.id, { session_id: res.sessionId });
 
       // Stopped by a human while running: leave as reset by stop().
@@ -793,8 +797,8 @@ export class Orchestrator extends EventEmitter {
         await this.runValidator(run, task, cmd, gateOutput, app);
       } finally {
         if (ui) {
-          await this.stopApp(task.id);
-          if (app) this.log(run, task, "state", { message: `app stopped (pid ${app.pid})` });
+          if (app) await this.stopUiApp(run, task, app); // no-op when runValidator already stopped it
+          else await this.stopApp(task.id);
         }
       }
       return;
@@ -828,6 +832,10 @@ export class Orchestrator extends EventEmitter {
       onEvent: (kind, data) => this.log(run, task, kind, { role: "validator", ...data }),
     });
     this.procs.delete(task.id);
+    addTaskUsage(this.store, task.id, res); // §18
+    // The app under test is done once its validator is (§10.4): stop it before acting on the verdict, so a
+    // PASS never merges (and finishes the run) while the app is still up.
+    if (app) await this.stopUiApp(run, task, app);
     const cur = this.store.getTask(task.id)!;
     if (cur.status !== "validating") return; // stopped
     const v = res.structured ?? {};
@@ -1172,6 +1180,7 @@ export class Orchestrator extends EventEmitter {
       onEvent: (kind, data) => this.log(run, null, kind, { role: "phase_validator", phase: phase.name, ...data }),
     });
     job.child = null;
+    addRunUsage(this.store, run.id, res); // §18: phase validator spend goes on the run row
     const v = res.structured ?? {};
     const strs = (x: any): string[] => (Array.isArray(x) ? x.map(String).filter((s) => s.trim()) : []);
     const word = String(v.verdict ?? "").toUpperCase();
@@ -1390,6 +1399,12 @@ export class Orchestrator extends EventEmitter {
     this.apps.delete(taskId);
     await app.stop();
   }
+  /** Stop a task's started UI-mode app and log it, once: later calls (or an app already gone) do nothing. */
+  private async stopUiApp(run: Run, task: Task, app: AppProcess) {
+    if (this.apps.get(task.id) !== app) return;
+    await this.stopApp(task.id);
+    this.log(run, task, "state", { message: `app stopped (pid ${app.pid})` });
+  }
   /** Daemon shutdown (SIGINT/SIGTERM): stop every UI-mode app so none outlives orch (REQ-VAL-08). */
   async shutdown() {
     await Promise.all([...this.apps.keys()].map((id) => this.stopApp(id).catch((e) => console.error("[shutdown]", e))));
@@ -1480,12 +1495,15 @@ export class Orchestrator extends EventEmitter {
       project: project ? { id: project.id, name: project.name, repo: project.repo_path, archived: project.archived } : null,
       runs, config: this.publicConfig(project),
     };
-    if (!run) return { ...common, run: null, tasks: [], decisions: [], questions: [], phases: [], inbox: [], inboxCount: 0 };
+    const projectTotal = project ? projectTotals(this.store, project.id) : null;
+    if (!run) return { ...common, totals: { run: null, project: projectTotal }, run: null, tasks: [], decisions: [], questions: [], phases: [], inbox: [], inboxCount: 0 };
     const tasks = this.store.listTasks(run.id);
     const questions = this.store.listQuestions(run.id);
     const decisions = this.store.listDecisions(run.id);
     const inbox = this.runInbox(run, tasks, questions, decisions);
-    return { ...common, run, tasks, decisions, questions, phases: this.store.listPhases(run.id), inbox, inboxCount: inbox.length };
+    // §18: cost and agent time, from rows only. A legacy run without a project counts as its own project.
+    const totals = { run: runTotals(this.store, run.id), project: projectTotal ?? runTotals(this.store, run.id) };
+    return { ...common, totals, run, tasks, decisions, questions, phases: this.store.listPhases(run.id), inbox, inboxCount: inbox.length };
   }
 
   /**

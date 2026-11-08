@@ -217,6 +217,13 @@ sudo systemctl enable --now orch
    its rationale, in order. **Activity** is the run-level event stream. Past runs of the project are
    in the run selector next to the run controls.
 
+The tile in the top bar shows what the selected run and its project cost and how much agent time
+they used (`Run $0.42 · 6m 10s  Project $3.17 · 1h 2m`); the task view's **Cost** row shows the same for one
+task, across all its attempts and fix rounds. A run's total is its tasks plus its planner and phase
+validators. Money is what the agent CLI reports (Claude Code does, Gemini CLI doesn't): a cost no
+agent reported shows "n/a", not $0. Cost is display-only; there are no spend caps. Totals are kept
+on the task and run rows, so archiving event logs never changes them.
+
 The green dot at the top right means live updates are connected. If the connection drops (for
 example while orch restarts) it turns amber and the dashboard retries after 1 s, then 2, 4, … up to
 every 30 s, and reloads everything once it is back. No page reload is needed.
@@ -554,6 +561,7 @@ src/config.ts         settings: server.json and per-project loaders, plus the si
 src/paths.ts          ORCH_HOME layout (server.json, orch.db, worktrees/, archive/, run/)
 src/db.ts             SQLite: projects, runs, tasks, phases, events, decisions, questions; versioned migrations
 src/projects.ts       project registry: register a repo, archive, find the project for a directory
+src/costs.ts          cost and agent time per task and run row; run and project totals
 src/archive.ts        event retention: old runs' events to archive/<project>/<runId>-events.jsonl.gz, then deleted
 src/server.ts         REST + SSE, serves the dashboard; token gate, /api/health, /api/login
 src/auth.ts           token check (Bearer or cookie), login cookie, bind guard

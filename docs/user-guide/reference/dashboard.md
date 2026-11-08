@@ -18,7 +18,7 @@ The top bar shows the run's title and status, and the run controls.
 | **Stop** | Ends running agents. Their tasks go back to pending. |
 | Live indicator | Shows whether the live update connection is up. |
 | Project switcher (**Planned**) | Lists every project with a status dot and its inbox count. Includes **Add project** and **Archive**. |
-| Cost and time tile (**Planned**) | Shows the cost and agent time of the run and the project. |
+| Cost and time tile | Shows the cost and agent time of the run and the project. A cost that no agent program reported shows "n/a". See [Track cost and agent time](../how-to/track-cost.md). |
 
 ## Inbox
 
@@ -72,7 +72,7 @@ The right column shows the selected task. When no task is selected, it shows "Se
 | **Send back to the worker** | A text box and **Send back** button, for tasks waiting for review. |
 | **Diff** | The task's changes against its base. Expand to load. See [Review and merge a task](../how-to/review-and-merge.md). |
 | **Log** | The live agent log: agent text, tool calls and results, errors and session details. |
-| Cost and agent time (**Planned**) | The task's totals. |
+| **Cost** | The task's cost ("n/a" when no agent program reported one) and agent time, across all of its sessions. |
 
 The actions depend on the task's status:
 
