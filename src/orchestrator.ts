@@ -11,12 +11,12 @@ import type { RoleName } from "./config.js";
 import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
 import { notify, type NotifyOptions } from "./notify.js";
 import { readSpecDir, parseTasksMd, markTaskDoneInFile } from "./speckit.js";
-import type { Project, Run, Task, TaskStatus } from "./types.js";
+import type { Project, Question, Run, Task, TaskStatus } from "./types.js";
 import { formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
 import { selectReady } from "./core/readiness.js";
 import { nextTaskState, type TaskEvent, type TransitionResult, type Effect } from "./core/transitions.js";
 import { decidePrAction } from "./core/prpoll.js";
-import { UNFINISHED_RUN_STATUSES, resolveProjectForCwd } from "./projects.js";
+import { UNFINISHED_RUN_STATUSES, resolveProjectForCwd, registerProject, archiveProject, type RegisterResult } from "./projects.js";
 import { orchHome } from "./paths.js";
 
 const FINISHED: TaskStatus[] = ["done", "skipped"];
@@ -90,7 +90,7 @@ export class Orchestrator extends EventEmitter {
   /** Re-read the project's settings (at run creation and start, REQ-PROJ-06). */
   refreshContext(projectId: string): ProjectContext {
     const project = this.store.getProject(projectId);
-    if (!project) throw new Error(`no project '${projectId}'`);
+    if (!project) throw new NotFoundError(`no project '${projectId}'`);
     const ctx = this.buildContext(project);
     this.contexts.set(projectId, ctx);
     this.contextErrors.delete(projectId);
@@ -128,6 +128,29 @@ export class Orchestrator extends EventEmitter {
   private refusal(projectId: string, open: Run): Error {
     return new Error(`project '${projectId}' already has an unfinished run ${open.id} (${open.status}, "${open.title}"); finish or stop it first`);
   }
+  /** The project's id, or 404. */
+  private requireProject(projectId: string): Project {
+    const p = this.store.getProject(projectId);
+    if (!p) throw new NotFoundError(`no project '${projectId}'`);
+    return p;
+  }
+  /** Register a repo (REQ-PROJ-01, -02, -04 re-registration). Errors from the registry are 400s. */
+  async addProject(repoPath: string, opts: { name?: string } = {}): Promise<RegisterResult> {
+    const r = await registerProject(this.store, repoPath, opts);
+    this.contexts.delete(r.project.id);
+    this.contextErrors.delete(r.project.id);
+    this.changed("projects", { projectId: r.project.id });
+    return r;
+  }
+  /** Archive a project (REQ-PROJ-04): refused while it has an unfinished run; rows and repo are kept. */
+  archiveProject(projectId: string): Project {
+    this.requireProject(projectId);
+    const p = archiveProject(this.store, projectId);
+    this.contexts.delete(projectId);
+    this.contextErrors.delete(projectId);
+    this.changed("projects", { projectId });
+    return p;
+  }
 
   // ------------------------------------------------------------------ helpers
   private log(run: Run | string, task: Task | null, kind: string, data: any) {
@@ -136,8 +159,14 @@ export class Orchestrator extends EventEmitter {
     this.emit("event", ev);
     return ev;
   }
+  /** SSE `change` payload; always carries the `projectId` it concerns when one can be found (§15.1). */
   private changed(what: string, data: any = {}) {
-    this.emit("change", { what, ...data });
+    let projectId: string | null | undefined = data.projectId ?? data.run?.project_id;
+    if (projectId === undefined) {
+      const runId: string | undefined = data.runId ?? data.decision?.run_id;
+      if (runId) projectId = this.store.getRun(runId)?.project_id;
+    }
+    this.emit("change", { what, ...data, projectId: projectId ?? null });
   }
   private decide(run: Run, task: Task | null, actor: string, text: string, rationale: string | null) {
     const d = this.store.addDecision(run.id, task?.id ?? null, actor, text, rationale);
@@ -289,6 +318,7 @@ export class Orchestrator extends EventEmitter {
    * Refused while the project has an unfinished run (REQ-PROJ-07). The project's settings are re-read here.
    */
   async plan(projectId: string, specDir: string, opts: { llm: boolean }): Promise<Run> {
+    if (this.requireProject(projectId).archived) throw new Error(`project '${projectId}' is archived; register its repo again to use it`);
     const open = this.unfinishedRun(projectId);
     if (open) throw this.refusal(projectId, open);
     const ctx = this.refreshContext(projectId), cfg = ctx.cfg;
@@ -976,40 +1006,89 @@ export class Orchestrator extends EventEmitter {
   }
 
   // ------------------------------------------------------------------ snapshot for UI
+  /** The run a project's views show by default: its current run, else its newest. */
+  private shownRun(projectId: string): Run | undefined {
+    return this.currentRun(projectId) ?? this.store.listRuns(projectId)[0];
+  }
   /**
-   * Legacy snapshot (§15.1): a run by id, else the current (or latest) run of `projectId`, else of the
-   * default project. `runs` and `config` are that run's project's.
+   * Inbox items of one run (§14), derived from its tasks and questions; never from the events table.
+   * Pass `tasks`/`questions` when the caller already loaded them.
    */
-  snapshot(runId?: string, projectId?: string) {
+  private runInbox(run: Run, tasks: Task[] = this.store.listTasks(run.id), questions: Question[] = this.store.listQuestions(run.id, true)): any[] {
+    const inbox: any[] = [];
+    if (run.status === "plan_pending") inbox.push({ type: "approve_plan", run_id: run.id, title: "Plan awaits approval", detail: `${tasks.length} tasks`, ts: run.updated_at });
+    for (const q of questions.filter((q) => !q.answer)) {
+      const t = tasks.find((x) => x.id === q.task_id);
+      inbox.push({ type: "question", id: q.id, run_id: run.id, task_id: q.task_id, task_key: t?.key, title: q.text, options: q.options, ts: q.ts });
+    }
+    for (const t of tasks) {
+      if (t.status === "failed") inbox.push({ type: "failed", run_id: run.id, task_id: t.id, task_key: t.key, title: `${t.key} failed after ${t.attempt} attempts`, detail: t.last_feedback, ts: t.updated_at });
+      if (t.status === "pr_open") inbox.push({ type: "merge", run_id: run.id, task_id: t.id, task_key: t.key, title: `${t.key} ready to merge`, detail: t.pr_url ?? t.branch, pr_url: t.pr_url, feedback: t.last_feedback, ci_status: t.ci_status, fix_rounds: t.fix_rounds, ts: t.updated_at });
+    }
+    return inbox;
+  }
+
+  /**
+   * Snapshot of a project (§15.1): the run `runId` (which must belong to the project), else its current
+   * (or newest) run. Without a project: the run `runId`'s project, else the default project (legacy routes).
+   * `runs` and `config` are the project's. Reads tasks, questions and decisions only, never the events
+   * table, so its cost does not grow with the event log (REQ-NFR-06).
+   */
+  snapshot(projectId?: string, runId?: string) {
     let run: Run | undefined;
     let project: Project | undefined;
+    if (projectId) project = this.requireProject(projectId);
     if (runId) {
       run = this.store.getRun(runId);
-      project = run?.project_id ? this.store.getProject(run.project_id) : undefined;
+      if (!run) throw new NotFoundError(`no run '${runId}'`);
+      if (project && run.project_id !== project.id) throw new NotFoundError(`run ${runId} is not in project '${project.id}'`);
+      if (!project && run.project_id) project = this.store.getProject(run.project_id);
     } else {
-      project = projectId ? this.store.getProject(projectId) : this.defaultProject();
-      if (projectId && !project) throw new NotFoundError(`no project '${projectId}'`);
-      if (project) run = this.currentRun(project.id) ?? this.store.listRuns(project.id)[0];
+      project ??= this.defaultProject();
+      if (project) run = this.shownRun(project.id);
     }
     const runs = project ? this.store.listRuns(project.id) : [];
     const common = {
-      project: project ? { id: project.id, name: project.name, repo: project.repo_path } : null,
+      project: project ? { id: project.id, name: project.name, repo: project.repo_path, archived: project.archived } : null,
       runs, config: this.publicConfig(project),
     };
-    if (!run) return { ...common, run: null, tasks: [], decisions: [], questions: [], inbox: [] };
+    if (!run) return { ...common, run: null, tasks: [], decisions: [], questions: [], inbox: [], inboxCount: 0 };
     const tasks = this.store.listTasks(run.id);
     const questions = this.store.listQuestions(run.id);
-    const inbox: any[] = [];
-    if (run.status === "plan_pending") inbox.push({ type: "approve_plan", run_id: run.id, title: "Plan awaits approval", detail: `${tasks.length} tasks` });
-    for (const q of questions.filter((q) => !q.answer)) {
-      const t = tasks.find((x) => x.id === q.task_id);
-      inbox.push({ type: "question", id: q.id, task_id: q.task_id, task_key: t?.key, title: q.text, options: q.options, ts: q.ts });
+    const inbox = this.runInbox(run, tasks, questions);
+    return { ...common, run, tasks, decisions: this.store.listDecisions(run.id), questions, inbox, inboxCount: inbox.length };
+  }
+
+  /**
+   * Every registered project for the project list (§15.1): `{id, name, repo, archived, error, run, inboxCount}`.
+   * `error` is why the project cannot be used (missing repo, invalid settings), else null.
+   */
+  listProjectSummaries(opts: { archived?: boolean } = {}) {
+    return this.store.listProjects(opts).map((p) => {
+      const run = this.shownRun(p.id);
+      return {
+        id: p.id, name: p.name, repo: p.repo_path, archived: p.archived,
+        error: this.projectError(p),
+        run: run ? { id: run.id, status: run.status, title: run.title } : null,
+        inboxCount: run && !p.archived ? this.runInbox(run).length : 0,
+      };
+    });
+  }
+  private projectError(p: Project): string | null {
+    if (!fs.existsSync(p.repo_path)) return `repository ${p.repo_path} does not exist`;
+    if (p.archived) return null;
+    try { this.context(p.id); return null; } catch (e: any) { return e?.message ?? String(e); }
+  }
+
+  /** Global inbox (REQ-HITL-01, §14): the items of every non-archived project's shown run, each labelled with its project. */
+  globalInbox() {
+    const items: any[] = [];
+    for (const p of this.store.listProjects()) {
+      const run = this.shownRun(p.id);
+      if (!run) continue;
+      for (const item of this.runInbox(run)) items.push({ ...item, project_id: p.id, project_name: p.name });
     }
-    for (const t of tasks) {
-      if (t.status === "failed") inbox.push({ type: "failed", task_id: t.id, task_key: t.key, title: `${t.key} failed after ${t.attempt} attempts`, detail: t.last_feedback, ts: t.updated_at });
-      if (t.status === "pr_open") inbox.push({ type: "merge", task_id: t.id, task_key: t.key, title: `${t.key} ready to merge`, detail: t.pr_url ?? t.branch, pr_url: t.pr_url, feedback: t.last_feedback, ci_status: t.ci_status, fix_rounds: t.fix_rounds, ts: t.updated_at });
-    }
-    return { ...common, run, tasks, decisions: this.store.listDecisions(run.id), questions, inbox };
+    return items;
   }
   /** Settings the dashboard may show: secrets only as booleans (§16). A project whose settings fail to load shows the error. */
   private publicConfig(project?: Project) {

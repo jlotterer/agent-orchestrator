@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
- * orch — orchestrator CLI.
+ * orch — orchestrator CLI (architecture §15.2).
  *
- *   orch init                         write orch.config.json in the current directory
  *   orch serve                        start the daemon + dashboard (run this under systemd)
+ *   orch project add <path> [--name n] | project list [--archived] | project remove <id>
  *   orch plan <specDir> [--no-llm]    import a Spec Kit feature dir and draft a plan
  *   orch approve [runId]              approve the pending plan
- *   orch run | pause | stop           control the active run
+ *   orch run | pause | stop           control the project's current run
  *   orch status                       print the board
  *   orch answer <questionId> <text>   answer a question
- *   orch retry|skip|merge <taskKey>   task actions
+ *   orch retry|skip|merge|stop-task <taskKey>   task actions
  *
+ * Project commands act on `--project <id>`, else ORCH_PROJECT, else the project whose repo contains the
+ * current directory, else the only project (§5.4). Exit codes: 0 ok, 1 error (`error: …` on stderr), 2 usage.
  * Every API call sends `Authorization: Bearer` from ORCH_TOKEN or the settings file's auth.token.
  *
  * Used by agents inside a task (ORCH_URL / ORCH_TASK_ID / ORCH_TOKEN are set for them):
@@ -22,18 +24,26 @@ import path from "node:path";
 import { loadConfig, loadServerConfig, writeExampleConfig, CONFIG_FILENAME } from "./config.js";
 import { bindGuard, resolveToken } from "./auth.js";
 import { orchHome, serverConfigPath, dbPath } from "./paths.js";
-import { registerProject } from "./projects.js";
+import { registerProject, resolveProjectForCwd } from "./projects.js";
 import type { Store } from "./db.js";
+import type { Project } from "./types.js";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
 
+/** A usage error: exit code 2 (REQ-UI-08). */
+class UsageError extends Error {}
+
 function flag(name: string): string | undefined {
   const i = argv.indexOf(`--${name}`);
-  return i >= 0 ? argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  if (v === undefined || v.startsWith("--")) throw new UsageError(`--${name} needs a value`);
+  return v;
 }
 function has(name: string) { return argv.includes(`--${name}`); }
-const BOOL_FLAGS = new Set(["--no-llm"]);
+const BOOL_FLAGS = new Set(["--no-llm", "--archived", "--help"]);
+/** Arguments after the command, without flags and their values. */
 function positional(): string[] {
   const out: string[] = [];
   for (let i = 1; i < argv.length; i++) {
@@ -62,13 +72,70 @@ async function api(method: string, p: string, body?: any): Promise<any> {
   const token = resolveToken(local?.token);
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (token) headers.authorization = `Bearer ${token}`;
-  const r = await fetch(base + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let r: Response;
+  try {
+    r = await fetch(base + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch {
+    throw new Error(`cannot reach orch at ${base} (is \`orch serve\` running?)`);
+  }
   const j: any = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error ?? `${r.status} ${r.statusText}`);
   return j;
 }
 
+interface ProjectRow { id: string; name: string; repo: string; archived: boolean; error: string | null; run: { id: string; status: string; title: string } | null; inboxCount: number }
+
+function projectTable(rows: ProjectRow[]): string {
+  return rows.map((p) => `  ${pad(p.id, 20)} ${pad(p.name, 20)} ${p.repo}`).join("\n");
+}
+
+/**
+ * The project a command acts on (§5.4): `--project` > ORCH_PROJECT > the project whose repo contains
+ * `hint` (a spec dir) or the cwd > the only project. Anything else is a usage error listing the projects.
+ */
+async function resolveProject(hint?: string): Promise<ProjectRow> {
+  const all: ProjectRow[] = await api("GET", "/api/projects?archived=1");
+  const active = all.filter((p) => !p.archived);
+  const asProjects = active.map((p) => ({ id: p.id, repo_path: p.repo, archived: false }) as Project);
+  const explicit = flag("project") ?? (process.env.ORCH_PROJECT || undefined);
+  if (explicit) {
+    const p = all.find((x) => x.id === explicit);
+    if (!p) throw new UsageError(`no project '${explicit}'. Projects:\n${projectTable(active) || "  (none)"}`);
+    return p;
+  }
+  for (const dir of [hint, process.cwd()]) {
+    if (!dir) continue;
+    const hit = resolveProjectForCwd(asProjects, dir);
+    if (hit) return active.find((p) => p.id === hit.id)!;
+  }
+  if (active.length === 1) return active[0];
+  if (!active.length) throw new UsageError("no projects registered. Add one with: orch project add <path>");
+  throw new UsageError(`which project? Run inside a project's repo or pass --project <id> (or set ORCH_PROJECT). Projects:\n${projectTable(active)}`);
+}
+
+const projectState = async (p: ProjectRow) => api("GET", `/api/projects/${encodeURIComponent(p.id)}/state`);
+
+const HELP = `orch — orchestrator/worker/validator runner
+
+  orch serve                           start daemon + dashboard
+  orch project add <path> [--name n]   register a git repository
+  orch project list [--archived]       list projects with run status and inbox count
+  orch project remove <id>             archive a project (repo and history are kept)
+  orch plan <specDir> [--no-llm]       import Spec Kit tasks.md and draft a plan
+  orch approve [runId]                 approve the plan
+  orch run | pause | stop              control the project's current run
+  orch status                          show the board and inbox
+  orch answer <qid> <text>             answer a question
+  orch retry|skip|merge|stop-task <taskKey>   task actions
+  orch decide "<text>" --why "<r>"     (agents) record a decision
+  orch ask "<q>" --options "A,B"       (agents) ask a human and stop
+
+Project commands act on --project <id>, else ORCH_PROJECT, else the project whose repo
+contains the current directory, else the only project.
+Exit codes: 0 ok, 1 error, 2 usage.`;
+
 async function main() {
+  if (has("help") && cmd !== "serve") { console.log(HELP); return; }
   switch (cmd) {
     case "init": {
       const p = writeExampleConfig(process.cwd());
@@ -86,7 +153,7 @@ async function main() {
       const { Orchestrator } = await import("./orchestrator.js");
       const { startServer } = await import("./server.js");
       const store = upgraded ?? new Store(dbPath(home));
-      if (!store.listProjects().length) console.warn(`no projects registered in ${dbPath(home)}`);
+      if (!store.listProjects().length) console.warn(`no projects registered in ${dbPath(home)}. Add one with: orch project add <path>`);
       const orch = new Orchestrator(server, store, { home });
       orch.recover();
       startServer(orch);
@@ -95,26 +162,69 @@ async function main() {
       process.on("SIGTERM", shutdown);
       return;
     }
+    case "project": {
+      const [sub, arg] = positional();
+      switch (sub) {
+        case "add": {
+          if (!arg) throw new UsageError("usage: orch project add <path> [--name <name>]");
+          const p = await api("POST", "/api/projects", { path: path.resolve(arg), name: flag("name") });
+          console.log(`${p.unarchived ? "restored archived" : "registered"} project ${p.id} "${p.name}" at ${p.repo_path}`);
+          if (p.configCreated) console.log(`created starter settings file ${p.configCreated}; set validation.command there`);
+          return;
+        }
+        case "list": case "ls": {
+          const rows: ProjectRow[] = await api("GET", `/api/projects${has("archived") ? "?archived=1" : ""}`);
+          if (!rows.length) { console.log("no projects. Add one with: orch project add <path>"); return; }
+          for (const p of rows) {
+            const run = p.run ? `${p.run.status} (${p.run.id})` : "no runs";
+            const tags = [p.archived ? "archived" : "", p.inboxCount ? `inbox ${p.inboxCount}` : "", p.error ? `error: ${p.error}` : ""].filter(Boolean).join("  ");
+            console.log(`${pad(p.id, 20)} ${pad(p.name, 20)} ${pad(run, 26)} ${p.repo}${tags ? "  " + tags : ""}`);
+          }
+          return;
+        }
+        case "remove": case "archive": {
+          if (!arg) throw new UsageError("usage: orch project remove <id>");
+          await api("DELETE", `/api/projects/${encodeURIComponent(arg)}`);
+          console.log(`archived project ${arg} (the repository and its history are kept; \`orch project add\` restores it)`);
+          return;
+        }
+        default:
+          throw new UsageError("usage: orch project add <path> [--name n] | project list [--archived] | project remove <id>");
+      }
+    }
     case "plan": {
       const dir = positional()[0];
-      if (!dir) throw new Error("usage: orch plan <specDir> [--no-llm]");
-      console.log(has("no-llm") ? "importing tasks…" : "importing tasks and running the planner (this takes a minute)…");
-      const run = await api("POST", "/api/plan", { specDir: path.resolve(dir), llm: !has("no-llm") });
+      if (!dir) throw new UsageError("usage: orch plan <specDir> [--no-llm]");
+      const specDir = path.resolve(dir);
+      const project = await resolveProject(specDir);
+      console.log(has("no-llm") ? `importing tasks into ${project.id}…` : `importing tasks into ${project.id} and running the planner (this takes a minute)…`);
+      const run = await api("POST", `/api/projects/${encodeURIComponent(project.id)}/plan`, { specDir, llm: !has("no-llm") });
       console.log(`run ${run.id} "${run.title}" → ${run.status}. Review the plan in the dashboard, then: orch approve`);
       return;
     }
     case "approve": {
-      const id = positional()[0] ?? (await api("GET", "/api/state")).run?.id;
-      if (!id) throw new Error("no run");
-      await api("POST", `/api/runs/${id}/approve`);
+      let id = positional()[0];
+      if (!id) {
+        id = (await projectState(await resolveProject())).run?.id;
+        if (!id) throw new Error("no run to approve");
+      }
+      await api("POST", `/api/runs/${encodeURIComponent(id)}/approve`);
       console.log(`run ${id} approved. Start it with: orch run`);
       return;
     }
-    case "run": case "start": await api("POST", "/api/start"); console.log("running"); return;
-    case "pause": await api("POST", "/api/pause"); console.log("paused"); return;
-    case "stop": await api("POST", "/api/stop"); console.log("stopped"); return;
+    case "run": case "start": case "pause": case "stop": {
+      const project = await resolveProject();
+      const run = (await projectState(project)).run;
+      if (!run) throw new Error(`project ${project.id} has no run`);
+      const action = cmd === "run" ? "start" : cmd;
+      await api("POST", `/api/runs/${encodeURIComponent(run.id)}/${action}`);
+      console.log(`${project.id}: run ${run.id} ${{ start: "running", pause: "paused", stop: "stopped" }[action]}`);
+      return;
+    }
     case "status": {
-      const s = await api("GET", "/api/state");
+      const project = await resolveProject();
+      const s = await projectState(project);
+      console.log(`project ${project.id} "${project.name}" (${project.repo})${project.error ? `\n  error: ${project.error}` : ""}`);
       if (!s.run) { console.log("no runs. Create one with: orch plan <specDir>"); return; }
       console.log(`run ${s.run.id} "${s.run.title}" [${s.run.status}]`);
       for (const t of s.tasks) console.log(`  ${pad(t.status, 11)} ${t.key}  ${t.title}${t.pr_url ? "  " + t.pr_url : ""}`);
@@ -123,17 +233,19 @@ async function main() {
     }
     case "answer": {
       const [id, ...rest] = positional();
-      if (!id || !rest.length) throw new Error("usage: orch answer <questionId> <answer text>");
+      if (!id || !rest.length) throw new UsageError("usage: orch answer <questionId> <answer text>");
+      if (!/^\d+$/.test(id)) throw new UsageError(`question id must be a number, got '${id}'`);
       await api("POST", `/api/questions/${id}/answer`, { answer: rest.join(" ") });
       console.log("answered");
       return;
     }
     case "retry": case "skip": case "merge": case "stop-task": {
       const key = positional()[0];
-      if (!key) throw new Error(`usage: orch ${cmd} <taskKey>`);
-      const s = await api("GET", "/api/state");
+      if (!key) throw new UsageError(`usage: orch ${cmd} <taskKey>`);
+      const project = await resolveProject();
+      const s = await projectState(project);
       const t = s.tasks.find((x: any) => x.key === key || x.id === key);
-      if (!t) throw new Error(`task ${key} not found`);
+      if (!t) throw new Error(`task ${key} not found in ${project.id}${s.run ? ` run ${s.run.id}` : ""}`);
       await api("POST", `/api/tasks/${t.id}/${cmd === "stop-task" ? "stop" : cmd}`);
       console.log(`${cmd} ${t.key}: ok`);
       return;
@@ -141,14 +253,14 @@ async function main() {
     // ---- agent-facing ----
     case "decide": {
       const text = positional()[0];
-      if (!text) throw new Error('usage: orch decide "<decision>" --why "<rationale>"');
+      if (!text) throw new UsageError('usage: orch decide "<decision>" --why "<rationale>"');
       await api("POST", "/api/decide", { taskId: process.env.ORCH_TASK_ID ?? null, runId: process.env.ORCH_RUN_ID ?? null, actor: process.env.ORCH_ACTOR ?? "worker", text, rationale: flag("why") ?? null });
       console.log("decision recorded");
       return;
     }
     case "ask": {
       const text = positional()[0];
-      if (!text) throw new Error('usage: orch ask "<question>" --options "A,B,C"');
+      if (!text) throw new UsageError('usage: orch ask "<question>" --options "A,B,C"');
       const taskId = process.env.ORCH_TASK_ID;
       if (!taskId) throw new Error("orch ask must be run inside an orchestrated task (ORCH_TASK_ID not set)");
       const options = (flag("options") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -156,23 +268,15 @@ async function main() {
       console.log(`Question #${q.id} recorded for a human. STOP working now: end your turn with status "blocked". You will be resumed with the answer.`);
       return;
     }
+    case undefined: case "help":
+      console.log(HELP);
+      return;
     default:
-      console.log(`orch — orchestrator/worker/validator runner
-
-  orch init                          write ${CONFIG_FILENAME}
-  orch serve                         start daemon + dashboard
-  orch plan <specDir> [--no-llm]     import Spec Kit tasks.md and draft a plan
-  orch approve [runId]               approve the plan
-  orch run | pause | stop            control the run
-  orch status                        show the board and inbox
-  orch answer <qid> <text>           answer a question
-  orch retry|skip|merge <taskKey>    task actions
-  orch decide "<text>" --why "<r>"   (agents) record a decision
-  orch ask "<q>" --options "A,B"     (agents) ask a human and stop`);
+      throw new UsageError(`unknown command '${cmd}'. Run \`orch help\` for the list.`);
   }
 }
 
-function pad(s: string, n: number) { return (s + " ".repeat(n)).slice(0, n); }
+function pad(s: string, n: number) { return s.padEnd(n); }
 
 // ------------------------------------------------------------------ legacy upgrade (architecture §5.5)
 const isObj = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -264,4 +368,4 @@ async function upgradeLegacyInstall(home: string, StoreClass: new (p: string) =>
   }
 }
 
-main().catch((e) => { console.error(`error: ${e.message ?? e}`); process.exit(1); });
+main().catch((e) => { console.error(`error: ${e?.message ?? e}`); process.exit(e instanceof UsageError ? 2 : 1); });

@@ -1,5 +1,5 @@
 # TASK-10: Projects API, global inbox and CLI scoping
-**Status:** todo · **Wave:** 6 · **Depends on:** TASK-09 · **Parallel:** No
+**Status:** done · **Wave:** 6 · **Depends on:** TASK-09 · **Parallel:** No
 
 ## Goal
 Expose projects over HTTP and the CLI: register, list, archive, per-project state, and a global inbox. Make every CLI command project-aware with consistent exit codes.

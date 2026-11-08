@@ -1,29 +1,37 @@
 #!/usr/bin/env node
 /**
- * End-to-end test for TASK-09 (architecture §5, §7.1, §7.4, §14; decisions 0011, 0012):
+ * End-to-end test for TASK-09 and TASK-10 (architecture §5, §7.1, §7.4, §14, §15; decisions 0011, 0012):
  *   multi   : one daemon, two registered repos ("alpha" with three independent tasks, "beta" with one),
  *             server.json `scheduler.maxAgents: 1`. Polls that never more than one task is active, that
  *             beta's task starts before alpha's third (fair share, REQ-PROJ-09), that a second plan or a
  *             start while the project has an unfinished run is refused naming that run (REQ-PROJ-07), that
  *             worktrees live under ORCH_HOME, and that ntfy titles captured by a local HTTP sink name the
  *             project (REQ-HITL-02).
+ *   projects: a daemon with no projects; the CLI registers two repos (a non-git dir is refused with exit 1, the
+ *             starter settings path is printed), resolves the project from the cwd, --project and ORCH_PROJECT,
+ *             and exits 2 outside both repos (listing both) and for `orch answer` without arguments. GET /api/inbox
+ *             holds items of both projects with project_name; DELETE on a project with a running run is 400; an
+ *             archived project leaves the default list and `project add` restores it
+ *             (REQ-PROJ-01, -02, -04, REQ-UI-07, -08, REQ-HITL-01).
  *   legacy  : an old-style orch.config.json plus a 0.1-schema database holding a finished run. On first
  *             start the repo becomes a project, server.json is written, the settings file is reduced to
  *             project keys (original kept as .bak) and the old run is visible with its decisions (REQ-PROJ-10).
  *
- *   node scripts/e2e-multi.mjs             # both scenarios
+ *   node scripts/e2e-multi.mjs             # all scenarios
  *   node scripts/e2e-multi.mjs legacy      # one of them
  */
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import http from "node:http";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, sleep, FAKE_AGENT } from "./lib/e2e.mjs";
+import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, sleep, FAKE_AGENT, ROOT } from "./lib/e2e.mjs";
 import { Store } from "../dist/db.js";
 import { registerProject } from "../dist/projects.js";
 
 const PORT = 4841;
 const LEGACY_PORT = 4842;
+const PROJECTS_PORT = 4843;
 const ACTIVE = ["running", "validating"];
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 const AGENTS = {
@@ -155,6 +163,121 @@ async function multi() {
   }
 }
 
+// ------------------------------------------------------------------ scenario: projects API, global inbox, CLI scoping
+/** Run the human CLI (`dist/cli.js`) in `cwd`: { code, out, err }. Agent and project variables are cleared unless given. */
+function cli(args, { cwd, home, env = {} }) {
+  const base = { ...process.env };
+  for (const k of ["ORCH_URL", "ORCH_TOKEN", "ORCH_PROJECT", "ORCH_TASK_ID", "ORCH_RUN_ID", "ORCH_CONFIG"]) delete base[k];
+  const r = spawnSync("node", [path.join(ROOT, "dist/cli.js"), ...args], { cwd, encoding: "utf8", env: { ...base, ORCH_HOME: home, ...env } });
+  return { code: r.status, out: r.stdout, err: r.stderr };
+}
+const expectExit = (r, code, what) => assert(r.code === code, `${what}: expected exit ${code}, got ${r.code}\nstdout: ${r.out}\nstderr: ${r.err}`);
+
+async function projects() {
+  const spec = (name) => ({
+    "README.md": `# ${name}\n`,
+    "specs/001-x/spec.md": `# Feature Specification: ${name}\n\nFiles in impl/.\n`,
+    "specs/001-x/tasks.md": "# Tasks\n\n## Phase 1: Core\n- [ ] T001 Create impl/T001.txt\n",
+  });
+  const a = makeRepo({ prefix: "orch-e2e-proj-a-", files: spec("alpha") });
+  const b = makeRepo({ prefix: "orch-e2e-proj-b-", files: spec("beta") });
+  const home = a.home;
+  const outside = a.tmp; // contains repo and home, but no registered repo contains it
+  const plain = path.join(a.tmp, "plain");
+  fs.mkdirSync(plain);
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "server.json"), JSON.stringify({ port: PROJECTS_PORT, agents: AGENTS, scheduler: { maxAgents: 2, tickSeconds: 1 } }, null, 2));
+  await startDaemon({ cwd: outside, port: PROJECTS_PORT, env: { ORCH_HOME: home }, name: "projects" });
+  const api = apiFor(PROJECTS_PORT);
+  const run = (args, cwd = outside, env = {}) => cli(args, { cwd, home, env });
+
+  // REQ-PROJ-01: a directory that is not a git repository is refused (exit 1, error on stderr).
+  const bad = run(["project", "add", plain]);
+  expectExit(bad, 1, "project add <non-git dir>");
+  assert(/^error: .*not a git repository/m.test(bad.err), "project add <non-git dir> should say 'not a git repository': " + bad.err);
+
+  // REQ-PROJ-01, -02: registering prints the starter settings path.
+  const addA = run(["project", "add", a.repo, "--name", "alpha"]);
+  expectExit(addA, 0, "project add alpha");
+  const starter = path.join(fs.realpathSync(a.repo), "orch.config.json");
+  assert(addA.out.includes(starter) && fs.existsSync(starter), `project add should print the starter settings path ${starter}: ${addA.out}`);
+  const addB = run(["project", "add", b.repo, "--name", "beta"]);
+  expectExit(addB, 0, "project add beta");
+  const again = run(["project", "add", b.repo]);
+  expectExit(again, 1, "project add (already registered)");
+  assert(again.err.includes("already registered"), "re-adding should name the existing project: " + again.err);
+  const list = await api("GET", "/api/projects");
+  const pa = list.find((p) => p.name === "alpha"), pb = list.find((p) => p.name === "beta");
+  assert(list.length === 2 && pa && pb, "GET /api/projects should list alpha and beta: " + JSON.stringify(list));
+  // Project settings: no validation command, agent validator (the fake agent).
+  for (const r of [a, b]) writeConfig(r.repo, { baseBranch: "main", validation: { command: "", agent: true }, git: { pr: false } });
+
+  // REQ-UI-07: inside repo B, status shows B; --project and ORCH_PROJECT pick a project explicitly.
+  const inB = run(["status"], path.join(b.repo, "specs"));
+  expectExit(inB, 0, "status inside repo B");
+  assert(inB.out.startsWith(`project ${pb.id} "beta"`), "status inside repo B should show beta: " + inB.out);
+  const flagged = run(["status", "--project", pa.id], b.repo);
+  expectExit(flagged, 0, "status --project");
+  assert(flagged.out.startsWith(`project ${pa.id} `), "--project should win over the cwd: " + flagged.out);
+  const envd = run(["status"], b.repo, { ORCH_PROJECT: pa.id });
+  assert(envd.code === 0 && envd.out.startsWith(`project ${pa.id} `), "ORCH_PROJECT should win over the cwd: " + envd.out + envd.err);
+  // ... outside both repos it is a usage error listing both projects.
+  const amb = run(["status"]);
+  expectExit(amb, 2, "status outside both repos");
+  assert(amb.err.includes(pa.id) && amb.err.includes(pb.id), "the ambiguity error should list both projects: " + amb.err);
+  const unknown = run(["status", "--project", "nope"]);
+  expectExit(unknown, 2, "status --project <unknown>");
+  // REQ-UI-08: usage errors exit 2.
+  expectExit(run(["answer"]), 2, "answer without arguments");
+  expectExit(run(["project"]), 2, "project without a subcommand");
+  expectExit(run(["frobnicate"]), 2, "unknown command");
+
+  // Plans: B from its repo through the CLI (the spec dir picks the project), A through the project route.
+  const planB = run(["plan", "specs/001-x", "--no-llm"], b.repo);
+  expectExit(planB, 0, "plan in repo B");
+  const runA = await api("POST", `/api/projects/${pa.id}/plan`, { specDir: path.join(a.repo, "specs/001-x"), llm: false });
+  assert(runA.project_id === pa.id, "the project plan route put the run in the wrong project");
+  const stateB = await api("GET", `/api/projects/${pb.id}/state`);
+  assert(stateB.project.id === pb.id && stateB.run?.status === "plan_pending" && stateB.inboxCount === 1, "beta's state: " + JSON.stringify({ project: stateB.project, run: stateB.run, inboxCount: stateB.inboxCount }));
+
+  // REQ-HITL-01: one inbox across projects, each item labelled with its project.
+  const inbox = await api("GET", "/api/inbox");
+  const labels = inbox.map((i) => `${i.project_name}:${i.type}`).sort();
+  assert(JSON.stringify(labels) === JSON.stringify(["alpha:approve_plan", "beta:approve_plan"]), "global inbox: " + JSON.stringify(inbox));
+  assert(inbox.every((i) => i.project_id === (i.project_name === "alpha" ? pa.id : pb.id)), "inbox items need project_id");
+  const counts = Object.fromEntries((await api("GET", "/api/projects")).map((p) => [p.id, p.inboxCount]));
+  assert(counts[pa.id] === 1 && counts[pb.id] === 1, "project list inbox counts: " + JSON.stringify(counts));
+
+  // Run A through the CLI; while it runs, archiving it is refused (REQ-PROJ-04).
+  expectExit(run(["approve"], a.repo), 0, "approve in repo A");
+  expectExit(run(["run"], a.repo), 0, "run in repo A");
+  const del = await fetch(`http://127.0.0.1:${PROJECTS_PORT}/api/projects/${pa.id}`, { method: "DELETE" });
+  const delBody = await del.json();
+  assert(del.status === 400 && delBody.error?.includes(runA.id), `DELETE on a project with a running run should be 400 naming ${runA.id}: ${del.status} ${JSON.stringify(delBody)}`);
+  const rm = run(["project", "remove", pa.id]);
+  expectExit(rm, 1, "project remove <project with a running run>");
+  await waitFor(async () => (await api("GET", `/api/projects/${pa.id}/state`)).run?.status === "done", { timeoutMs: 60_000, intervalMs: 300, label: "alpha's run" });
+  assert(a.sh("ls impl").trim() === "T001.txt", "alpha's work did not land");
+
+  // Archive B after stopping its run: gone from the default list, repo kept, `project add` restores it with its runs.
+  expectExit(run(["stop"], b.repo), 0, "stop in repo B");
+  expectExit(run(["project", "remove", pb.id]), 0, "project remove beta");
+  assert(!(await api("GET", "/api/projects")).some((p) => p.id === pb.id), "archived project still in the default list");
+  assert((await api("GET", "/api/projects?archived=1")).some((p) => p.id === pb.id && p.archived), "archived project missing from ?archived=1");
+  assert(fs.existsSync(path.join(b.repo, "README.md")), "archiving touched the repo");
+  assert(!(await api("GET", "/api/inbox")).some((i) => i.project_id === pb.id), "archived project still in the global inbox");
+  const restored = run(["project", "add", b.repo]);
+  expectExit(restored, 0, "project add (restore archived)");
+  assert(/restored/.test(restored.out), "re-adding an archived project should restore it: " + restored.out);
+  const back = await api("GET", `/api/projects/${pb.id}/state`);
+  assert(back.runs.length === 1 && back.runs[0].status === "stopped", "restored project lost its run history: " + JSON.stringify(back.runs));
+  // Only alpha and beta again: outside both repos is still ambiguous; `project list` shows both.
+  const ls = run(["project", "list"]);
+  expectExit(ls, 0, "project list");
+  assert(ls.out.includes(pa.id) && ls.out.includes(pb.id), "project list: " + ls.out);
+  console.log(`projects: registered ${pa.id} + ${pb.id}; CLI scoping, exit codes, global inbox and archive checked`);
+}
+
 // ------------------------------------------------------------------ scenario: upgrade a single-repo install
 /** The 0.1 schema as released (same as test/unit/db.test.mjs), before projects and user_version. */
 const SCHEMA_0_1 = `
@@ -233,7 +356,7 @@ async function legacy() {
 }
 
 // ------------------------------------------------------------------ runner
-const scenarios = { multi, legacy };
+const scenarios = { multi, projects, legacy };
 const only = process.argv.slice(2);
 let failed = 0;
 for (const [name, fn] of Object.entries(scenarios)) {
