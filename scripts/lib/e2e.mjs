@@ -58,10 +58,15 @@ export function writeConfig(repo, config) {
   fs.writeFileSync(path.join(repo, "orch.config.json"), JSON.stringify(config, null, 2));
 }
 
-/** `api(port)` returns `(method, path, body?) => json`; non-2xx responses throw `<path>: <error>`. */
-export function api(port) {
+/**
+ * `api(port, { token })` returns `(method, path, body?) => json`; non-2xx responses throw `<path>: <error>`.
+ * With `token`, every request sends `Authorization: Bearer <token>`.
+ */
+export function api(port, { token = "" } = {}) {
   return async (method, p, body) => {
-    const r = await fetch(`http://127.0.0.1:${port}${p}`, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    const headers = { "content-type": "application/json" };
+    if (token) headers.authorization = `Bearer ${token}`;
+    const r = await fetch(`http://127.0.0.1:${port}${p}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
     const j = await r.json();
     if (!r.ok) throw new Error(`${p}: ${j.error}`);
     return j;
@@ -88,14 +93,15 @@ export async function waitFor(fn, { timeoutMs = 10_000, intervalMs = 200, ignore
 
 /**
  * Start `dist/cli.js serve` in `cwd` with `env` merged over process.env. Output is echoed with a
- * `[<name>]` / `[<name>!]` prefix. Resolves once GET /api/state answers on `port`.
+ * `[<name>]` / `[<name>!]` prefix. Resolves once GET /api/state answers on `port` (sending `token`,
+ * default `env.ORCH_TOKEN`, when the daemon has auth on).
  */
-export async function startDaemon({ cwd, env = {}, port, name = "daemon", readyTimeoutMs = 10_000 }) {
+export async function startDaemon({ cwd, env = {}, port, name = "daemon", readyTimeoutMs = 10_000, token = env.ORCH_TOKEN ?? "" }) {
   const proc = spawn("node", [path.join(ROOT, "dist/cli.js"), "serve"], { cwd, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } });
   proc.stdout.on("data", (d) => process.stdout.write(`[${name}] ` + d));
   proc.stderr.on("data", (d) => process.stdout.write(`[${name}!] ` + d));
   tracked.daemons.push(proc);
-  const call = api(port);
+  const call = api(port, { token });
   await waitFor(() => call("GET", "/api/state"), { timeoutMs: readyTimeoutMs, ignoreErrors: true, label: `${name} on :${port}` });
   return proc;
 }

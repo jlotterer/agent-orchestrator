@@ -11,12 +11,15 @@
  *   orch answer <questionId> <text>   answer a question
  *   orch retry|skip|merge <taskKey>   task actions
  *
- * Used by agents inside a task (ORCH_URL / ORCH_TASK_ID are set for them):
+ * Every API call sends `Authorization: Bearer` from ORCH_TOKEN or the settings file's auth.token.
+ *
+ * Used by agents inside a task (ORCH_URL / ORCH_TASK_ID / ORCH_TOKEN are set for them):
  *   orch decide "<text>" [--why "<rationale>"]
  *   orch ask "<question>" [--options "A,B,C"]
  */
 import path from "node:path";
 import { loadConfig, writeExampleConfig, CONFIG_FILENAME } from "./config.js";
+import { bindGuard, resolveToken } from "./auth.js";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -38,8 +41,13 @@ function positional(): string[] {
 }
 
 async function api(method: string, p: string, body?: any): Promise<any> {
-  const base = process.env.ORCH_URL ?? `http://127.0.0.1:${loadConfig().config.port}`;
-  const r = await fetch(base + p, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  // Agents get ORCH_URL and ORCH_TOKEN from the daemon; humans fall back to the settings file.
+  const local = (process.env.ORCH_URL && process.env.ORCH_TOKEN) ? null : loadConfig().config;
+  const base = process.env.ORCH_URL ?? `http://127.0.0.1:${local!.port}`;
+  const token = resolveToken(local?.auth.token);
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (token) headers.authorization = `Bearer ${token}`;
+  const r = await fetch(base + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const j: any = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error ?? `${r.status} ${r.statusText}`);
   return j;
@@ -55,6 +63,8 @@ async function main() {
     case "serve": {
       const { config, path: cfgPath } = loadConfig(flag("config"));
       if (!cfgPath) console.warn(`no ${CONFIG_FILENAME} found; using defaults with repo=${config.repo}`);
+      const refused = bindGuard({ host: config.host, token: config.auth.token, allowInsecure: config.auth.allowInsecure });
+      if (refused) throw new Error(refused);
       const { Orchestrator } = await import("./orchestrator.js");
       const { startServer } = await import("./server.js");
       const orch = new Orchestrator(config);

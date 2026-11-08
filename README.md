@@ -67,6 +67,9 @@ Edit `orch.config.json`:
 | `agents.roles.{planner,worker,validator}` | which adapter and model each role uses, e.g. `{"adapter": "gemini", "model": "pro"}` for the validator |
 | `agents.adapters.claude.extraArgs` | defaults to `--permission-mode bypassPermissions`. Tighten with `--allowedTools` if you prefer |
 | `agents.adapters.gemini.extraArgs` | defaults to `--yolo --skip-trust` (both required for headless runs in a worktree) |
+| `host` / `port` | where the dashboard and API listen. Default `127.0.0.1:4800` (this machine only) |
+| `auth.token` | access token for the dashboard, API, live stream and CLI. `ORCH_TOKEN` in the environment overrides it. Empty = no auth. See [Access token](#access-token) |
+| `auth.allowInsecure` | `true` lets orch listen on a non-local `host` without a token. Default `false` |
 | `notify.ntfyUrl` | `https://ntfy.sh/<your-topic>` for push notifications |
 | `publicUrl` | what the notification links to, e.g. `http://my-server:4800` |
 
@@ -88,6 +91,28 @@ Start the daemon:
 ```bash
 orch serve          # dashboard on http://<host>:4800
 ```
+
+### Access token
+
+By default orch listens on `127.0.0.1` only. To reach it from another machine, set `host` to
+`0.0.0.0` (or an interface address) **and** an access token; orch refuses to start on a non-local
+address without one, and the error names both `auth.token` and `auth.allowInsecure`.
+
+```bash
+export ORCH_TOKEN=$(openssl rand -hex 32)   # or put it in auth.token
+orch serve
+```
+
+With a token set:
+
+* every API call and the live stream need it; requests without it get `401 {"error":"unauthorized"}`;
+* the dashboard asks for it once and keeps it in an `HttpOnly`, `SameSite=Strict` cookie;
+* the `orch` CLI sends it from `ORCH_TOKEN` or the config file, and agents get it in their environment
+  automatically, so `orch decide` and `orch ask` keep working;
+* `GET /api/health` stays open and returns `{ok, version, uptimeSec}` for monitoring.
+
+The token, the ntfy token and adapter `env` values are never written to the database, the event log
+or agent prompts. There is no TLS: use SSH, Tailscale, a private network or an HTTPS reverse proxy.
 
 For a server, use the included `orch.service` (systemd):
 
@@ -268,6 +293,11 @@ with owner feedback that reaches the worker, the merge approval, and tasks.md ti
 `origin`: a CI failure fed back and fixed before auto-merge, a `/orch` review comment fixed before a
 manual merge (with a bot comment that must be ignored), and a PR merged by hand on "GitHub".
 
+`scripts/e2e-auth.mjs` checks the access token end to end: 401 without it, the open health check,
+`orch status` with and without `ORCH_TOKEN`, the dashboard login cookie on the live stream, a fake
+worker's `orch decide` getting through, the refusal to listen on `0.0.0.0` without a token, and no
+token in the database file, the events or any prompt.
+
 `scripts/e2e-lifecycle.mjs` pins down the rest of the task lifecycle in 13 independent scenarios,
 each in its own throwaway repo: stopping a run mid-task, `kill -9` of the daemon and restart (no lost
 decisions or questions), agent timeout, a failing setup command, a worker that commits nothing, a
@@ -308,7 +338,8 @@ src/config.ts         settings: today's single-file loader, plus server.json / p
 src/paths.ts          ORCH_HOME layout (server.json, orch.db, worktrees/, archive/, run/)
 src/db.ts             SQLite: projects, runs, tasks, phases, events, decisions, questions; versioned migrations
 src/projects.ts       project registry: register a repo, archive, find the project for a directory
-src/server.ts         REST + SSE, serves the dashboard
+src/server.ts         REST + SSE, serves the dashboard; token gate, /api/health, /api/login
+src/auth.ts           token check (Bearer or cookie), login cookie, bind guard
 src/cli.ts            `orch` (human commands and the agent-facing decide/ask)
 prompts/*.md          the three role prompts
 dashboard/index.html  the UI, no build step
@@ -318,7 +349,8 @@ dashboard/index.html  the UI, no build step
 
 Workers run headless with `--permission-mode bypassPermissions` inside their worktree. That is the
 point of the tool, but it means a worker can run anything your user can. Run the daemon as a
-low-privilege user on a machine you don't mind an agent working in, keep secrets out of
+low-privilege (non-root) user on a machine you don't mind an agent working in (the Docker image runs
+as uid 1000), set an [access token](#access-token) if anyone else can reach the port, keep secrets out of
 `git.copyFiles` unless the task needs them, and use `--allowedTools` in `agent.extraArgs` if you
 want a tighter leash. Manual merge policy is your other lever: the planner already uses it for auth,
 migrations, billing and irreversible changes.

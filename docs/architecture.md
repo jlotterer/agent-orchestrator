@@ -58,7 +58,7 @@ src/
   projects.ts       project registry (add/archive/resolve by cwd)                      (built: TASK-07; daemon use TASK-09)
   db.ts             better-sqlite3 store, schema + `user_version` migrations           (built: TASK-07)
   git.ts            Git class: worktrees, commits, diffs, merge, gh pr/run/api helpers
-  auth.ts           token check, login cookie, bind guard                             [planned: TASK-08]
+  auth.ts           token check, login cookie, bind guard                             (built: TASK-08)
   appserver.ts      UI-mode app lifecycle: port, start, readiness, stop, pidfiles     [planned: TASK-16]
   archive.ts        event retention: export JSONL.gz, delete                          [planned: TASK-12]
   costs.ts          cost/time rollups                                                 [planned: TASK-17]
@@ -218,7 +218,7 @@ Fix-up tasks [TASK-15] use the same machine.
 - Prompt `prompts/worker.md` vars: task key/title/description, acceptance bullets, spec excerpt (`handoff.contextFiles`, clipped to `handoff.specChars`), hand-off, branch/base, validate hint, feedback section. Owned files listed when present [TASK-14].
 - Hand-off (clipped to `handoff.historyChars`): completed tasks with lower `order_idx` (direct deps: full summary; others: 200 chars; up to 8 files), last 25 decisions, all answered Q/A.
 - Resume prompt: answers (if any) + `last_feedback` + "continue, commit, same JSON block".
-- Agent env: `ORCH_URL`, `ORCH_TASK_ID`, `ORCH_RUN_ID`, `ORCH_ACTOR`, `ORCH_TOKEN` [TASK-08], `PATH` prefixed with `<pkg>/bin`.
+- Agent env: `ORCH_URL`, `ORCH_TASK_ID`, `ORCH_RUN_ID`, `ORCH_ACTOR`, `ORCH_TOKEN` (when a token is set; built: TASK-08), `PATH` prefixed with `<pkg>/bin`.
 
 ## 10. Validation
 ### 10.1 Gate
@@ -298,8 +298,8 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 
 | Method & path | Body / query | Returns | Status |
 | :--- | :--- | :--- | :--- |
-| GET `/api/health` | — | `{ok, version, uptimeSec}` (no auth) | TASK-08 |
-| POST `/api/login` | `{token}` | sets cookie, `{ok}` (no auth) | TASK-08 |
+| GET `/api/health` | — | `{ok, version, uptimeSec}` (no auth) | built: TASK-08 |
+| POST `/api/login` | `{token}` | right token: sets cookie, `{ok, auth:true}`; wrong: 401; auth off: `{ok, auth:false}` (no auth) | built: TASK-08 |
 | GET `/api/projects` | `?archived=1` | `[{id, name, repo, archived, error, run:{id,status}\|null, inboxCount}]` | TASK-10 |
 | POST `/api/projects` | `{path, name?}` | project (+ `configCreated` path) | TASK-10 |
 | DELETE `/api/projects/:id` | — | `{ok}` (archive) | TASK-10 |
@@ -321,15 +321,17 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 `orch serve | project add <path> [--name n] | project list | project remove <id> | plan <specDir> [--no-llm] [--dry-run] | approve [runId] | run | pause | stop | status | answer <qid> <text> | retry|skip|merge|stop-task <key> | archive-events | decide | ask`. Global `--project <id>` (§5.4). Exit codes: 0 ok, 1 error (`error: <msg>` on stderr), 2 usage. Token from `ORCH_TOKEN` or `$ORCH_HOME/server.json` when readable. Base URL from `ORCH_URL` or server config host/port.
 
 ### 15.3 Dashboard
-Single `dashboard/index.html`. Regions: top bar (project switcher with status dot + inbox count, Add project, run selector, run controls, cost tile), Inbox (global, project tag), Board (lanes: Pending, Running, Validating, Needs input, Waiting on CI, Review / merge, Failed, Done), Plan (phases, criteria, deps incl. implicit overlap edges, policy, mode, owned files; edit dialog), Decisions, Activity, Task drawer (meta, criteria, summary, feedback, actions; Send back textarea for `pr_open|pr_checks`; Diff section loaded on expand: file list with status and +/− counts, collapsible unified diff per file with added/removed lines coloured, binary note, truncation notice; live log). The drawer keeps stable regions so a refresh does not clear a draft or collapse open files. The inbox merge card has **Send back…** (dialog) [built: TASK-06]. SSE reconnect: on error close, retry with backoff 1 s doubling to 30 s, on open do a full refresh [TASK-11]. On any 401 show a token prompt that POSTs `/api/login` [TASK-08].
+Single `dashboard/index.html`. Regions: top bar (project switcher with status dot + inbox count, Add project, run selector, run controls, cost tile), Inbox (global, project tag), Board (lanes: Pending, Running, Validating, Needs input, Waiting on CI, Review / merge, Failed, Done), Plan (phases, criteria, deps incl. implicit overlap edges, policy, mode, owned files; edit dialog), Decisions, Activity, Task drawer (meta, criteria, summary, feedback, actions; Send back textarea for `pr_open|pr_checks`; Diff section loaded on expand: file list with status and +/− counts, collapsible unified diff per file with added/removed lines coloured, binary note, truncation notice; live log). The drawer keeps stable regions so a refresh does not clear a draft or collapse open files. The inbox merge card has **Send back…** (dialog) [built: TASK-06]. SSE reconnect: on error close, retry with backoff 1 s doubling to 30 s, on open do a full refresh [TASK-11]. On any 401 show a token prompt that POSTs `/api/login`, then refresh and reconnect SSE [built: TASK-08].
 
 ## 16. Authentication
-_(→ code: `src/auth.ts`, [planned: TASK-08])_
-- Token: `ORCH_TOKEN` env > `server.json` `auth.token`. Empty = auth off.
-- Accepted credentials: `Authorization: Bearer <token>` or cookie `orch_token=<token>` (set by `/api/login`: `HttpOnly; SameSite=Strict; Path=/`). Compare SHA-256 digests with `crypto.timingSafeEqual`.
+_(→ code: `src/auth.ts`, gate in `src/server.ts`, guard in `src/cli.ts` `serve`; built: TASK-08)_
+- Token: `ORCH_TOKEN` env > `server.json` `auth.token` (until TASK-09, the legacy `orch.config.json` `auth.token`; same precedence via `resolveToken()`). Empty = auth off. The legacy default host is `127.0.0.1` too.
+- Refused requests get 401 `{error:"unauthorized"}` with no reason. The CLI sends `Authorization: Bearer` from `ORCH_TOKEN` or the settings file; the daemon puts `ORCH_TOKEN` in every agent env (planner, worker, validator).
+- Accepted credentials: `Authorization: Bearer <token>` or cookie `orch_token=<token>` (set by `/api/login`: `HttpOnly; SameSite=Strict; Path=/; Max-Age` one year). Compare SHA-256 digests with `crypto.timingSafeEqual`.
 - Unauthenticated routes: `GET /` (dashboard shell), `GET /api/health`, `POST /api/login`. Everything else, including SSE, needs auth when a token is set.
 - Bind guard at startup: host not in `127.0.0.1 | ::1 | localhost` and no token and not `auth.allowInsecure` → exit 1 with a message naming both options.
-- Secret hygiene: the token, ntfy token and adapter env values are never logged, stored in events, or rendered into prompts; `publicConfig()` exposes only booleans for them.
+- Secret hygiene: the token, ntfy token and adapter env values are never logged, stored in events, or rendered into prompts; `publicConfig()` exposes only booleans for them (`auth`, `ntfy`, `ntfyToken`). `scripts/e2e-auth.mjs` checks the DB file, every event and every prompt.
+- Docker: the image runs as uid 1000 (`orch`), the healthcheck uses `/api/health`, and compose passes `ORCH_TOKEN` (required, because the container binds `0.0.0.0`).
 
 ## 17. Retention & Archive
 _(→ code: `src/archive.ts`, [planned: TASK-12])_

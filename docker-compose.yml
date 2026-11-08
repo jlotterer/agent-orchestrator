@@ -5,8 +5,14 @@ services:
     container_name: orch
     restart: unless-stopped
     ports:
+      # Reachable from other machines. For localhost-only access use "127.0.0.1:4800:4800".
       - "4800:4800"
     environment:
+      # Access token for the dashboard, API and CLI. Required: the container listens on 0.0.0.0
+      # so the published port works, and orch refuses that without a token (decision 0014).
+      # Generate one with `openssl rand -hex 32` and put it in .env. `docker compose exec orch orch …`
+      # picks it up from this environment automatically.
+      - ORCH_TOKEN=${ORCH_TOKEN:-}
       # Claude Code auth. No API key needed: run `docker compose run --rm orch claude auth login`
       # once to use your Claude subscription (saved in the claude-home volume), or set a
       # long-lived token from `claude setup-token` here. Only set ANTHROPIC_API_KEY if you

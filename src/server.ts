@@ -4,6 +4,12 @@ import path from "node:path";
 import { URL } from "node:url";
 import type { Orchestrator } from "./orchestrator.js";
 import { PKG_ROOT } from "./prompts.js";
+import { isAuthorized, loginCookie, tokenMatches } from "./auth.js";
+
+const VERSION: string = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")).version ?? "unknown"; } catch { return "unknown"; }
+})();
+const STARTED = Date.now();
 
 type Handler = (req: http.IncomingMessage, res: http.ServerResponse, params: Record<string, string>, body: any) => Promise<any> | any;
 
@@ -65,15 +71,34 @@ export function startServer(orch: Orchestrator) {
 
   const dashboardHtml = () => fs.readFileSync(path.join(PKG_ROOT, "dashboard", "index.html"), "utf8");
 
+  const token = orch.cfg.auth.token;
+  const json = (res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => {
+    res.writeHead(status, { "content-type": "application/json", ...headers });
+    res.end(JSON.stringify(body));
+  };
+
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
     const p = url.pathname;
     try {
+      // ---- open routes (§16): dashboard shell, health check, login ----
       if (req.method === "GET" && (p === "/" || p === "/index.html")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(dashboardHtml());
         return;
       }
+      if (req.method === "GET" && p === "/api/health") {
+        return json(res, 200, { ok: true, version: VERSION, uptimeSec: Math.floor((Date.now() - STARTED) / 1000) });
+      }
+      if (req.method === "POST" && p === "/api/login") {
+        const b = await readJson(req).catch(() => ({}));
+        const given = typeof b?.token === "string" ? b.token.trim() : "";
+        if (!token) return json(res, 200, { ok: true, auth: false });
+        if (!given || !tokenMatches(given, token)) return json(res, 401, { error: "unauthorized" });
+        return json(res, 200, { ok: true, auth: true }, { "set-cookie": loginCookie(token) });
+      }
+      // ---- everything else needs the token when one is set ----
+      if (!isAuthorized(req, token)) return json(res, 401, { error: "unauthorized" });
       if (req.method === "GET" && p === "/api/events/stream") {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive", "access-control-allow-origin": "*" });
         res.write(": connected\n\n");
@@ -102,7 +127,7 @@ export function startServer(orch: Orchestrator) {
   });
 
   server.listen(orch.cfg.port, orch.cfg.host, () => {
-    console.log(`orch dashboard: http://${orch.cfg.host === "0.0.0.0" ? "localhost" : orch.cfg.host}:${orch.cfg.port}  (repo: ${orch.cfg.repo})`);
+    console.log(`orch dashboard: http://${orch.cfg.host === "0.0.0.0" ? "localhost" : orch.cfg.host}:${orch.cfg.port}  (repo: ${orch.cfg.repo}; auth ${token ? "on" : "off"})`);
   });
   return server;
 }

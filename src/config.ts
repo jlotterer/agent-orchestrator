@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { orchHome, serverConfigPath, dbPath, worktreesDir, projectSlug } from "./paths.js";
+import { resolveToken } from "./auth.js";
 
 export interface RoleConfig {
   /** Key into agents.adapters. */
@@ -25,6 +26,11 @@ export interface Config {
   port: number;
   /** Public URL of the dashboard (used in notifications and agent env). */
   publicUrl: string;
+  /**
+   * Access token (§16). `ORCH_TOKEN` overrides `token`; empty = auth off. A non-loopback `host`
+   * without a token is refused at startup unless `allowInsecure` is true.
+   */
+  auth: { token: string; allowInsecure: boolean };
 
   agents: {
     /** Hard timeout for one agent invocation, minutes. */
@@ -121,9 +127,10 @@ export const DEFAULT_CONFIG: Config = {
   baseBranch: "main",
   worktreeDir: path.join(process.cwd(), "..", "orch-worktrees"),
   dbPath: path.join(process.cwd(), ".orch", "orch.db"),
-  host: "0.0.0.0",
+  host: "127.0.0.1",
   port: 4800,
   publicUrl: "http://localhost:4800",
+  auth: { token: "", allowInsecure: false },
   agents: {
     timeoutMinutes: 90,
     adapters: {
@@ -217,7 +224,7 @@ export function findConfigPath(start = process.cwd()): string | null {
 
 export function loadConfig(explicit?: string): { config: Config; path: string | null } {
   const p = explicit ?? process.env.ORCH_CONFIG ?? findConfigPath();
-  if (!p) return { config: DEFAULT_CONFIG, path: null };
+  if (!p) return { config: { ...DEFAULT_CONFIG, auth: { token: resolveToken(""), allowInsecure: false } }, path: null };
   const raw = JSON.parse(fs.readFileSync(p, "utf8"));
   const root = path.dirname(p);
   migrateLegacyAgentBlock(raw);
@@ -230,6 +237,7 @@ export function loadConfig(explicit?: string): { config: Config; path: string | 
   cfg.repo = path.resolve(root, cfg.repo);
   cfg.worktreeDir = path.resolve(root, cfg.worktreeDir);
   cfg.dbPath = path.resolve(root, cfg.dbPath);
+  cfg.auth = { token: resolveToken(cfg.auth.token), allowInsecure: cfg.auth.allowInsecure === true };
   return { config: cfg, path: p };
 }
 
@@ -468,6 +476,7 @@ export function loadServerConfig(home: string = orchHome()): ServerConfig {
     assertNoForbiddenKeys(raw.defaults, p, "defaults.");
   }
   const cfg = clone(deepMerge(DEFAULT_SERVER_CONFIG, raw));
+  cfg.auth = { token: resolveToken(cfg.auth.token), allowInsecure: cfg.auth.allowInsecure === true };
   for (const [role, r] of Object.entries(cfg.agents.roles)) {
     if (r && !cfg.agents.adapters[r.adapter]) throw new Error(`${p}: agents.roles.${role}.adapter '${r.adapter}' is not defined in agents.adapters`);
   }
@@ -557,6 +566,7 @@ export function toLegacyConfig(
     host: server.host,
     port: server.port,
     publicUrl: server.publicUrl,
+    auth: { ...server.auth },
     agents: {
       timeoutMinutes: server.agents.timeoutMinutes,
       adapters: server.agents.adapters,

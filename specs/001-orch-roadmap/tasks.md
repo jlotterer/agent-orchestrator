@@ -16,7 +16,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 
 ## Phase 4: Wave 4
 - [x] T007 [P] Project registry and versioned DB migrations. Brief: docs/tasks/TASK-07.md.
-- [ ] T008 [P] Bearer-token auth, health check and bind guard. Brief: docs/tasks/TASK-08.md.
+- [x] T008 [P] Bearer-token auth, health check and bind guard. Brief: docs/tasks/TASK-08.md.
 
 ## Phase 5: Wave 5
 - [ ] T009 Multi-project orchestration and global agent cap. Brief: docs/tasks/TASK-09.md.

@@ -69,7 +69,13 @@ export class Orchestrator extends EventEmitter {
   private taskEnv(task: Task, actor: "worker" | "validator" = "worker") {
     // Put the `orch` CLI on the agent's PATH so `orch decide` / `orch ask` work without a global install.
     const PATH = `${path.join(PKG_ROOT, "bin")}${path.delimiter}${process.env.PATH ?? ""}`;
-    return { ORCH_URL: `http://127.0.0.1:${this.cfg.port}`, ORCH_TASK_ID: task.id, ORCH_RUN_ID: task.run_id, ORCH_ACTOR: actor, PATH };
+    return { ...this.apiEnv(), ORCH_TASK_ID: task.id, ORCH_RUN_ID: task.run_id, ORCH_ACTOR: actor, PATH };
+  }
+  /** How an agent's `orch` CLI reaches this daemon. The token goes in the env only, never in a prompt (§16). */
+  private apiEnv(): Record<string, string> {
+    const env: Record<string, string> = { ORCH_URL: `http://127.0.0.1:${this.cfg.port}` };
+    if (this.cfg.auth.token) env.ORCH_TOKEN = this.cfg.auth.token;
+    return env;
   }
   /** Adapter + model for a role, resolved from config. */
   private roleAgent(role: RoleName) {
@@ -223,7 +229,7 @@ export class Orchestrator extends EventEmitter {
     this.log(run, null, "state", { message: `planner started (${planner.label})` });
     const res = await runAgent({
       ...planner, cwd: this.cfg.repo, prompt,
-      env: { ORCH_URL: `http://127.0.0.1:${this.cfg.port}`, ORCH_RUN_ID: run.id, ORCH_ACTOR: "planner" },
+      env: { ...this.apiEnv(), ORCH_RUN_ID: run.id, ORCH_ACTOR: "planner" },
       onEvent: (kind, data) => this.log(run, null, kind, { role: "planner", ...data }),
     });
     const out = res.structured;
@@ -834,7 +840,7 @@ export class Orchestrator extends EventEmitter {
   }
   private publicConfig() {
     const c = this.cfg;
-    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries(c.agents.roles).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), ntfy: !!c.notify.ntfyUrl, prFeedback: c.git.pr && c.git.feedback.enabled ? { waitForChecks: c.git.feedback.waitForChecks, maxRounds: c.git.feedback.maxRounds, trigger: c.git.feedback.trigger } : null };
+    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries(c.agents.roles).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), ntfy: !!c.notify.ntfyUrl, ntfyToken: !!c.notify.ntfyToken, auth: !!c.auth.token, prFeedback: c.git.pr && c.git.feedback.enabled ? { waitForChecks: c.git.feedback.waitForChecks, maxRounds: c.git.feedback.maxRounds, trigger: c.git.feedback.trigger } : null };
   }
 
   /** On daemon start: anything that was 'running' when we died goes back to pending. */
