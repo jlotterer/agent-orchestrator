@@ -44,6 +44,6 @@ You can also change a task's attempt limit through the [HTTP API](../reference/h
 
 You can also select **Approve plan** on the "Plan awaits your approval" card in the **Inbox**, or run `orch approve`.
 
-**Planned:** orch refuses to approve a plan whose dependencies form a loop, such as T001 depending on T002 and T002 depending on T001. The error names the tasks in the loop. Edit one of their dependencies, and then approve again.
+orch refuses to approve a plan whose dependencies form a loop, such as T001 depending on T002 and T002 depending on T001. The error names the tasks in the loop, for example "dependency cycle: T001 → T002 → T001; edit the dependencies of T001, T002 and approve again". In the dashboard, the error stays above the plan until you try again. Edit one of the dependencies, and then approve again.
 
 Next, start the run. See [Run and control a run](control-a-run.md).

@@ -2,9 +2,6 @@
 
 One orch server manages all of your repos. Each registered repo is a *project*, with its own settings file, runs and inbox items.
 
-> [!NOTE]
-> **Planned.** The `orch project` commands and the dashboard project controls described on this page are in development. In the current release, you register your first project by starting orch from inside its repo. See [Quickstart](../quickstart.md#without-project-commands).
-
 ## Add a project
 
 Prerequisites:
@@ -38,19 +35,18 @@ orch refuses a path in these cases:
 
 | Message | Cause |
 | :--- | :--- |
+| "`<path>`: no such directory" | The folder doesn't exist. |
 | "`<path>` is not a git repository" | The folder isn't inside a git repo. |
 | "`<path>` is not a git repository root (the repository root is `<root>`)" | The folder is inside a repo, but isn't its top-level folder. Use the path it suggests. |
 | "`<path>` is already registered as project '`<id>`'" | That repo is already a project. |
 
 ### Add a project from the dashboard
 
-**Planned.**
+1. In the top bar, open the project switcher and select **Add project…**.
+2. In **Path to a git repository on the orch host**, enter the repo path. Optionally, enter a **Name**.
+3. Select **Add project**. If orch refuses the path, the reason appears in the dialog. If orch created a starter settings file, a message shows its path.
 
-<!-- TODO(verify): exact dialog and button labels once the dashboard project controls ship -->
-
-1. In the top bar, open the project switcher and select **Add project**.
-2. Enter the repo path and, optionally, a name.
-3. Confirm the dialog. If orch refuses the path, the reason appears in the dialog.
+The dashboard switches to the new project.
 
 ## List projects
 
@@ -64,13 +60,13 @@ orch refuses a path in these cases:
 
 To include archived projects, add `--archived`.
 
-In the dashboard (**Planned**), the project switcher in the top bar lists every project with a status dot for its current run and its inbox count. Select a project to switch the **Board**, **Plan**, **Decisions** and **Activity** tabs to it. The dashboard remembers your choice in that browser.
+In the dashboard, the project switcher at the top left lists every project with a status dot for its current run and its inbox count. A red dot means the project has a problem, such as a missing repo. Select a project to switch the **Board**, **Plan**, **Decisions** and **Activity** tabs and the run selector to it. The dashboard remembers your choice in that browser.
 
 ## Archive a project
 
 Archiving removes a project from the project list and the inbox. It doesn't delete the repo or the project's history.
 
-Prerequisite: the project has no unfinished run. If it has one, stop the run first. See [Run and control a run](control-a-run.md).
+Prerequisite: the project has no unfinished run. If it has one, orch refuses with "project '`<id>`' has an unfinished run `<run-id>` (…); stop it before archiving". Stop the run first. See [Run and control a run](control-a-run.md).
 
 - Run:
 
@@ -80,7 +76,7 @@ Prerequisite: the project has no unfinished run. If it has one, stop the run fir
 
   orch confirms: "archived project `<project-id>` (the repository and its history are kept; `orch project add` restores it)".
 
-In the dashboard (**Planned**), select **Archive** for the project, and then confirm.
+In the dashboard, select the project, open the project switcher, select **Archive this project…**, and then select **OK**.
 
 ## Restore an archived project
 

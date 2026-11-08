@@ -19,7 +19,7 @@ This manual is for the owner who installs and operates orch. You should be comfo
 
 ## Feature availability
 
-orch is under active development. This manual describes every feature, including ones that aren't in the current release yet. Pages and sections for those features are marked **Planned**. For the full list, see [Feature status](feature-status.md).
+Every feature in this manual is available in the current release. For a summary, and for what orch doesn't do, see [Feature status](feature-status.md).
 
 ## Contents
 
@@ -51,7 +51,7 @@ orch is under active development. This manual describes every feature, including
 | [Secure remote access](how-to/secure-access.md) | Access token, network address, health check |
 | [Get push notifications](how-to/set-up-notifications.md) | Send inbox alerts to your phone with ntfy |
 | [Track cost and agent time](how-to/track-cost.md) | See what each task, run and project cost |
-| [Archive old activity logs](how-to/archive-event-logs.md) | **Planned.** Keep the database small by archiving old agent logs |
+| [Archive old activity logs](how-to/archive-event-logs.md) | Keep the database small by archiving old agent logs |
 
 ### Reference
 

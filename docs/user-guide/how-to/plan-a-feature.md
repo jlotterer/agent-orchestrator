@@ -31,7 +31,7 @@ To import the tasks without running the planner, add `--no-llm`. The run goes st
 
 ## Draft a plan from the dashboard
 
-1. In the top bar, select **New plan**.
+1. In the top bar, select **New plan…**.
 2. In **Spec directory**, enter the feature folder, for example `specs/003-checkout`. You can use an absolute path or a path relative to the repo.
 3. To skip the planner, clear the **Run the planner agent to write acceptance criteria and check dependencies** checkbox.
 4. Select **Draft plan**.
@@ -55,11 +55,7 @@ If the planner fails or returns nothing usable, orch keeps the imported tasks un
 
 ## Answer plan questions
 
-When the planner has a question about the spec, it appears in the **Inbox**.
-
-In the current release, a plan question is attached to the first pending task and its text starts with `[plan]`. Only that task waits for the answer.
-
-**Planned:** plan questions aren't attached to any task. They're labeled as plan questions in the inbox, and no task in the run starts until you answer them all.
+When the planner has a question about the spec as a whole, it appears in the **Inbox** with a **Plan** label instead of a task key. A plan question isn't tied to any task: no task in the run starts until you answer them all. You can still approve and start the run while a plan question is open. The **Plan** tab shows a note while plan questions are open.
 
 To answer:
 
@@ -68,13 +64,29 @@ To answer:
 
 ## Preview a plan without creating a run
 
-**Planned.** Preview shows how orch reads a `tasks.md`: phases, tasks, `[P]` markers and dependencies. It doesn't create a run or call an agent, so it's a fast way to check a task list before you plan it.
+Preview shows how orch reads a `tasks.md`: phases, tasks, `[P]` markers and dependencies. It doesn't create a run or call an agent, so it's a fast way to check a task list before you plan it.
 
 - Run:
 
   ```bash
   orch plan <spec-folder> --dry-run
   ```
+
+  orch prints each phase with its tasks and what each task depends on:
+
+  ```text
+  dry run: "Checkout" (/home/you/projects/shop/specs/003-checkout) for project shop: 3 tasks; nothing was created
+
+  Phase 1: Setup
+    [ ]     T001  Add the cart model
+              depends on: none
+
+  Phase 2: Core
+    [ ] [P] T002  Add the checkout endpoint
+              depends on: T001
+  ```
+
+  If the dependencies form a loop, the preview ends with a warning naming the tasks in it.
 
 ## Errors when planning
 

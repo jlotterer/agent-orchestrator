@@ -2,9 +2,9 @@
 
 The **Inbox** is the one place that lists everything that needs you. If you set up notifications, every new item also sends one to your phone. Each item has its actions on it, so most items take one or two selections.
 
-In the current release, the inbox shows the items of the project shown in the dashboard. **Planned:** one inbox for all projects, with each item labeled with its project. Selecting an item switches the dashboard to that project.
+The inbox covers all of your projects. Each item is labeled with its project. Selecting an item switches the dashboard to that project and opens its task. The buttons on an item act without switching, except **Inspect** and **Send back…**, which switch first.
 
-When nothing needs you, the inbox shows "Nothing needs you right now."
+When nothing needs you, the inbox shows "Nothing needs you right now." With several projects, it adds "in any project".
 
 ## Inbox items at a glance
 

@@ -10,12 +10,6 @@ In this quickstart, you register a repo with orch, give it a two-task feature, a
 
 ## Register the project
 
-How you register a repo depends on your orch release.
-
-### With project commands
-
-**Planned.** This applies when your release includes `orch project add`. To check, run `orch help`.
-
 1. Start orch, if it isn't running:
 
    ```bash
@@ -35,25 +29,9 @@ How you register a repo depends on your orch release.
    created starter settings file /home/you/projects/myapp/orch.config.json; set validation.command there
    ```
 
-### Without project commands
+   If the repo already has an `orch.config.json`, orch keeps it and prints only the first line.
 
-In the current release, you register your first project by starting orch from inside the repo.
-
-1. Stop orch if it's running.
-2. Go to the repo and create a settings file:
-
-   ```bash
-   cd ~/projects/myapp
-   orch init
-   ```
-
-3. Start orch from the same folder:
-
-   ```bash
-   orch serve
-   ```
-
-   On this first start, orch moves the server settings from the file into `~/.orch/server.json` and registers the repo as a project. This works only while `~/.orch/server.json` doesn't exist yet.
+3. In a browser, go to `http://127.0.0.1:4800`. The project switcher at the top left shows **myapp**.
 
 ## Configure the project
 
@@ -116,9 +94,8 @@ In real use, Spec Kit's `/speckit.specify`, `/speckit.plan` and `/speckit.tasks`
 
    The run ID is random. The title comes from the first heading of `spec.md`.
 
-2. In a browser, go to `http://127.0.0.1:4800`.
-3. Go to the **Plan** tab. Read the acceptance criteria the planner wrote for each task.
-4. Optional: select a task to open it, select **Edit**, change something, and then select **Save**.
+2. In the dashboard, go to the **Plan** tab. Read the acceptance criteria the planner wrote for each task.
+3. Optional: select a task to open it, select **Edit**, change something, and then select **Save**.
 
 ## Approve and start the run
 
@@ -131,7 +108,7 @@ If a worker asks a question, it appears in the **Inbox**. Select one of the offe
 
 ## Check the result
 
-When both tasks are done, the run status changes to `done`. In your repo:
+When both tasks are done, the run status changes to `done`. The tile in the top bar shows what the run cost and how much agent time it used. In your repo:
 
 ```bash
 git log --oneline -3

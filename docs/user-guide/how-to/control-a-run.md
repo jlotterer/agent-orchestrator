@@ -13,7 +13,7 @@ orch starts each task as soon as all of these are true:
 
 - Every task it depends on is done or skipped.
 - It has no open question.
-- No plan question is open (**Planned**).
+- No plan question is open.
 - The project has room under its parallel limit, `scheduler.maxParallel` (default 1).
 - The server has room under its global agent limit, `scheduler.maxAgents` (default 2).
 - No running task in the same project owns any of the same files. See [Run tasks in parallel](run-in-parallel.md#owned-files).

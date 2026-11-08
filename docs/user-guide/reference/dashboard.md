@@ -6,18 +6,18 @@ The dashboard is at orch's address, `http://127.0.0.1:4800` by default. It updat
 
 ## Top bar
 
-The top bar shows the run's title and status, and the run controls.
+The top bar shows the selected project, the run's title and status, the cost and time tile, and the run controls.
 
 | Control | What it does |
 | :--- | :--- |
-| Run selector | Switches to another run of the project, including finished ones. |
-| **New plan** | Opens the **New plan from a Spec Kit feature** dialog. See [Plan a feature](../how-to/plan-a-feature.md#draft-a-plan-from-the-dashboard). |
+| Project switcher | At the top left. Shows the selected project with a status dot (running, awaiting approval, done, idle; red when the project has a problem) and its inbox count. Its menu lists every project, with **Add project…** and **Archive this project…**. See [Add and manage projects](../how-to/manage-projects.md). |
+| Run selector | Switches to another run of the project, including finished ones. It appears when the project has more than one run. |
+| **New plan…** | Opens the **New plan from a Spec Kit feature** dialog. See [Plan a feature](../how-to/plan-a-feature.md#draft-a-plan-from-the-dashboard). |
 | **Approve plan** | Approves the plan that waits for approval. |
 | **Start** | Starts or resumes the run. |
 | **Pause** | Lets running agents finish their step and starts nothing new. |
 | **Stop** | Ends running agents. Their tasks go back to pending. |
-| Live indicator | Shows whether the live update connection is up. |
-| Project switcher (**Planned**) | Lists every project with a status dot and its inbox count. Includes **Add project** and **Archive**. |
+| Live indicator | Green when the live update connection is up, amber while it reconnects. |
 | Cost and time tile | Shows the cost and agent time of the run and the project. A cost that no agent program reported shows "n/a". See [Track cost and agent time](../how-to/track-cost.md). |
 
 ## Inbox
@@ -88,13 +88,13 @@ The actions depend on the task's status:
 
 | Dialog | Opened by | Fields |
 | :--- | :--- | :--- |
-| **New plan from a Spec Kit feature** | **New plan** | **Spec directory**, the planner checkbox, **Draft plan** |
+| **New plan from a Spec Kit feature** | **New plan…** | **Spec directory**, the planner checkbox, **Draft plan** |
 | **Edit task** | **Edit** | **Title**, **Acceptance criteria (one per line)**, **Depends on (comma-separated task keys)**, **Merge policy**, **Validation command (blank = project default)**, **Validation mode**, **Owned files (one path or glob per line; blank = unconstrained)** |
 | **Send** *task* **back to the worker** | **Send back** on an inbox card | A text box for your feedback |
 | **Sign in to orch** | Any request when an access token is set and the browser has none | **Access token**, **Sign in** |
 
 ## Live updates
 
-The dashboard keeps a live connection to orch. **Planned:** if the connection drops, for example when orch restarts, the dashboard reconnects on its own, waiting a little longer after each failed try (from 1 second up to 30 seconds), and then refreshes everything.
+The dashboard keeps a live connection to orch. If the connection drops, for example when orch restarts, the dashboard reconnects on its own, waiting a little longer after each failed try (from 1 second up to 30 seconds), and then refreshes everything.
 
 The dashboard works on a phone-sized screen, in light and dark themes.

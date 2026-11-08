@@ -1,6 +1,6 @@
 # CLI reference
 
-The `orch` command starts the server and controls it. Except for `orch serve` and `orch init`, every command talks to a running orch server over HTTP.
+The `orch` command starts the server and controls it. Except for `orch serve`, `orch init` and `orch archive-events`, every command talks to a running orch server over HTTP.
 
 ```text
 orch <command> [arguments] [--project <project-id>]
@@ -8,15 +8,14 @@ orch <command> [arguments] [--project <project-id>]
 
 ## Commands at a glance
 
-The following table lists every command. Commands marked **Planned** aren't in the current release.
+The following table lists every command.
 
 | Command | What it does |
 | :--- | :--- |
 | [`orch serve`](#orch-serve) | Start the server and dashboard. |
-| [`orch init`](#orch-init) | Write a single-file settings file in the current folder, for a first project. |
-| [`orch project add`](#orch-project-add) | **Planned.** Register a git repo as a project. |
-| [`orch project list`](#orch-project-list) | **Planned.** List projects. |
-| [`orch project remove`](#orch-project-remove) | **Planned.** Archive a project. |
+| [`orch project add`](#orch-project-add) | Register a git repo as a project. |
+| [`orch project list`](#orch-project-list) | List projects. |
+| [`orch project remove`](#orch-project-remove) | Archive a project. |
 | [`orch plan`](#orch-plan) | Import a feature's `tasks.md` and draft a plan. |
 | [`orch approve`](#orch-approve) | Approve a plan. |
 | [`orch run`](#orch-run-orch-pause-orch-stop) | Start or resume the current run. |
@@ -25,30 +24,29 @@ The following table lists every command. Commands marked **Planned** aren't in t
 | [`orch status`](#orch-status) | Show the run, its tasks and the inbox. |
 | [`orch answer`](#orch-answer) | Answer a question. |
 | [`orch retry`, `orch skip`, `orch merge`, `orch stop-task`](#task-commands) | Act on one task. |
-| [`orch archive-events`](#orch-archive-events) | **Planned.** Archive old runs' agent logs now. |
+| [`orch archive-events`](#orch-archive-events) | Archive old runs' agent logs now. |
 | [`orch help`](#orch-help) | Show the list of commands. |
 | [`orch decide`](#orch-decide) | For agents: record a decision. |
 | [`orch ask`](#orch-ask) | For agents: ask you a question and stop. |
+| [`orch init`](#orch-init) | Older setup path: write a single-file settings file in the current folder. |
 
 ## Global options
 
 | Option | Description |
 | :--- | :--- |
-| `--project <project-id>` | **Planned.** The project the command acts on. See [Project selection](#project-selection). |
-| `--help` | **Planned.** Show the list of commands, like `orch help`. |
+| `--project <project-id>` | The project the command acts on. See [Project selection](#project-selection). |
+| `--help` | Show the list of commands, like `orch help`. |
 
 ### Project selection
 
-**Planned.** Commands that act on a project (`status`, `plan`, `approve`, `run`, `pause`, `stop`, `retry`, `skip`, `merge`, `stop-task`) pick it in this order:
+Commands that act on a project (`status`, `plan`, `approve`, `run`, `pause`, `stop`, `retry`, `skip`, `merge`, `stop-task`) pick it in this order:
 
 1. `--project <project-id>`
 2. The `ORCH_PROJECT` environment variable
 3. The project whose repo contains the current folder. For `orch plan`, the spec folder is checked first.
 4. The only project, when just one is registered
 
-If none applies, the command stops with exit code `2`, "which project? Run inside a project's repo or pass --project <id> (or set ORCH_PROJECT)", and a list of projects.
-
-In the current release, these commands act on the first registered project, by name.
+If none applies, the command stops with exit code `2`, "which project? Run inside a project's repo or pass --project <id> (or set ORCH_PROJECT)", and a list of projects. With no project registered, the message is "no projects registered. Add one with: orch project add <path>". A `--project` or `ORCH_PROJECT` value that matches no project fails with "no project '`<id>`'".
 
 ## Exit codes
 
@@ -56,7 +54,7 @@ In the current release, these commands act on the first registered project, by n
 | :--- | :--- |
 | `0` | Success. |
 | `1` | Failure. The reason is on standard error, after `error:`. |
-| `2` | **Planned.** Usage error: a missing argument, an unknown command, or a project that can't be determined. In the current release, these exit with `1`. |
+| `2` | Usage error: a missing argument, an unknown command, or a project that can't be determined. |
 
 ## Connection and token
 
@@ -65,7 +63,7 @@ The command finds the server and its token like this:
 - **Address:** `ORCH_URL` if set, otherwise `http://127.0.0.1:<port>`, with the port from `$ORCH_HOME/server.json`.
 - **Token:** `ORCH_TOKEN` if set, otherwise `auth.token` from `$ORCH_HOME/server.json`.
 
-If the server can't be reached, the command fails with exit code `1`. **Planned:** the message says "cannot reach orch at `<address>` (is `orch serve` running?)".
+If the server can't be reached, the command fails with exit code `1` and "cannot reach orch at `<address>` (is `orch serve` running?)".
 
 ---
 
@@ -90,19 +88,9 @@ On start, orch:
 
 If no project is registered, it warns "no projects registered in `<path>`" and keeps running.
 
-## orch init
-
-Writes an `orch.config.json` in the current folder, in the single-file format. When you then run `orch serve` from the same folder, orch splits it into server and project settings and registers the folder as your first project.
-
-```bash
-orch init
-```
-
-Use it only for your first project, and only while `$ORCH_HOME/server.json` doesn't exist. To add projects when project commands are available, use `orch project add`.
-
 ## orch project add
 
-**Planned.** Registers a git repo as a project. If the repo has no `orch.config.json`, orch creates a starter file and prints its path.
+Registers a git repo as a project. If the repo has no `orch.config.json`, orch creates a starter file and prints its path.
 
 ```bash
 orch project add <repo-path> [--name <name>]
@@ -117,7 +105,7 @@ Adding a path that belongs to an archived project restores that project. See [Ad
 
 ## orch project list
 
-**Planned.** Lists projects: ID, name, current run status and ID, repo path, open inbox items, and any error.
+Lists projects: ID, name, current run status and ID, repo path, open inbox items, and any error.
 
 ```bash
 orch project list [--archived]
@@ -131,7 +119,7 @@ orch project list [--archived]
 
 ## orch project remove
 
-**Planned.** Archives a project. The repo and the project's history are kept. Refused while the project has an unfinished run.
+Archives a project. The repo and the project's history are kept. Refused while the project has an unfinished run.
 
 ```bash
 orch project remove <project-id>
@@ -151,9 +139,9 @@ orch plan <spec-folder> [--no-llm] [--dry-run]
 | :--- | :--- |
 | `<spec-folder>` | The feature folder, for example `specs/003-checkout`. |
 | `--no-llm` | Import the tasks without running the planner. |
-| `--dry-run` | **Planned.** Print the phases, tasks, `[P]` markers and dependencies without creating a run or calling an agent. |
+| `--dry-run` | Print the phases, tasks, `[P]` markers and dependencies without creating a run or calling an agent. |
 
-Refused while the project has an unfinished run. See [Plan a feature](../how-to/plan-a-feature.md).
+Refused while the project has an unfinished run. See [Plan a feature](../how-to/plan-a-feature.md#preview-a-plan-without-creating-a-run) for the preview output.
 
 ## orch approve
 
@@ -185,7 +173,7 @@ See [Run and control a run](../how-to/control-a-run.md).
 
 ## orch status
 
-Prints the project and its current run: the run ID, title and status, one line per task with its status, key, title and pull request link, and then the inbox items.
+Prints the project (ID, name and repo path, plus any error) and its current run: the run ID, title and status, one line per task with its status, key, title and pull request link, and then the inbox items.
 
 ```bash
 orch status
@@ -194,6 +182,7 @@ orch status
 Example output:
 
 ```text
+project shop "shop" (/home/you/projects/shop)
 run 3f9c2a1b "Checkout" [running]
   done        T001  Add the cart model
   running     T002  Add the checkout endpoint
@@ -231,15 +220,17 @@ orch stop-task <task-key>
 | `orch merge` | Merges a task that waits for review. | **Merge now** |
 | `orch stop-task` | Stops a running or validating task and returns it to pending. | **Stop** in the **Task** panel |
 
-If the key isn't in the run, the command fails with "task `<key>` not found".
+If the key isn't in the run, the command fails with "task `<key>` not found in `<project-id>` run `<run-id>`".
 
 ## orch archive-events
 
-**Planned.** Archives the agent logs of finished runs older than `retention.eventDays`, the same as the daily automatic archive. See [Archive old activity logs](../how-to/archive-event-logs.md).
+Archives the agent logs of finished runs older than `retention.eventDays`, the same as the daily automatic archive. It reads the database directly, so it works whether or not orch is running. See [Archive old activity logs](../how-to/archive-event-logs.md).
 
 ```bash
 orch archive-events
 ```
+
+If `retention.eventDays` is `0`, it prints "retention.eventDays is 0: event archiving is off" and does nothing. If writing an archive fails, it exits with `1`.
 
 ## orch help
 
@@ -272,3 +263,15 @@ orch ask "<question>" --options "<choice 1>,<choice 2>"
 ```
 
 It works only inside a task. Elsewhere, it fails with "orch ask must be run inside an orchestrated task (ORCH_TASK_ID not set)".
+
+---
+
+## orch init
+
+An older way to set up a first project, kept for compatibility. Use [`orch project add`](#orch-project-add) instead. It doesn't appear in `orch help`.
+
+Writes an `orch.config.json` in the current folder, in the single-file format. When you then run `orch serve` from the same folder, and `$ORCH_HOME/server.json` doesn't exist yet, orch splits the file into server and project settings and registers the folder as a project.
+
+```bash
+orch init
+```

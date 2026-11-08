@@ -42,7 +42,7 @@ In the example:
 - T004 depends on T001 and on T003, because it isn't marked `[P]` and also names T003. It doesn't depend on T002.
 - T005 is already done.
 
-The planner can change these dependencies, and so can you. See [Review and approve a plan](../how-to/review-a-plan.md#edit-a-task). To check how orch reads a file before you plan it, use `orch plan <spec-folder> --dry-run` (**Planned**).
+The planner can change these dependencies, and so can you. See [Review and approve a plan](../how-to/review-a-plan.md#edit-a-task). To check how orch reads a file before you plan it, use `orch plan <spec-folder> --dry-run`.
 
 ## What orch writes back
 
