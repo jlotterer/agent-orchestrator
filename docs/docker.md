@@ -43,6 +43,7 @@ git clone git@github.com:you/myapp.git work/repo      # or https://
   "dbPath": "/work/.orch/orch.db",
   "host": "0.0.0.0",
   "port": 4800,
+  "auth": { "token": "", "allowInsecure": false },
   "publicUrl": "http://my-server:4800",
   "agents": { "roles": { "planner": { "adapter": "claude", "model": "" }, "worker": { "adapter": "claude", "model": "" }, "validator": { "adapter": "gemini", "model": "pro" } } },
   "scheduler": { "maxParallel": 1, "tickSeconds": 5, "maxAttempts": 2, "resumeOnRetry": true },
@@ -51,6 +52,11 @@ git clone git@github.com:you/myapp.git work/repo      # or https://
   "notify": { "ntfyUrl": "https://ntfy.sh/your-topic", "ntfyToken": "" }
 }
 ```
+
+`host` must be `0.0.0.0` inside the container, or the published port can't reach orch. Because
+that is a non-local address, orch refuses to start without an access token (see
+[Access token](#access-token) below). Leave `auth.token` empty here and set `ORCH_TOKEN` in `.env`
+instead, so the secret stays out of the mounted directory.
 
 If the host user isn't uid 1000, `chown -R 1000:1000 work` (the container runs as uid 1000).
 
@@ -84,9 +90,21 @@ Pause the run and press Start again later; nothing is lost.
 **Gemini CLI** (only if a role uses the `gemini` adapter): set `GEMINI_API_KEY` in `.env`, or
 log in once with `docker compose run --rm orch gemini` (saved in the `gemini-home` volume).
 
+<a id="access-token"></a>**Access token.** The dashboard, API, live stream and CLI all need it once
+a token is set. Generate one:
+
+```bash
+openssl rand -hex 32
+```
+
+and put it in `.env` as `ORCH_TOKEN`. The browser asks for it once and remembers it in a cookie.
+`docker compose exec orch orch …` and the agents inside the container get it from the environment.
+The health check (`/api/health`) stays open, so the Docker `HEALTHCHECK` needs no token.
+
 Create `.env` next to `docker-compose.yml` (it is gitignored):
 
 ```bash
+ORCH_TOKEN=paste-the-generated-token-here
 # ANTHROPIC_API_KEY=sk-ant-...   # only if you chose API billing
 GH_TOKEN=ghp_...                 # repo scope; needed for git.pr: true
 GIT_AUTHOR_NAME=Your Name
@@ -113,7 +131,8 @@ docker compose up -d
 docker compose logs -f orch
 ```
 
-Dashboard: `http://my-server:4800`. The CLI works through `docker compose exec`:
+Dashboard: `http://my-server:4800` (it asks for the access token once). The CLI works through
+`docker compose exec`, which already has `ORCH_TOKEN`:
 
 ```bash
 docker compose exec orch orch plan /work/repo/specs/001-auth
@@ -137,11 +156,16 @@ restarts mid-run, any task that was active goes back to `pending` and its worktr
 * **Nested sessions.** Don't start the container from inside a Claude Code session with the
   socket mounted; Claude Code detects nesting and refuses. Plain `docker compose up` from a shell
   is fine.
-* **Root.** Claude Code refuses `bypassPermissions` as root, which is why the image runs as `orch`
-  (uid 1000). Don't override `user:` in compose.
-* **Exposure.** The dashboard has no authentication. Bind it to localhost
-  (`"127.0.0.1:4800:4800"`) and reach it over SSH or Tailscale, or put it behind a reverse proxy
-  with auth. Do not expose port 4800 to the internet.
+* **Root.** The image runs as the non-root user `orch` (uid 1000), because Claude Code refuses
+  `bypassPermissions` as root. Don't override `user:` in compose. Agents still have full
+  permissions inside their worktree and the container.
+* **Exposure.** With `ORCH_TOKEN` set, every API call, the live stream and the dashboard need the
+  token; without it, `orch serve` exits with an error rather than listen on `0.0.0.0`. There is no
+  TLS, so the token crosses the network in clear text: reach the dashboard over SSH, Tailscale or
+  a private network, or put it behind a reverse proxy with HTTPS. Do not expose port 4800 to the
+  internet. For localhost-only access, publish `"127.0.0.1:4800:4800"`. Setting
+  `auth.allowInsecure: true` turns the startup check off; only do that behind another layer of
+  auth.
 * **Secrets in worktrees.** `git.copyFiles` copies e.g. `.env` into every worktree; the agent can
   read it. Only list what the tests need.
 * **Disk.** Each worktree is a full checkout plus `node_modules` if `setupCommand` installs them.

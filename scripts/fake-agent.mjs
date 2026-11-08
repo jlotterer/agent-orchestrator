@@ -21,6 +21,9 @@
  *                                       impl/<KEY>.wip exists in the worktree it behaves normally.
  *   NO_COMMIT     (task, worker)     -> reports done without changing anything
  *   CONFLICT_FILE (task, worker)     -> also writes shared.txt with task-specific content
+ *
+ * FAKE_PROMPT_LOG=<file> (env, scripts/e2e-auth.mjs) appends every prompt received to <file>, so a
+ * test can check what reached an agent.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -30,6 +33,7 @@ const args = process.argv.slice(2);
 const resumeIdx = args.indexOf("--resume");
 const sessionId = resumeIdx >= 0 ? args[resumeIdx + 1] : "sess-" + Math.random().toString(36).slice(2, 10);
 const prompt = fs.readFileSync(0, "utf8");
+if (process.env.FAKE_PROMPT_LOG) fs.appendFileSync(process.env.FAKE_PROMPT_LOG, prompt + "\n---\n");
 // FAKE_FLAVOR=gemini makes this script speak Gemini CLI's stream-json dialect instead of Claude Code's.
 const gemini = process.env.FAKE_FLAVOR === "gemini";
 if (gemini && !args.includes("--yolo")) { console.error("fake gemini: expected --yolo"); process.exit(42); }

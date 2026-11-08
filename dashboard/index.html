@@ -202,6 +202,16 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button id="sendCancel">Cancel</button><button id="sendGo" class="primary">Send back</button></div>
 </dialog>
 
+<dialog id="loginDlg">
+  <form id="loginForm" method="dialog">
+    <h3 style="margin:0 0 8px">Sign in to orch</h3>
+    <label for="loginToken">Access token (<span class="mono">auth.token</span> or <span class="mono">ORCH_TOKEN</span> on the server). This browser remembers it.</label>
+    <input id="loginToken" type="password" autocomplete="current-password" style="width:100%" class="mono">
+    <div id="loginErr" style="color:var(--bad);min-height:1.2em;margin-top:6px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button id="loginGo" class="primary" type="submit">Sign in</button></div>
+  </form>
+</dialog>
+
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -216,9 +226,31 @@ const drafts = {};  // task id -> unsent Send back text
 
 async function api(method, p, body) {
   const r = await fetch(p, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401) { await login(); return api(method, p, body); }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
+}
+// Auth (§16): on a 401, ask for the token once, trade it for an HttpOnly cookie, then reload state
+// and reconnect the live stream. Concurrent 401s share one prompt.
+let loginPending = null;
+function login() {
+  if (loginPending) return loginPending;
+  loginPending = new Promise((resolve) => {
+    const dlg = $("#loginDlg");
+    $("#loginErr").textContent = ""; $("#loginToken").value = "";
+    dlg.oncancel = (e) => e.preventDefault();   // the dashboard is useless without signing in
+    $("#loginForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const r = await fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: $("#loginToken").value }) });
+      if (!r.ok) { $("#loginErr").textContent = "That token is not right."; $("#loginToken").select(); return; }
+      dlg.close(); loginPending = null; resolve();
+      if (sseStarted) connect();
+      scheduleRefresh();
+    };
+    dlg.showModal(); $("#loginToken").focus();
+  });
+  return loginPending;
 }
 function toast(msg, err) { const t = document.createElement("div"); t.className = "toast" + (err ? " err" : ""); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), err ? 6000 : 2500); }
 async function act(fn) { try { await fn(); } catch (e) { toast(e.message, true); } }
@@ -469,10 +501,18 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { docum
 // Live updates
 let refreshTimer = null;
 function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 150); }
+let es = null, sseStarted = false;
 function connect() {
-  const es = new EventSource("/api/events/stream");
+  sseStarted = true;
+  if (es) es.close();
+  es = new EventSource("/api/events/stream");
   es.onopen = () => $("#live").classList.add("on");
-  es.onerror = () => { $("#live").classList.remove("on"); };
+  es.onerror = () => {
+    $("#live").classList.remove("on");
+    // A refused stream (e.g. 401 after the token changed) is closed for good: check auth via a
+    // normal request (which prompts on 401), then reconnect.
+    if (es.readyState === EventSource.CLOSED) setTimeout(() => act(async () => { await refresh(); if (es.readyState === EventSource.CLOSED) connect(); }), 3000);
+  };
   es.addEventListener("change", () => scheduleRefresh());
   es.addEventListener("event", (m) => {
     const ev = JSON.parse(m.data);

@@ -337,13 +337,13 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-OPS-01 | When an access token is configured, every API request, live-update stream and dashboard action MUST require it. The CLI and agents MUST send it automatically, and the dashboard MUST ask for it once per browser. | new |
-| REQ-OPS-02 | orch MUST refuse to start listening on a non-local network address without an access token, unless the owner explicitly opts out in server settings. `[ASSUMED]` | new |
-| REQ-OPS-03 | A health check MUST be available without the token, reporting that orch is up and its version. `[ASSUMED]` | new |
+| REQ-OPS-01 | When an access token is configured, every API request, live-update stream and dashboard action MUST require it. The CLI and agents MUST send it automatically, and the dashboard MUST ask for it once per browser. | built (TASK-08) |
+| REQ-OPS-02 | orch MUST refuse to start listening on a non-local network address without an access token, unless the owner explicitly opts out in server settings. `[ASSUMED]` | built (TASK-08) |
+| REQ-OPS-03 | A health check MUST be available without the token, reporting that orch is up and its version. `[ASSUMED]` | built (TASK-08) |
 | REQ-OPS-04 | Agent event logs of runs that finished more than a configured number of days ago MUST be archived to compressed files on the server, then removed from the live store. Decisions, questions, task summaries and verdicts MUST be kept. | new |
 | REQ-OPS-05 | Stored data from earlier versions MUST be upgraded automatically on start, without data loss. | built (`user_version` migrations, TASK-07) |
 | REQ-OPS-06 | orch MUST run as a systemd service and in Docker, keeping all of its state in one data directory. | built (per repo; ORCH_HOME layout in src/paths.ts, TASK-05) / new (daemon keeps all state there, TASK-09) |
-| REQ-OPS-07 | The access token and notification credentials MUST NOT be written to the store, the event log, or agent prompts. | new |
+| REQ-OPS-07 | The access token and notification credentials MUST NOT be written to the store, the event log, or agent prompts. | built (TASK-08) |
 
 **Edge cases:**
 - The token is wrong → 401, with no detail about why.
@@ -369,7 +369,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-NFR-05 | Determinism | Scheduling, state transitions and PR-loop decisions MUST be decided by pure functions with fixture-driven tests. | `test/unit/core.test.mjs` runs every fixture table; `npm run check` keeps `src/core/` free of fs, child processes, DB and clock reads |
 | REQ-NFR-06 | Performance | The dashboard state for a run of 200 tasks MUST load in under 1 second on the server, regardless of the size of the event log. | unit/perf test with seeded DB |
 | REQ-NFR-07 | Observability | Every task state change MUST appear in the activity stream with a reason. | e2e assertions on events |
-| REQ-NFR-08 | Safety | orch MUST refuse to run as root where the agent CLI requires a non-root user, and MUST document that agents have full permissions in their working copy. | Docker image runs as uid 1000; README |
+| REQ-NFR-08 | Safety | orch MUST refuse to run as root where the agent CLI requires a non-root user, and MUST document that agents have full permissions in their working copy. | Docker image runs as uid 1000; README, docs/docker.md (TASK-08) |
 
 ## 7. Assumptions & Open Questions
 | ID | Type | Statement | Impact if Wrong |

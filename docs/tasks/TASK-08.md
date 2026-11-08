@@ -1,5 +1,5 @@
 # TASK-08: Bearer-token auth, health check and bind guard
-**Status:** todo · **Wave:** 4 · **Depends on:** TASK-05 · **Parallel:** Yes (with TASK-07)
+**Status:** done · **Wave:** 4 · **Depends on:** TASK-05 · **Parallel:** Yes (with TASK-07)
 
 ## Goal
 Protect the API, live stream and dashboard with a token, refuse unsafe network binds, add an open health check, and keep secrets out of storage and prompts.
