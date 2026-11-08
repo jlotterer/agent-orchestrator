@@ -2,19 +2,22 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import type { ChildProcess } from "node:child_process";
-import type { Config } from "./config.js";
-import { Store } from "./db.js";
+import type { Config, ServerConfig } from "./config.js";
+import { loadProjectConfig, toLegacyConfig, DEFAULT_PROJECT_CONFIG } from "./config.js";
+import type { Store } from "./db.js";
 import { Git, shell } from "./git.js";
 import { runAgent, getAdapter } from "./adapters/index.js";
 import type { RoleName } from "./config.js";
 import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
-import { notify } from "./notify.js";
+import { notify, type NotifyOptions } from "./notify.js";
 import { readSpecDir, parseTasksMd, markTaskDoneInFile } from "./speckit.js";
-import type { Run, Task, TaskStatus } from "./types.js";
+import type { Project, Run, Task, TaskStatus } from "./types.js";
 import { formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
 import { selectReady } from "./core/readiness.js";
 import { nextTaskState, type TaskEvent, type TransitionResult, type Effect } from "./core/transitions.js";
 import { decidePrAction } from "./core/prpoll.js";
+import { UNFINISHED_RUN_STATUSES, resolveProjectForCwd } from "./projects.js";
+import { orchHome } from "./paths.js";
 
 const FINISHED: TaskStatus[] = ["done", "skipped"];
 const ACTIVE: TaskStatus[] = ["running", "validating"];
@@ -37,17 +40,93 @@ interface ApplyOptions {
   sha?: string | null;
 }
 
-export class Orchestrator extends EventEmitter {
-  store: Store;
+/** Runs the scheduler no longer acts on (§7.4). A project's newest run outside these is its current run. */
+const CLOSED_RUN: ReadonlySet<string> = new Set(["done", "stopped", "failed"]);
+
+/**
+ * Everything run-scoped code needs about one project (decision 0011): its effective settings
+ * (server.json + the repo's orch.config.json, §5.2) as a `Config`, and a `Git` bound to its repo.
+ * Rebuilt when a run is created or started (REQ-PROJ-06), never mid-run.
+ */
+export interface ProjectContext {
+  project: Project;
+  cfg: Config;
   git: Git;
+  /** Unknown settings keys that were ignored; logged to the run's activity when the context is rebuilt. */
+  warnings: string[];
+}
+
+export class Orchestrator extends EventEmitter {
   private procs = new Map<string, ChildProcess>(); // task id -> running agent
   private timer: NodeJS.Timeout | null = null;
   private ticking = false;
+  private contexts = new Map<string, ProjectContext>();
+  /** Per-project merge locks: operations on one repo's main checkout are serialized (§11). */
+  private mergeChains = new Map<string, Promise<unknown>>();
+  /** Agents not tied to a task row (planners; phase validators from TASK-15). They use global slots (§7.1). */
+  private busyAgents = 0;
+  /** Last context error per project, so the tick reports each distinct one once. */
+  private contextErrors = new Map<string, string>();
+  readonly home: string;
 
-  constructor(public cfg: Config) {
+  constructor(public server: ServerConfig, public store: Store, opts: { home?: string } = {}) {
     super();
-    this.store = new Store(cfg.dbPath);
-    this.git = new Git(cfg.repo, cfg.baseBranch, cfg.git.ghCommand);
+    this.home = opts.home ?? orchHome();
+  }
+
+  // ------------------------------------------------------------------ projects (§5)
+  /** Build a project's context from its registry row and settings files. Throws if the repo is missing or the settings are invalid. */
+  private buildContext(project: Project): ProjectContext {
+    if (!fs.existsSync(project.repo_path)) throw new Error(`project '${project.id}': repository ${project.repo_path} does not exist`);
+    let loaded;
+    try {
+      loaded = loadProjectConfig(project.repo_path, this.server);
+    } catch (e: any) {
+      throw new Error(`project '${project.id}': ${e?.message ?? e}`);
+    }
+    const cfg = toLegacyConfig(this.server, loaded.config, project.repo_path, { projectId: project.id, home: this.home });
+    return { project, cfg, git: new Git(cfg.repo, cfg.baseBranch, cfg.git.ghCommand), warnings: loaded.warnings };
+  }
+  /** Re-read the project's settings (at run creation and start, REQ-PROJ-06). */
+  refreshContext(projectId: string): ProjectContext {
+    const project = this.store.getProject(projectId);
+    if (!project) throw new Error(`no project '${projectId}'`);
+    const ctx = this.buildContext(project);
+    this.contexts.set(projectId, ctx);
+    this.contextErrors.delete(projectId);
+    return ctx;
+  }
+  /** The project's context, built on first use (e.g. a run that was running when the daemon restarted). */
+  context(projectId: string): ProjectContext {
+    return this.contexts.get(projectId) ?? this.refreshContext(projectId);
+  }
+  private ctxOf(run: Run): ProjectContext {
+    if (!run.project_id) throw new Error(`run ${run.id} belongs to no project`);
+    return this.context(run.project_id);
+  }
+  /** Legacy single-project routes act on the first non-archived project (by name, then id). */
+  defaultProject(): Project | undefined {
+    return this.store.listProjects()[0];
+  }
+  private requireDefaultProject(): Project {
+    const p = this.defaultProject();
+    if (!p) throw new Error("no projects registered");
+    return p;
+  }
+  /** Project for a spec dir: the registered repo containing it (deepest match), else the default project. */
+  projectForPath(p: string): Project | undefined {
+    return resolveProjectForCwd(this.store.listProjects(), p) ?? this.defaultProject();
+  }
+  /** The run the scheduler acts on for a project: its newest run that is not done, stopped or failed. */
+  currentRun(projectId: string): Run | undefined {
+    return this.store.listRuns(projectId).find((r) => !CLOSED_RUN.has(r.status));
+  }
+  /** REQ-PROJ-07: the project's unfinished run other than `exceptRunId`, if any. */
+  private unfinishedRun(projectId: string, exceptRunId?: string): Run | undefined {
+    return this.store.listRuns(projectId).find((r) => r.id !== exceptRunId && UNFINISHED_RUN_STATUSES.includes(r.status));
+  }
+  private refusal(projectId: string, open: Run): Error {
+    return new Error(`project '${projectId}' already has an unfinished run ${open.id} (${open.status}, "${open.title}"); finish or stop it first`);
   }
 
   // ------------------------------------------------------------------ helpers
@@ -66,6 +145,10 @@ export class Orchestrator extends EventEmitter {
     this.changed("decision", { decision: d });
     return d;
   }
+  /** ntfy notification; the title names the project (REQ-HITL-02). */
+  private notify(ctx: ProjectContext, title: string, message: string, opts: NotifyOptions = {}) {
+    return notify(this.server, title, message, { ...opts, project: ctx.project.name });
+  }
   private taskEnv(task: Task, actor: "worker" | "validator" = "worker") {
     // Put the `orch` CLI on the agent's PATH so `orch decide` / `orch ask` work without a global install.
     const PATH = `${path.join(PKG_ROOT, "bin")}${path.delimiter}${process.env.PATH ?? ""}`;
@@ -73,21 +156,21 @@ export class Orchestrator extends EventEmitter {
   }
   /** How an agent's `orch` CLI reaches this daemon. The token goes in the env only, never in a prompt (§16). */
   private apiEnv(): Record<string, string> {
-    const env: Record<string, string> = { ORCH_URL: `http://127.0.0.1:${this.cfg.port}` };
-    if (this.cfg.auth.token) env.ORCH_TOKEN = this.cfg.auth.token;
+    const env: Record<string, string> = { ORCH_URL: `http://127.0.0.1:${this.server.port}` };
+    if (this.server.auth.token) env.ORCH_TOKEN = this.server.auth.token;
     return env;
   }
-  /** Adapter + model for a role, resolved from config. */
-  private roleAgent(role: RoleName) {
-    const r = this.cfg.agents.roles[role];
-    const adapterConfig = this.cfg.agents.adapters[r.adapter];
-    return { adapter: getAdapter(adapterConfig.type), adapterConfig, model: r.model || undefined, timeoutMs: this.cfg.agents.timeoutMinutes * 60_000, label: `${adapterConfig.type}${r.model ? ":" + r.model : ""}` };
+  /** Adapter + model for a role from the project's effective config (a project may pick among the server's adapters). */
+  private roleAgent(cfg: Config, role: RoleName) {
+    const r = cfg.agents.roles[role];
+    const adapterConfig = cfg.agents.adapters[r.adapter];
+    return { adapter: getAdapter(adapterConfig.type), adapterConfig, model: r.model || undefined, timeoutMs: cfg.agents.timeoutMinutes * 60_000, label: `${adapterConfig.type}${r.model ? ":" + r.model : ""}` };
   }
-  private specContext(run: Run): string {
+  private specContext(cfg: Config, run: Run): string {
     const spec = readSpecDir(run.spec_dir);
     const parts: string[] = [];
-    for (const f of this.cfg.handoff.contextFiles) if (spec.files[f]) parts.push(`### ${f}\n${spec.files[f]}`);
-    return clip(parts.join("\n\n"), this.cfg.handoff.specChars);
+    for (const f of cfg.handoff.contextFiles) if (spec.files[f]) parts.push(`### ${f}\n${spec.files[f]}`);
+    return clip(parts.join("\n\n"), cfg.handoff.specChars);
   }
   private bullets(items: string[]): string {
     return items.length ? items.map((a) => `- ${a}`).join("\n") : "- (none given; use the task description)";
@@ -102,8 +185,13 @@ export class Orchestrator extends EventEmitter {
   private transition(taskId: string, event: TaskEvent): { task: Task; result: TransitionResult } {
     const task = this.store.getTask(taskId);
     if (!task) throw new Error("task not found");
-    const fb = this.cfg.git.feedback;
-    const result = nextTaskState(task, event, { pr: this.cfg.git.pr, feedback: { enabled: fb.enabled, waitForChecks: fb.waitForChecks, maxRounds: fb.maxRounds } });
+    const run = this.store.getRun(task.run_id);
+    if (!run) throw new Error("run not found");
+    // A project whose settings cannot be loaded still gets state-only transitions (e.g. reset on restart) with built-in git defaults.
+    let gitCfg: Config["git"] | typeof DEFAULT_PROJECT_CONFIG.git = DEFAULT_PROJECT_CONFIG.git;
+    try { gitCfg = this.ctxOf(run).cfg.git; } catch { /* effects that need the project fail later with the reason */ }
+    const fb = gitCfg.feedback;
+    const result = nextTaskState(task, event, { pr: gitCfg.pr, feedback: { enabled: fb.enabled, waitForChecks: fb.waitForChecks, maxRounds: fb.maxRounds } });
     return { task, result };
   }
 
@@ -147,7 +235,7 @@ export class Orchestrator extends EventEmitter {
       const cur = this.store.getTask(task.id)!;
       let body = opts.notifyBody ?? r.notify.body;
       if (cur.pr_url && !body.includes(cur.pr_url)) body = body ? `${body}\n${cur.pr_url}` : cur.pr_url;
-      await notify(this.cfg, r.notify.title, clip(body, 300), { priority: r.notify.priority, tags: r.notify.tags, click: cur.pr_url ?? undefined });
+      await this.notify(this.ctxOf(run), r.notify.title, clip(body, 300), { priority: r.notify.priority, tags: r.notify.tags, click: cur.pr_url ?? undefined });
     }
     if (r.status === "done" && before !== "done") {
       await this.tickTasksMd(run, task);
@@ -159,59 +247,67 @@ export class Orchestrator extends EventEmitter {
 
   private async performEffect(run: Run, task: Task, effect: Effect, opts: ApplyOptions) {
     const cur = this.store.getTask(task.id)!;
+    if (effect === "kill_agent") {
+      // Needs no project settings, so stopping works even when the project's context cannot be built.
+      this.procs.get(cur.id)?.kill("SIGTERM");
+      this.procs.delete(cur.id);
+      return;
+    }
+    const ctx = this.ctxOf(run), { cfg, git } = ctx;
     const worktree = cur.worktree, branch = cur.branch!;
-    const cwd = worktree && fs.existsSync(worktree) ? worktree : this.cfg.repo;
+    const cwd = worktree && fs.existsSync(worktree) ? worktree : cfg.repo;
     const title = `${cur.key}: ${cur.title}`;
     switch (effect) {
       case "merge_local":
-        await this.withMergeLock(() => this.git.mergeLocal(worktree!, branch, this.cfg.git.squash, title));
-        this.log(run, cur, "git", { message: `merged ${branch} into ${this.cfg.baseBranch} locally` });
+        await this.withMergeLock(ctx, () => git.mergeLocal(worktree!, branch, cfg.git.squash, title));
+        this.log(run, cur, "git", { message: `merged ${branch} into ${cfg.baseBranch} locally` });
         return;
       case "push_and_pr": {
-        const body = `${cur.summary ?? ""}\n\nRun ${run.id} · ${run.title}\nAutomated by orch; validated ${this.cfg.validation.agent ? "by validator agent" : "by command gate"}.`;
-        const sha = opts.sha !== undefined ? opts.sha : await this.git.branchSha(branch);
-        await this.git.push(worktree!, branch);
-        const url = await this.git.createPr(worktree!, branch, title, body);
+        const body = `${cur.summary ?? ""}\n\nRun ${run.id} · ${run.title}\nAutomated by orch; validated ${cfg.validation.agent ? "by validator agent" : "by command gate"}.`;
+        const sha = opts.sha !== undefined ? opts.sha : await git.branchSha(branch);
+        await git.push(worktree!, branch);
+        const url = await git.createPr(worktree!, branch, title, body);
         const firstPush = !cur.pr_pushed_at;
         this.store.updateTask(cur.id, { pr_url: url, pr_head: sha, pr_pushed_at: nowIso(), pr_feedback_at: cur.pr_feedback_at ?? nowIso() });
         this.log(run, cur, "git", { message: firstPush ? `PR opened: ${url}` : `PR updated (fix round ${cur.fix_rounds}): ${url}` });
         return;
       }
       case "merge_pr":
-        await this.git.mergePr(cwd, branch, this.cfg.git.squash);
+        await git.mergePr(cwd, branch, cfg.git.squash);
         this.log(run, cur, "git", { message: "PR merged" });
         return;
-      case "kill_agent": {
-        const child = this.procs.get(cur.id);
-        if (child) child.kill("SIGTERM");
-        this.procs.delete(cur.id);
-        return;
-      }
       case "remove_worktree":
         // The state change already cleared `worktree`; use the path from before it.
-        if (task.worktree) await this.git.removeWorktree(task.worktree, !this.cfg.git.pr, task.branch ?? undefined);
+        if (task.worktree) await git.removeWorktree(task.worktree, !cfg.git.pr, task.branch ?? undefined);
         return;
     }
   }
 
   // ------------------------------------------------------------------ planning
-  /** Import a Spec Kit dir into a new run. With llm=true the planner agent enriches tasks. */
-  async plan(specDir: string, opts: { llm: boolean }): Promise<Run> {
+  /**
+   * Import a Spec Kit dir into a new run of `projectId`. With llm=true the planner agent enriches tasks.
+   * Refused while the project has an unfinished run (REQ-PROJ-07). The project's settings are re-read here.
+   */
+  async plan(projectId: string, specDir: string, opts: { llm: boolean }): Promise<Run> {
+    const open = this.unfinishedRun(projectId);
+    if (open) throw this.refusal(projectId, open);
+    const ctx = this.refreshContext(projectId), cfg = ctx.cfg;
     const spec = readSpecDir(specDir);
     const tasksMd = spec.files["tasks.md"];
     if (!tasksMd) throw new Error(`no tasks.md in ${spec.dir}. Run /speckit.tasks first.`);
     const imported = parseTasksMd(tasksMd);
     if (!imported.length) throw new Error(`no tasks found in ${path.join(spec.dir, "tasks.md")}`);
 
-    const run = this.store.createRun(spec.dir, spec.title, this.cfg.baseBranch, opts.llm ? "planning" : "plan_pending");
-    this.changed("run", { run });
-    this.log(run, null, "state", { message: `imported ${imported.length} tasks from ${path.relative(this.cfg.repo, spec.dir)}` });
+    const run = this.store.createRun(spec.dir, spec.title, cfg.baseBranch, opts.llm ? "planning" : "plan_pending", projectId);
+    this.changed("run", { run, projectId });
+    this.logWarnings(run, ctx);
+    this.log(run, null, "state", { message: `imported ${imported.length} tasks from ${path.relative(cfg.repo, spec.dir)}` });
 
     for (const t of imported) {
       this.store.insertTask({
         run_id: run.id, key: t.key, title: t.title, description: t.description, acceptance: [], depends_on: t.depends_on,
         parallel: t.parallel ? 1 : 0, phase: t.phase, order_idx: t.order_idx, status: t.done ? "done" : "pending",
-        attempt: 0, max_attempts: this.cfg.scheduler.maxAttempts, merge_policy: this.cfg.git.mergePolicy,
+        attempt: 0, max_attempts: cfg.scheduler.maxAttempts, merge_policy: cfg.git.mergePolicy,
         validate_cmd: null, worktree: null, branch: null, pr_url: null, session_id: null, summary: t.done ? "(already complete before this run)" : null,
         files: [], last_feedback: null,
       });
@@ -223,15 +319,21 @@ export class Orchestrator extends EventEmitter {
     const tasks = this.store.listTasks(run.id);
     const tasksJson = JSON.stringify(tasks.map((t) => ({ key: t.key, title: t.description, phase: t.phase, parallel: !!t.parallel, depends_on: t.depends_on, done: t.status === "done" })), null, 2);
     const specContext = Object.entries(spec.files).filter(([f]) => f !== "tasks.md").map(([f, c]) => `### ${f}\n${c}`).join("\n\n");
-    const prompt = render(loadPrompt("planner", this.cfg.repo), { title: run.title, spec_context: clip(specContext, this.cfg.handoff.specChars * 2), tasks_json: tasksJson });
+    const prompt = render(loadPrompt("planner", cfg.repo), { title: run.title, spec_context: clip(specContext, cfg.handoff.specChars * 2), tasks_json: tasksJson });
 
-    const planner = this.roleAgent("planner");
+    const planner = this.roleAgent(cfg, "planner");
     this.log(run, null, "state", { message: `planner started (${planner.label})` });
-    const res = await runAgent({
-      ...planner, cwd: this.cfg.repo, prompt,
-      env: { ...this.apiEnv(), ORCH_RUN_ID: run.id, ORCH_ACTOR: "planner" },
-      onEvent: (kind, data) => this.log(run, null, kind, { role: "planner", ...data }),
-    });
+    this.busyAgents++; // a planner takes a global agent slot (§7.1)
+    let res;
+    try {
+      res = await runAgent({
+        ...planner, cwd: cfg.repo, prompt,
+        env: { ...this.apiEnv(), ORCH_RUN_ID: run.id, ORCH_ACTOR: "planner" },
+        onEvent: (kind, data) => this.log(run, null, kind, { role: "planner", ...data }),
+      });
+    } finally {
+      this.busyAgents--;
+    }
     const out = res.structured;
     if (!res.ok || !out?.tasks) {
       this.log(run, null, "error", { message: "planner failed or returned no plan; using imported tasks as-is", text: clip(res.text, 2000) });
@@ -261,7 +363,7 @@ export class Orchestrator extends EventEmitter {
     this.store.setRunStatus(run.id, "plan_pending");
     this.changed("run", { run: this.store.getRun(run.id) });
     this.changed("tasks", { runId: run.id });
-    await notify(this.cfg, `Plan ready: ${run.title}`, `${tasks.length} tasks. Review and approve in the dashboard.`, { tags: ["clipboard"] });
+    await this.notify(ctx, `Plan ready: ${run.title}`, `${tasks.length} tasks. Review and approve in the dashboard.`, { tags: ["clipboard"] });
     return this.store.getRun(run.id)!;
   }
 
@@ -285,30 +387,47 @@ export class Orchestrator extends EventEmitter {
   }
 
   // ------------------------------------------------------------------ run control
+  /** Run by id, or the default project's current run (legacy routes without an id). */
+  private runOrCurrent(runId: string | undefined, what: string): Run {
+    const run = runId ? this.store.getRun(runId) : this.currentRun(this.requireDefaultProject().id);
+    if (!run) throw new Error(what);
+    return run;
+  }
+  /** Ignored settings keys go to the run's activity stream (§5.2). */
+  private logWarnings(run: Run, ctx: ProjectContext) {
+    for (const w of ctx.warnings) this.log(run, null, "info", { message: `settings: ${w}` });
+  }
+
+  /**
+   * Start (or resume) a run. Refused while another run of the project is unfinished (REQ-PROJ-07).
+   * The project's settings are re-read, so edits take effect at the next start (REQ-PROJ-06).
+   */
   start(runId?: string) {
-    const run = runId ? this.store.getRun(runId) : this.store.activeRun();
-    if (!run) throw new Error("no run to start");
+    const run = this.runOrCurrent(runId, "no run to start");
     if (run.status === "plan_pending") throw new Error("plan not approved yet");
     if (run.status === "planning") throw new Error("planner still working");
     if (!["ready", "paused", "running", "stopped"].includes(run.status)) throw new Error(`run is ${run.status}`);
+    if (!run.project_id) throw new Error(`run ${run.id} belongs to no project`);
+    const other = this.unfinishedRun(run.project_id, run.id);
+    if (other) throw this.refusal(run.project_id, other);
+    const ctx = this.refreshContext(run.project_id);
     this.store.setRunStatus(run.id, "running");
+    this.logWarnings(run, ctx);
     this.log(run, null, "state", { message: "run started" });
     this.changed("run", { run: this.store.getRun(run.id) });
     this.ensureTicking();
     void this.tick();
   }
   pause(runId?: string) {
-    const run = runId ? this.store.getRun(runId) : this.store.activeRun();
-    if (!run) throw new Error("no active run");
+    const run = this.runOrCurrent(runId, "no active run");
     this.store.setRunStatus(run.id, "paused");
     this.log(run, null, "state", { message: "run paused; running tasks will finish, no new tasks start" });
     this.changed("run", { run: this.store.getRun(run.id) });
   }
   stop(runId?: string) {
-    const run = runId ? this.store.getRun(runId) : this.store.activeRun();
-    if (!run) throw new Error("no active run");
+    const run = this.runOrCurrent(runId, "no active run");
     for (const t of this.store.listTasks(run.id)) {
-      if (ACTIVE.includes(t.status)) void this.fire(run, t.id, { type: "run_stop" }); // T14: state + kill are synchronous
+      if (ACTIVE.includes(t.status)) this.fire(run, t.id, { type: "run_stop" }).catch((e) => console.error("[stop]", e)); // T14: state + kill are synchronous
     }
     this.store.setRunStatus(run.id, "stopped");
     this.log(run, null, "state", { message: "run stopped; active agents killed" });
@@ -318,66 +437,99 @@ export class Orchestrator extends EventEmitter {
 
   ensureTicking() {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.tick(), this.cfg.scheduler.tickSeconds * 1000);
+    this.timer = setInterval(() => void this.tick(), this.server.scheduler.tickSeconds * 1000);
     this.timer.unref();
   }
 
-  /** Scheduler heartbeat: start whatever is ready, resume answered tasks, finish the run. */
+  /** A project whose context cannot be built (repo gone, invalid settings) starts nothing; say why once per distinct error. */
+  private reportContextError(projectId: string, e: any) {
+    const msg = e?.message ?? String(e);
+    if (this.contextErrors.get(projectId) !== msg) console.error(`[tick] ${msg}`);
+    this.contextErrors.set(projectId, msg);
+  }
+
+  /**
+   * Scheduler heartbeat across all projects (§7.3): resume answered tasks, poll PRs, start whatever is
+   * ready under the global agent cap with fair shares between projects (§7.1), finish runs.
+   */
   async tick() {
     if (this.ticking) return;
     this.ticking = true;
     try {
-      const run = this.store.activeRun();
-      if (!run || run.status !== "running") return;
-      const tasks = this.store.listTasks(run.id);
+      // Each project's current run, if running or paused: a paused run starts nothing, but its active agents use slots.
+      const entries: { project: Project; run: Run; ctx: ProjectContext | null }[] = [];
+      for (const project of this.store.listProjects()) {
+        const run = this.currentRun(project.id);
+        if (!run || (run.status !== "running" && run.status !== "paused")) continue;
+        let ctx: ProjectContext | null = null;
+        try { ctx = this.context(project.id); } catch (e) { this.reportContextError(project.id, e); }
+        entries.push({ project, run, ctx });
+      }
+      const running = entries.filter((e) => e.run.status === "running" && e.ctx);
 
-      // Resume tasks whose questions have been answered (e.g. answered while paused).
-      for (const t of tasks) {
-        if (t.status === "needs_input" && this.store.openQuestionsForTask(t.id).length === 0) {
-          void this.resumeAfterAnswer(run, t);
+      for (const { run, ctx } of running) {
+        const tasks = this.store.listTasks(run.id);
+        // Resume tasks whose questions have been answered (e.g. answered while paused).
+        for (const t of tasks) {
+          if (t.status === "needs_input" && this.store.openQuestionsForTask(t.id).length === 0) void this.resumeAfterAnswer(run, t);
         }
+        if (ctx!.cfg.git.pr && ctx!.cfg.git.feedback.enabled) this.pollPullRequests(run, ctx!, tasks);
       }
 
-      if (this.cfg.git.pr && this.cfg.git.feedback.enabled) this.pollPullRequests(run, tasks);
-
-      const active = tasks.filter((t) => ACTIVE.includes(t.status)).length;
-
-      // Readiness is decided by src/core (§7.1). Single project until TASK-09: maxAgents = maxParallel, nothing else busy.
-      const supportsResume = this.roleAgent("worker").adapter.supportsResume;
+      // Readiness is decided by src/core (§7.1); tasks are re-read so resumed ones count as active.
+      const tasksByRun = new Map(entries.map((e) => [e.run.id, this.store.listTasks(e.run.id)]));
       const { start } = selectReady({
-        maxAgents: this.cfg.scheduler.maxParallel,
-        busyAgents: 0,
-        projects: [{ id: "default", runId: run.id, runStatus: run.status, maxParallel: this.cfg.scheduler.maxParallel, lastStartAt: null, planQuestionsOpen: 0, resumeOnRetry: this.cfg.scheduler.resumeOnRetry }],
-        tasks: tasks.map((t) => ({
-          id: t.id, projectId: "default", runId: t.run_id, key: t.key, orderIdx: t.order_idx, status: t.status, dependsOn: t.depends_on, filesOwned: [],
-          openQuestions: t.status === "pending" ? this.store.openQuestionsForTask(t.id).length : 0,
-          attempt: t.attempt, fixRounds: t.fix_rounds, hasSession: !!t.session_id, adapterSupportsResume: supportsResume,
+        maxAgents: this.server.scheduler.maxAgents,
+        busyAgents: this.busyAgents,
+        projects: entries.map(({ project, run, ctx }) => ({
+          id: project.id, runId: run.id, runStatus: ctx ? run.status : null, maxParallel: ctx?.cfg.scheduler.maxParallel ?? 0,
+          lastStartAt: project.last_start_at, planQuestionsOpen: 0, resumeOnRetry: ctx?.cfg.scheduler.resumeOnRetry ?? false,
         })),
+        tasks: entries.flatMap(({ project, run, ctx }) => {
+          const supportsResume = ctx ? this.roleAgent(ctx.cfg, "worker").adapter.supportsResume : false;
+          return tasksByRun.get(run.id)!.map((t) => ({
+            id: t.id, projectId: project.id, runId: t.run_id, key: t.key, orderIdx: t.order_idx, status: t.status, dependsOn: t.depends_on, filesOwned: [],
+            openQuestions: t.status === "pending" ? this.store.openQuestionsForTask(t.id).length : 0,
+            attempt: t.attempt, fixRounds: t.fix_rounds, hasSession: !!t.session_id, adapterSupportsResume: supportsResume,
+          }));
+        }),
       });
-      const byId = new Map(tasks.map((t) => [t.id, t]));
-      for (const s of start) void this.runTask(run, byId.get(s.taskId)!, s.resume);
-
-      if (!start.length && active === 0) {
-        const doneKeys = new Set(tasks.filter((t) => FINISHED.includes(t.status)).map((t) => t.key));
-        const unfinished = tasks.filter((t) => !FINISHED.includes(t.status));
-        if (!unfinished.length) {
-          this.store.setRunStatus(run.id, "done");
-          this.log(run, null, "state", { message: "all tasks done" });
-          this.changed("run", { run: this.store.getRun(run.id) });
-          await notify(this.cfg, `Run complete: ${run.title}`, `${tasks.length} tasks finished.`, { tags: ["tada"], priority: "high" });
-        } else if (unfinished.every((t) => ["failed", "needs_input", "pr_open"].includes(t.status) || (t.status === "pending" && !t.depends_on.every((k) => doneKeys.has(k))))) {
-          // Nothing can progress without a human. Stay 'running' so answering resumes automatically, but say so once.
-          const blocked = unfinished.filter((t) => t.status !== "pending");
-          const lastEv = this.store.listEvents({ runId: run.id, limit: 1 })[0];
-          if (!(lastEv?.kind === "state" && lastEv.data?.waiting)) {
-            this.log(run, null, "state", { message: `waiting on you: ${blocked.map((t) => `${t.key} (${t.status})`).join(", ")}`, waiting: true });
-          }
-        }
+      const taskById = new Map([...tasksByRun.values()].flat().map((t) => [t.id, t]));
+      const runById = new Map(entries.map((e) => [e.run.id, e]));
+      const startedAt = nowIso();
+      for (const s of start) {
+        const task = taskById.get(s.taskId)!;
+        const { project, run } = runById.get(task.run_id)!;
+        this.store.touchProjectStart(project.id, startedAt); // fairness input for the next tick (REQ-PROJ-09)
+        void this.runTask(run, task, s.resume);
       }
+
+      for (const { run, ctx } of running) await this.checkRunProgress(run, ctx!);
     } catch (e: any) {
       console.error("[tick]", e);
     } finally {
       this.ticking = false;
+    }
+  }
+
+  /** With no agent active in the run: finish it when every task is done, or say once that it waits on the owner. */
+  private async checkRunProgress(run: Run, ctx: ProjectContext) {
+    const tasks = this.store.listTasks(run.id);
+    if (tasks.some((t) => ACTIVE.includes(t.status))) return;
+    const doneKeys = new Set(tasks.filter((t) => FINISHED.includes(t.status)).map((t) => t.key));
+    const unfinished = tasks.filter((t) => !FINISHED.includes(t.status));
+    if (!unfinished.length) {
+      this.store.setRunStatus(run.id, "done");
+      this.log(run, null, "state", { message: "all tasks done" });
+      this.changed("run", { run: this.store.getRun(run.id) });
+      await this.notify(ctx, `Run complete: ${run.title}`, `${tasks.length} tasks finished.`, { tags: ["tada"], priority: "high" });
+    } else if (unfinished.every((t) => ["failed", "needs_input", "pr_open"].includes(t.status) || (t.status === "pending" && !t.depends_on.every((k) => doneKeys.has(k))))) {
+      // Nothing can progress without a human. Stay 'running' so answering resumes automatically, but say so once.
+      const blocked = unfinished.filter((t) => t.status !== "pending");
+      const lastEv = this.store.listEvents({ runId: run.id, limit: 1 })[0];
+      if (!(lastEv?.kind === "state" && lastEv.data?.waiting)) {
+        this.log(run, null, "state", { message: `waiting on you: ${blocked.map((t) => `${t.key} (${t.status})`).join(", ")}`, waiting: true });
+      }
     }
   }
 
@@ -389,30 +541,31 @@ export class Orchestrator extends EventEmitter {
   private async runTask(run: Run, task: Task, resume = false, started = false) {
     if (!started && (await this.fire(run, task.id, { type: "start" })).rejected) return;
     task = this.store.getTask(task.id)!;
+    const { cfg, git } = this.ctxOf(run);
     // Values produced by starting are the shell's (§8 T1: branch/worktree assigned if null).
     const branch = task.branch ?? `orch/${task.key.toLowerCase()}-${slug(task.title)}`;
-    const worktree = task.worktree ?? path.join(this.cfg.worktreeDir, `${run.id}-${task.key.toLowerCase()}`);
+    const worktree = task.worktree ?? path.join(cfg.worktreeDir, `${run.id}-${task.key.toLowerCase()}`);
     if (task.branch !== branch || task.worktree !== worktree) this.store.updateTask(task.id, { branch, worktree });
     task = this.store.getTask(task.id)!;
     const attempt = task.attempt;
-    const workerAgent = this.roleAgent("worker");
+    const workerAgent = this.roleAgent(cfg, "worker");
     if (resume && !workerAgent.adapter.supportsResume) resume = false;
     this.log(run, task, "state", { message: `worker started (${workerAgent.label}, attempt ${attempt}/${task.max_attempts})${resume ? " — resuming previous session" : ""}` });
 
     try {
       if (!fs.existsSync(path.join(worktree, ".git"))) {
-        await this.git.addWorktree(worktree, branch);
-        this.log(run, task, "git", { message: `worktree ${path.relative(this.cfg.repo, worktree)} on ${branch}` });
-        for (const f of this.cfg.git.copyFiles) {
-          const src = path.join(this.cfg.repo, f);
+        await git.addWorktree(worktree, branch);
+        this.log(run, task, "git", { message: `worktree ${worktree} on ${branch}` });
+        for (const f of cfg.git.copyFiles) {
+          const src = path.join(cfg.repo, f);
           if (fs.existsSync(src)) fs.copyFileSync(src, path.join(worktree, f));
         }
-        if (this.cfg.git.setupCommand) {
-          const r = await shell(this.cfg.git.setupCommand, worktree, { timeoutMs: 15 * 60_000 });
-          this.log(run, task, "git", { message: `setup: ${this.cfg.git.setupCommand} → exit ${r.code}`, output: clip(r.stdout + r.stderr, 2000) });
+        if (cfg.git.setupCommand) {
+          const r = await shell(cfg.git.setupCommand, worktree, { timeoutMs: 15 * 60_000 });
+          this.log(run, task, "git", { message: `setup: ${cfg.git.setupCommand} → exit ${r.code}`, output: clip(r.stdout + r.stderr, 2000) });
           if (r.code !== 0) {
             // Drop the half-set-up worktree (branch kept) so the next attempt recreates it and reruns setup.
-            await this.git.removeWorktree(worktree, false);
+            await git.removeWorktree(worktree, false);
             throw new Error(`setup command failed (exit ${r.code}): ${clip((r.stdout + "\n" + r.stderr).trim(), 500)}`);
           }
         }
@@ -420,11 +573,11 @@ export class Orchestrator extends EventEmitter {
 
       const prompt = resume && task.session_id
         ? this.resumePrompt(task)
-        : render(loadPrompt("worker", this.cfg.repo), {
+        : render(loadPrompt("worker", cfg.repo), {
             task_key: task.key, task_title: task.title, task_description: task.description,
-            acceptance: this.bullets(task.acceptance), spec_context: this.specContext(run),
-            handoff: this.handoff(run, task), branch, base_branch: this.cfg.baseBranch,
-            validate_hint: this.validateCmd(task) ? ` (\`${this.validateCmd(task)}\` must pass)` : "",
+            acceptance: this.bullets(task.acceptance), spec_context: this.specContext(cfg, run),
+            handoff: this.handoff(cfg, run, task), branch, base_branch: cfg.baseBranch,
+            validate_hint: validateCmd(cfg, task) ? ` (\`${validateCmd(cfg, task)}\` must pass)` : "",
             feedback_section: task.last_feedback ? `## Feedback from the previous attempt (fix these)\n${task.last_feedback}` : "",
           });
 
@@ -468,7 +621,7 @@ export class Orchestrator extends EventEmitter {
       }
 
       // Make sure the work is committed, then validate.
-      await this.git.commitAll(worktree, `${task.key}: ${task.title} (orch auto-commit)`).then((c) => { if (c) this.log(run, task, "git", { message: "committed leftover changes" }); });
+      await git.commitAll(worktree, `${task.key}: ${task.title} (orch auto-commit)`).then((c) => { if (c) this.log(run, task, "git", { message: "committed leftover changes" }); });
       if ((await this.fire(run, task.id, { type: "worker_done" })).rejected) return; // T5
       await this.validate(run, this.store.getTask(task.id)!);
     } catch (e: any) {
@@ -478,20 +631,17 @@ export class Orchestrator extends EventEmitter {
     }
   }
 
-  private validateCmd(task: Task): string {
-    return task.validate_cmd || this.cfg.validation.command;
-  }
-
   private async validate(run: Run, task: Task) {
     const worktree = task.worktree!;
+    const { cfg, git } = this.ctxOf(run);
 
-    if ((await this.git.commitsAhead(worktree)) === 0) {
+    if ((await git.commitsAhead(worktree)) === 0) {
       await this.failOrRetry(run, task, "No commits on the task branch; the worker produced no changes.");
       return;
     }
 
     // 1. Deterministic gate.
-    const cmd = this.validateCmd(task);
+    const cmd = validateCmd(cfg, task);
     if (cmd) {
       this.log(run, task, "state", { message: `validation gate: ${cmd}` });
       const r = await shell(cmd, worktree, { timeoutMs: 20 * 60_000 });
@@ -503,13 +653,13 @@ export class Orchestrator extends EventEmitter {
     }
 
     // 2. Independent validator agent.
-    if (this.cfg.validation.agent) {
-      const validatorAgent = this.roleAgent("validator");
+    if (cfg.validation.agent) {
+      const validatorAgent = this.roleAgent(cfg, "validator");
       this.log(run, task, "state", { message: `validator started (${validatorAgent.label})` });
-      const diff = await this.git.diffFromBase(worktree);
-      const prompt = render(loadPrompt("validator", this.cfg.repo), {
+      const diff = await git.diffFromBase(worktree);
+      const prompt = render(loadPrompt("validator", cfg.repo), {
         task_key: task.key, task_title: task.title, task_description: task.description, acceptance: this.bullets(task.acceptance),
-        worker_summary: task.summary ?? "(none)", diff, branch: task.branch, base_branch: this.cfg.baseBranch,
+        worker_summary: task.summary ?? "(none)", diff, branch: task.branch, base_branch: cfg.baseBranch,
         validate_hint: cmd ? ` (\`${cmd}\` already passed; re-run or extend it)` : "",
       });
       const res = await runAgent({
@@ -552,7 +702,8 @@ export class Orchestrator extends EventEmitter {
   /** T6–T8a: merge locally, open/update the PR, wait for checks or the owner. Merge errors → T9. */
   private async finalize(run: Run, task: Task) {
     // The head is read before pushing: it decides T8a (fix round without new commits) and becomes pr_head.
-    const sha = this.cfg.git.pr ? await this.git.branchSha(task.branch!) : null;
+    const { cfg, git } = this.ctxOf(run);
+    const sha = cfg.git.pr ? await git.branchSha(task.branch!) : null;
     const r = await this.fire(run, task.id, { type: "validated", branchSha: sha }, { sha });
     if (r.status === "pr_checks" && !r.rejected) {
       this.log(run, task, "state", { message: "waiting for PR checks before merging" });
@@ -566,14 +717,15 @@ export class Orchestrator extends EventEmitter {
    * Local-merge mode commits it; PR mode leaves it as a working-tree change for you to commit.
    */
   private async tickTasksMd(run: Run, task: Task) {
-    if (!this.cfg.git.tickTasksMd) return;
+    const ctx = this.ctxOf(run), { cfg, git } = ctx;
+    if (!cfg.git.tickTasksMd) return;
     const tasksPath = path.join(run.spec_dir, "tasks.md");
-    const rel = path.relative(this.cfg.repo, tasksPath);
+    const rel = path.relative(cfg.repo, tasksPath);
     if (rel.startsWith("..")) return;
-    await this.withMergeLock(async () => {
+    await this.withMergeLock(ctx, async () => {
       if (!markTaskDoneInFile(tasksPath, task.key)) return;
-      if (!this.cfg.git.pr) {
-        const r = await this.git.commitPaths(this.cfg.repo, [rel], `${task.key}: tick in tasks.md`);
+      if (!cfg.git.pr) {
+        const r = await git.commitPaths(cfg.repo, [rel], `${task.key}: tick in tasks.md`);
         this.log(run, task, "info", { message: r ? "ticked and committed in tasks.md" : "ticked in tasks.md" });
       } else {
         this.log(run, task, "info", { message: `ticked ${rel} in your working tree (commit it when convenient)` });
@@ -581,11 +733,11 @@ export class Orchestrator extends EventEmitter {
     });
   }
 
-  private mergeChain: Promise<any> = Promise.resolve();
-  /** Serializes operations that touch the main repo's index (local merges). */
-  private withMergeLock<T>(fn: () => Promise<T>): Promise<T> {
-    const next = this.mergeChain.then(fn, fn);
-    this.mergeChain = next.catch(() => {});
+  /** Serializes operations that touch a project's main checkout (local merges, tasks.md ticks); projects do not wait on each other. */
+  private withMergeLock<T>(ctx: ProjectContext, fn: () => Promise<T>): Promise<T> {
+    const id = ctx.project.id;
+    const next = (this.mergeChains.get(id) ?? Promise.resolve()).then(fn, fn);
+    this.mergeChains.set(id, next.catch(() => {}));
     return next;
   }
 
@@ -595,8 +747,8 @@ export class Orchestrator extends EventEmitter {
   private lastPollError = new Map<string, string>();
 
   /** Called from tick(): poll each watched PR at most every `pollSeconds`, never two polls of one task at once. */
-  private pollPullRequests(run: Run, tasks: Task[]) {
-    const every = this.cfg.git.feedback.pollSeconds * 1000;
+  private pollPullRequests(run: Run, ctx: ProjectContext, tasks: Task[]) {
+    const every = ctx.cfg.git.feedback.pollSeconds * 1000;
     for (const t of tasks) {
       if (!WATCHED.includes(t.status) || !t.pr_url || !t.branch) continue;
       if (this.polling.has(t.id) || Date.now() - (this.lastPoll.get(t.id) ?? 0) < every) continue;
@@ -615,10 +767,11 @@ export class Orchestrator extends EventEmitter {
 
   /** Gather the PR facts, let src/core decide (§12.2), then perform the action through the state machine (T18). */
   private async pollPr(run: Run, task: Task) {
-    const fb = this.cfg.git.feedback;
-    const cwd = task.worktree && fs.existsSync(task.worktree) ? task.worktree : this.cfg.repo;
-    const pr = await this.git.prStatus(cwd, task.pr_url!);
-    const localSha = await this.git.branchSha(task.branch!);
+    const { cfg, git } = this.ctxOf(run);
+    const fb = cfg.git.feedback;
+    const cwd = task.worktree && fs.existsSync(task.worktree) ? task.worktree : cfg.repo;
+    const pr = await git.prStatus(cwd, task.pr_url!);
+    const localSha = await git.branchSha(task.branch!);
     task = this.store.getTask(task.id)!; // a human may have acted while gh was running
     if (!WATCHED.includes(task.status)) return;
 
@@ -648,7 +801,7 @@ export class Orchestrator extends EventEmitter {
       case "fix_round": {
         const round = task.fix_rounds + 1;
         const feedback = a.kind === "ci"
-          ? formatCiFeedback(a.failedChecks ?? [], await this.git.failedCheckLogs(cwd, a.failedChecks ?? [], fb.logChars), pr.url, pr.headSha, round, fb.maxRounds)
+          ? formatCiFeedback(a.failedChecks ?? [], await git.failedCheckLogs(cwd, a.failedChecks ?? [], fb.logChars), pr.url, pr.headSha, round, fb.maxRounds)
           : formatReviewFeedback(a.items ?? [], pr.url, round, fb.maxRounds);
         await this.startFixRound(run, this.store.getTask(task.id)!, a.kind ?? "review", feedback, a.reason);
         return;
@@ -663,7 +816,8 @@ export class Orchestrator extends EventEmitter {
    * in local mode (no PR) that step is skipped.
    */
   private async startFixRound(run: Run, task: Task, kind: FixRoundKind, feedback: string, why: string) {
-    const fb = this.cfg.git.feedback;
+    const { cfg, git } = this.ctxOf(run);
+    const fb = cfg.git.feedback;
     const human = kind === "human";
     const round = task.fix_rounds + 1;
     const event: TaskEvent = human
@@ -672,8 +826,8 @@ export class Orchestrator extends EventEmitter {
     const decided = this.transition(task.id, event).result;
     if (human && decided.rejected) throw new Error(decided.reason ?? `cannot send ${task.key} back`);
     // When the transition would start the round, first bring in commits pushed to the PR branch.
-    if (decided.status === "pending" && this.cfg.git.pr && task.pr_url && task.worktree && fs.existsSync(task.worktree)) {
-      const sync = await this.git.syncFromRemote(task.worktree, task.branch!);
+    if (decided.status === "pending" && cfg.git.pr && task.pr_url && task.worktree && fs.existsSync(task.worktree)) {
+      const sync = await git.syncFromRemote(task.worktree, task.branch!);
       if (sync === "fast-forwarded") this.log(run, task, "git", { message: "pulled new commits from the PR branch before the fix round" });
       if (sync === "diverged") {
         // Our next push would overwrite someone else's commits. Not our call.
@@ -734,7 +888,8 @@ export class Orchestrator extends EventEmitter {
   /** `orch decide` from an agent. */
   recordDecision(taskId: string | null, runId: string | null, actor: string, text: string, rationale: string | null) {
     const task = taskId ? this.store.getTask(taskId) : undefined;
-    const run = task ? this.store.getRun(task.run_id) : runId ? this.store.getRun(runId) : this.store.activeRun();
+    const fallback = () => { const p = this.defaultProject(); return p ? this.currentRun(p.id) : undefined; };
+    const run = task ? this.store.getRun(task.run_id) : runId ? this.store.getRun(runId) : fallback();
     if (!run) throw new Error("no run");
     return this.decide(run, task ?? null, actor, text, rationale);
   }
@@ -788,7 +943,7 @@ export class Orchestrator extends EventEmitter {
         : "the task has no worktree";
       throw new NotFoundError(`diff unavailable: ${why}`);
     }
-    return this.git.diffFiles(task.worktree);
+    return this.ctxOf(this.store.getRun(task.run_id)!).git.diffFiles(task.worktree);
   }
 
   /** T14: only active tasks can be stopped. */
@@ -797,7 +952,7 @@ export class Orchestrator extends EventEmitter {
   }
 
   // ------------------------------------------------------------------ hand-off brief
-  private handoff(run: Run, task: Task): string {
+  private handoff(cfg: Config, run: Run, task: Task): string {
     const tasks = this.store.listTasks(run.id);
     const done = tasks.filter((t) => t.status === "done" && t.order_idx < task.order_idx);
     const depKeys = new Set(task.depends_on);
@@ -817,13 +972,31 @@ export class Orchestrator extends EventEmitter {
       decLines.length ? `### Decisions so far\n${decLines.join("\n")}` : "",
       qaLines.length ? `### Human answers so far\n${qaLines.join("\n")}` : "",
     ].filter(Boolean);
-    return clip(parts.join("\n\n"), this.cfg.handoff.historyChars);
+    return clip(parts.join("\n\n"), cfg.handoff.historyChars);
   }
 
   // ------------------------------------------------------------------ snapshot for UI
-  snapshot(runId?: string) {
-    const run = runId ? this.store.getRun(runId) : this.store.activeRun() ?? this.store.listRuns()[0];
-    if (!run) return { run: null, tasks: [], decisions: [], questions: [], inbox: [], runs: this.store.listRuns(), config: this.publicConfig() };
+  /**
+   * Legacy snapshot (§15.1): a run by id, else the current (or latest) run of `projectId`, else of the
+   * default project. `runs` and `config` are that run's project's.
+   */
+  snapshot(runId?: string, projectId?: string) {
+    let run: Run | undefined;
+    let project: Project | undefined;
+    if (runId) {
+      run = this.store.getRun(runId);
+      project = run?.project_id ? this.store.getProject(run.project_id) : undefined;
+    } else {
+      project = projectId ? this.store.getProject(projectId) : this.defaultProject();
+      if (projectId && !project) throw new NotFoundError(`no project '${projectId}'`);
+      if (project) run = this.currentRun(project.id) ?? this.store.listRuns(project.id)[0];
+    }
+    const runs = project ? this.store.listRuns(project.id) : [];
+    const common = {
+      project: project ? { id: project.id, name: project.name, repo: project.repo_path } : null,
+      runs, config: this.publicConfig(project),
+    };
+    if (!run) return { ...common, run: null, tasks: [], decisions: [], questions: [], inbox: [] };
     const tasks = this.store.listTasks(run.id);
     const questions = this.store.listQuestions(run.id);
     const inbox: any[] = [];
@@ -836,20 +1009,30 @@ export class Orchestrator extends EventEmitter {
       if (t.status === "failed") inbox.push({ type: "failed", task_id: t.id, task_key: t.key, title: `${t.key} failed after ${t.attempt} attempts`, detail: t.last_feedback, ts: t.updated_at });
       if (t.status === "pr_open") inbox.push({ type: "merge", task_id: t.id, task_key: t.key, title: `${t.key} ready to merge`, detail: t.pr_url ?? t.branch, pr_url: t.pr_url, feedback: t.last_feedback, ci_status: t.ci_status, fix_rounds: t.fix_rounds, ts: t.updated_at });
     }
-    return { run, tasks, decisions: this.store.listDecisions(run.id), questions, inbox, runs: this.store.listRuns(), config: this.publicConfig() };
+    return { ...common, run, tasks, decisions: this.store.listDecisions(run.id), questions, inbox };
   }
-  private publicConfig() {
-    const c = this.cfg;
-    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries(c.agents.roles).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), ntfy: !!c.notify.ntfyUrl, ntfyToken: !!c.notify.ntfyToken, auth: !!c.auth.token, prFeedback: c.git.pr && c.git.feedback.enabled ? { waitForChecks: c.git.feedback.waitForChecks, maxRounds: c.git.feedback.maxRounds, trigger: c.git.feedback.trigger } : null };
+  /** Settings the dashboard may show: secrets only as booleans (§16). A project whose settings fail to load shows the error. */
+  private publicConfig(project?: Project) {
+    const s = this.server;
+    const server = { maxAgents: s.scheduler.maxAgents, ntfy: !!s.notify.ntfyUrl, ntfyToken: !!s.notify.ntfyToken, auth: !!s.auth.token };
+    if (!project) return { repo: null, ...server };
+    let c: Config;
+    try {
+      c = this.context(project.id).cfg;
+    } catch (e: any) {
+      return { repo: project.repo_path, error: e?.message ?? String(e), ...server };
+    }
+    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries(c.agents.roles).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), ...server, prFeedback: c.git.pr && c.git.feedback.enabled ? { waitForChecks: c.git.feedback.waitForChecks, maxRounds: c.git.feedback.maxRounds, trigger: c.git.feedback.trigger } : null };
   }
 
   /** On daemon start: anything that was 'running' when we died goes back to pending. */
   recover() {
     for (const run of this.store.listRuns()) {
-      if (["done", "stopped", "failed"].includes(run.status)) continue;
+      if (CLOSED_RUN.has(run.status)) continue;
       for (const t of this.store.listTasks(run.id)) {
         if (ACTIVE.includes(t.status)) {
-          void this.fire(run, t.id, { type: "daemon_restart" }); // T14: no effects, applied synchronously
+          // T14: no effects, applied synchronously.
+          this.fire(run, t.id, { type: "daemon_restart" }).catch((e) => console.error("[recover]", e));
           this.log(run, t, "state", { message: "daemon restarted while task was active; task reset to pending (worktree kept)" });
         }
       }
@@ -857,6 +1040,11 @@ export class Orchestrator extends EventEmitter {
     }
     this.ensureTicking();
   }
+}
+
+/** The task's gate command: its own, else the project's `validation.command` (§10.1). */
+function validateCmd(cfg: Config, task: Task): string {
+  return task.validate_cmd || cfg.validation.command;
 }
 
 function slug(s: string): string {

@@ -1,7 +1,7 @@
 # orch — orchestrator / worker / validator runner for Claude Code
 #
 # The image contains: node, git, gh, Claude Code, and orch itself.
-# Your repo, worktrees, database and config live on a mounted volume (/work).
+# Your repos, worktrees, database and settings live on a mounted volume (/work = ORCH_HOME).
 # Add your project's own toolchain (python, go, …) in the marked section below,
 # because validation commands and setup commands run inside this container.
 
@@ -43,6 +43,9 @@ RUN npm run build && npm link
 
 USER orch
 ENV HOME=/home/orch
+# All orch state (server.json, orch.db, worktrees/) lives in /work; repos are projects under /work too.
+ENV ORCH_HOME=/work
+# Only read on the first start of an install that still has a single-file config (it is then upgraded).
 ENV ORCH_CONFIG=/work/orch.config.json
 EXPOSE 4800
 WORKDIR /work

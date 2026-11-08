@@ -1273,7 +1273,6 @@
   },
   {
     "name": "fairness: the project that started least recently goes first (REQ-PROJ-09 acceptance)",
-    "pending": "TASK-09",
     "input": {
       "maxAgents": 1,
       "busyAgents": 0,
@@ -1372,7 +1371,6 @@
   },
   {
     "name": "fairness: a project that never started (lastStartAt null) goes first",
-    "pending": "TASK-09",
     "input": {
       "maxAgents": 1,
       "busyAgents": 0,
@@ -1441,7 +1439,6 @@
   },
   {
     "name": "fairness: ties on lastStartAt are broken by project id",
-    "pending": "TASK-09",
     "input": {
       "maxAgents": 1,
       "busyAgents": 0,
@@ -1510,7 +1507,6 @@
   },
   {
     "name": "fairness: round-robin, one task per project per pass",
-    "pending": "TASK-09",
     "input": {
       "maxAgents": 3,
       "busyAgents": 0,

@@ -28,7 +28,7 @@ const envWithout = (extra = {}) => {
 const cli = (args, env, cwd) => spawnSync("node", [CLI, ...args], { cwd, env, encoding: "utf8", timeout: 20_000 });
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
-const { repo, tmp } = makeRepo({
+const { repo, tmp, home } = makeRepo({
   prefix: "orch-e2e-auth-",
   files: {
     "README.md": "# demo\n",
@@ -60,12 +60,12 @@ try {
   const guardDir = path.join(tmp, "guard");
   fs.mkdirSync(guardDir);
   writeConfig(guardDir, { repo, host: "0.0.0.0", port: PORT + 1, dbPath: path.join(guardDir, "orch.db") });
-  const g = cli(["serve"], envWithout({ ORCH_CONFIG: path.join(guardDir, "orch.config.json") }), guardDir);
+  const g = cli(["serve"], envWithout({ ORCH_CONFIG: path.join(guardDir, "orch.config.json"), ORCH_HOME: path.join(guardDir, "home") }), guardDir);
   assert(g.status === 1, `serve on 0.0.0.0 without a token should exit 1, got ${g.status}\n${g.stdout}\n${g.stderr}`);
   assert(g.stderr.includes("auth.token") && g.stderr.includes("auth.allowInsecure"), "bind guard message should name auth.token and auth.allowInsecure:\n" + g.stderr);
   console.log("bind guard: refused 0.0.0.0 without a token");
 
-  const daemon = await startDaemon({ cwd: repo, port: PORT, env: { ORCH_TOKEN: TOKEN } });
+  const daemon = await startDaemon({ cwd: repo, port: PORT, env: { ORCH_TOKEN: TOKEN, ORCH_HOME: home } });
   const api = apiFor(PORT, { token: TOKEN });
 
   // ---- 401 without the token; health and the dashboard shell stay open ----
@@ -144,7 +144,7 @@ try {
   daemon.kill("SIGTERM");
   await new Promise((r) => (daemon.exitCode !== null ? r() : daemon.once("exit", r)));
   await sleep(200);
-  const dbDir = path.join(repo, ".orch");
+  const dbDir = home;
   const dbFiles = fs.readdirSync(dbDir).filter((f) => f.startsWith("orch.db"));
   assert(dbFiles.includes("orch.db"), "DB file not found in " + dbDir);
   for (const f of dbFiles) {

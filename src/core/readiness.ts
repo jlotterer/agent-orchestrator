@@ -1,5 +1,6 @@
 /**
- * Which tasks start now (architecture §7.1). Pure: no I/O, no clock; the orchestrator gathers the facts.
+ * Which tasks start now (architecture §7.1), across all projects: global agent cap, per-project limits,
+ * fair shares by least recent start. Pure: no I/O, no clock; the orchestrator gathers the facts.
  * Fixtures: test/fixtures/readiness.json.
  */
 import type { TaskStatus } from "../types.js";

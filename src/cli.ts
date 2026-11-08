@@ -17,9 +17,13 @@
  *   orch decide "<text>" [--why "<rationale>"]
  *   orch ask "<question>" [--options "A,B,C"]
  */
+import fs from "node:fs";
 import path from "node:path";
-import { loadConfig, writeExampleConfig, CONFIG_FILENAME } from "./config.js";
+import { loadConfig, loadServerConfig, writeExampleConfig, CONFIG_FILENAME } from "./config.js";
 import { bindGuard, resolveToken } from "./auth.js";
+import { orchHome, serverConfigPath, dbPath } from "./paths.js";
+import { registerProject } from "./projects.js";
+import type { Store } from "./db.js";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -40,11 +44,22 @@ function positional(): string[] {
   return out;
 }
 
+/** Port and token of the local daemon: `$ORCH_HOME/server.json` when it exists, else a legacy orch.config.json. */
+function localDaemon(): { port: number; token: string } {
+  const home = orchHome();
+  if (fs.existsSync(serverConfigPath(home))) {
+    const s = loadServerConfig(home);
+    return { port: s.port, token: s.auth.token };
+  }
+  const c = loadConfig().config;
+  return { port: c.port, token: c.auth.token };
+}
+
 async function api(method: string, p: string, body?: any): Promise<any> {
-  // Agents get ORCH_URL and ORCH_TOKEN from the daemon; humans fall back to the settings file.
-  const local = (process.env.ORCH_URL && process.env.ORCH_TOKEN) ? null : loadConfig().config;
+  // Agents get ORCH_URL and ORCH_TOKEN from the daemon; humans fall back to the settings files.
+  const local = (process.env.ORCH_URL && process.env.ORCH_TOKEN) ? null : localDaemon();
   const base = process.env.ORCH_URL ?? `http://127.0.0.1:${local!.port}`;
-  const token = resolveToken(local?.auth.token);
+  const token = resolveToken(local?.token);
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (token) headers.authorization = `Bearer ${token}`;
   const r = await fetch(base + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
@@ -61,13 +76,18 @@ async function main() {
       return;
     }
     case "serve": {
-      const { config, path: cfgPath } = loadConfig(flag("config"));
-      if (!cfgPath) console.warn(`no ${CONFIG_FILENAME} found; using defaults with repo=${config.repo}`);
-      const refused = bindGuard({ host: config.host, token: config.auth.token, allowInsecure: config.auth.allowInsecure });
-      if (refused) throw new Error(refused);
+      // All state lives under ORCH_HOME (§5.1); a single-repo install is upgraded on its first start (§5.5).
+      const home = orchHome();
+      const { Store } = await import("./db.js");
+      const upgraded = await upgradeLegacyInstall(home, Store);
+      const server = loadServerConfig(home);
+      const refused = bindGuard({ host: server.host, token: server.auth.token, allowInsecure: server.auth.allowInsecure });
+      if (refused) { upgraded?.db.close(); throw new Error(refused); }
       const { Orchestrator } = await import("./orchestrator.js");
       const { startServer } = await import("./server.js");
-      const orch = new Orchestrator(config);
+      const store = upgraded ?? new Store(dbPath(home));
+      if (!store.listProjects().length) console.warn(`no projects registered in ${dbPath(home)}`);
+      const orch = new Orchestrator(server, store, { home });
       orch.recover();
       startServer(orch);
       const shutdown = () => { console.log("shutting down"); process.exit(0); };
@@ -153,5 +173,95 @@ async function main() {
 }
 
 function pad(s: string, n: number) { return (s + " ".repeat(n)).slice(0, n); }
+
+// ------------------------------------------------------------------ legacy upgrade (architecture §5.5)
+const isObj = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
+/** A pre-projects settings file names its repo or its agent CLIs. */
+const isLegacyConfig = (raw: unknown) => isObj(raw) && ("repo" in raw || "agents" in raw || "agent" in raw);
+const readJson = (p: string): unknown => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } };
+
+/** `--config`, `ORCH_CONFIG`, or the nearest orch.config.json above cwd that is a legacy file. */
+function findLegacyConfig(): string | null {
+  const explicit = flag("config") ?? process.env.ORCH_CONFIG;
+  if (explicit) return isLegacyConfig(readJson(explicit)) ? path.resolve(explicit) : null;
+  for (let dir = process.cwd(); ; dir = path.dirname(dir)) {
+    const p = path.join(dir, CONFIG_FILENAME);
+    if (fs.existsSync(p) && isLegacyConfig(readJson(p))) return p;
+    if (path.dirname(dir) === dir) return null;
+  }
+}
+
+/** Keys of a legacy file that are not project settings (§5.2): they move to server.json or are dropped. */
+const SERVER_ONLY = ["repo", "worktreeDir", "dbPath", "host", "port", "publicUrl", "auth", "notify", "agents", "agent"];
+
+/**
+ * Upgrade a single-repo install (REQ-PROJ-10): when `$ORCH_HOME/server.json` does not exist and a legacy
+ * orch.config.json is found, split it into server.json and a project file (the original is kept as
+ * `.bak`), copy the legacy database into ORCH_HOME, register the repo as a project and give it every
+ * existing run. Returns the open Store when it upgraded, else null. server.json is written last, so an
+ * upgrade that fails part-way runs again on the next start.
+ */
+async function upgradeLegacyInstall(home: string, StoreClass: new (p: string) => Store): Promise<Store | null> {
+  const serverPath = serverConfigPath(home);
+  if (fs.existsSync(serverPath)) return null;
+  const legacyPath = findLegacyConfig();
+  if (!legacyPath) return null;
+  const raw = readJson(legacyPath) as Record<string, any>;
+  const { config: legacy } = loadConfig(legacyPath); // validates it, resolves repo/dbPath, maps the pre-0.2 `agent` block
+  console.log(`upgrading single-repo install from ${legacyPath} into ${home}`);
+
+  // 1. Server settings; the global agent cap starts at the old per-repo limit.
+  const server: Record<string, any> = {};
+  for (const k of ["host", "port", "publicUrl", "notify", "auth"]) if (raw[k] !== undefined) server[k] = raw[k];
+  if (raw.agents !== undefined || raw.agent !== undefined) server.agents = legacy.agents;
+  server.scheduler = { maxAgents: legacy.scheduler.maxParallel };
+  if (raw.scheduler?.tickSeconds !== undefined) server.scheduler.tickSeconds = raw.scheduler.tickSeconds;
+  if (raw.git?.ghCommand !== undefined) server.git = { ghCommand: raw.git.ghCommand };
+
+  // 2. Project settings: everything else. The original file is kept as .bak.
+  const project = structuredClone(raw);
+  for (const k of SERVER_ONLY) delete project[k];
+  if (isObj(project.scheduler)) delete project.scheduler.tickSeconds;
+  if (isObj(project.git)) delete project.git.ghCommand;
+  const projectJson = JSON.stringify(project, null, 2) + "\n";
+  const backup = legacyPath + ".bak";
+  fs.copyFileSync(legacyPath, backup);
+  fs.writeFileSync(legacyPath, projectJson);
+  const repoFile = path.join(legacy.repo, CONFIG_FILENAME);
+  const wroteRepoFile = path.resolve(repoFile) !== path.resolve(legacyPath) && !fs.existsSync(repoFile);
+  if (wroteRepoFile) fs.writeFileSync(repoFile, projectJson);
+
+  // 3. Database: copy the legacy one (with its WAL) if ORCH_HOME has none, migrate, register the repo, adopt the runs.
+  let store: Store | null = null;
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    const target = dbPath(home);
+    const copied = fs.existsSync(legacy.dbPath) && !fs.existsSync(target);
+    if (copied) {
+      fs.copyFileSync(legacy.dbPath, target);
+      if (fs.existsSync(legacy.dbPath + "-wal")) fs.copyFileSync(legacy.dbPath + "-wal", target + "-wal");
+    }
+    store = new StoreClass(target);
+    const repoReal = fs.realpathSync.native(legacy.repo);
+    const p = store.getProjectByPath(repoReal) ?? (await registerProject(store, legacy.repo)).project;
+    const adopted = store.db.prepare("UPDATE runs SET project_id = ? WHERE project_id IS NULL").run(p.id).changes;
+
+    // 4. server.json marks the upgrade as done; then record the decision.
+    fs.writeFileSync(serverPath, JSON.stringify(server, null, 2) + "\n");
+    const text = `Upgraded single-repo install to project ${p.id}`;
+    const why = `server settings moved to ${serverPath}; ${legacyPath} reduced to project settings (original kept as ${backup})` +
+      (copied ? `; database copied from ${legacy.dbPath}` : "") + (adopted ? `; ${adopted} existing run(s) assigned to the project` : "");
+    const latest = store.listRuns(p.id)[0];
+    if (latest) store.addDecision(latest.id, null, "orchestrator", text, why);
+    console.log(`${text}: ${why}`);
+    return store;
+  } catch (e) {
+    // Leave the install as it was so the next start tries again.
+    store?.db.close();
+    fs.copyFileSync(backup, legacyPath);
+    if (wroteRepoFile) fs.rmSync(repoFile, { force: true });
+    throw e;
+  }
+}
 
 main().catch((e) => { console.error(`error: ${e.message ?? e}`); process.exit(1); });

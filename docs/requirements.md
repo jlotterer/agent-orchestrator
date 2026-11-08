@@ -53,12 +53,12 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-PROJ-02 | When a registered project has no project settings file, orch MUST create a starter settings file in the repo and say where it is. | built (registry returns the path, TASK-07; shown by CLI/dashboard in TASK-10) |
 | REQ-PROJ-03 | The owner MUST be able to see every registered project with its name, current run status, and number of open inbox items, and switch the dashboard between projects. | new |
 | REQ-PROJ-04 | The owner MUST be able to remove (archive) a project. Archiving MUST NOT delete the repository. The project's history MUST remain stored, and it MUST be possible to re-register the project later. Archiving a project with an active run MUST be refused. | built (registry, TASK-07) / new (CLI + dashboard, TASK-10) |
-| REQ-PROJ-05 | Per-project settings MUST be read from a file inside the project's repository. Server-wide settings MUST be kept separately and MUST NOT be overridable from a project file in ways that change how agent CLIs are launched or which credentials they get. | built (loaders, TASK-05) / new (daemon uses them, TASK-09) |
-| REQ-PROJ-06 | Changes to a project's settings file MUST take effect no later than the next run start for that project, without restarting orch. | new (loader re-reads the file on every call, TASK-05; run-start wiring TASK-09) |
-| REQ-PROJ-07 | Each project MUST have at most one unfinished run (planning, awaiting approval, ready, running, or paused). Creating or starting another run in that project while one is unfinished MUST be refused with a message naming the unfinished run. | new |
-| REQ-PROJ-08 | Several projects MAY run at the same time. The total number of agent sessions running across all projects MUST NOT exceed a configurable global limit. | new |
-| REQ-PROJ-09 | When capacity is scarce, a project with ready tasks MUST NOT wait indefinitely while other projects keep starting tasks. | new |
-| REQ-PROJ-10 | An existing single-repo installation MUST be upgraded on first start: its repo becomes a registered project and its existing runs, tasks, decisions and questions remain visible. `[ASSUMED]` | new |
+| REQ-PROJ-05 | Per-project settings MUST be read from a file inside the project's repository. Server-wide settings MUST be kept separately and MUST NOT be overridable from a project file in ways that change how agent CLIs are launched or which credentials they get. | built (loaders TASK-05, daemon TASK-09) |
+| REQ-PROJ-06 | Changes to a project's settings file MUST take effect no later than the next run start for that project, without restarting orch. | built (TASK-05, TASK-09: settings re-read at run creation and start) |
+| REQ-PROJ-07 | Each project MUST have at most one unfinished run (planning, awaiting approval, ready, running, or paused). Creating or starting another run in that project while one is unfinished MUST be refused with a message naming the unfinished run. | built (TASK-09) |
+| REQ-PROJ-08 | Several projects MAY run at the same time. The total number of agent sessions running across all projects MUST NOT exceed a configurable global limit. | built (TASK-09) |
+| REQ-PROJ-09 | When capacity is scarce, a project with ready tasks MUST NOT wait indefinitely while other projects keep starting tasks. | built (TASK-09) |
+| REQ-PROJ-10 | An existing single-repo installation MUST be upgraded on first start: its repo becomes a registered project and its existing runs, tasks, decisions and questions remain visible. `[ASSUMED]` | built (TASK-09) |
 
 **Edge cases:**
 - Registering the same repo twice → refused; the existing project is named.
@@ -118,7 +118,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-SCHED-01 | A task MUST start only when all of these hold: its dependencies are done or skipped; it has no open questions; no plan question is open; its project's parallel limit has room; the global agent limit has room. | built (except plan questions, global limit) |
+| REQ-SCHED-01 | A task MUST start only when all of these hold: its dependencies are done or skipped; it has no open questions; no plan question is open; its project's parallel limit has room; the global agent limit has room. | built (global limit TASK-09; except plan questions, TASK-13) |
 | REQ-SCHED-02 | Two tasks whose owned files overlap MUST NOT run at the same time, even if both are ready. When orch holds one back for this reason, it MUST record a decision naming both tasks and show the implicit ordering in the plan view. | new |
 | REQ-SCHED-03 | Pausing a run MUST let running agent sessions finish and start nothing new until resumed. | built |
 | REQ-SCHED-04 | Stopping a run MUST end its running agent sessions and return their tasks to pending, keeping their working copies and commits. | built |
@@ -210,7 +210,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
 | REQ-HITL-01 | One inbox MUST list everything that needs the owner across all projects, each item labelled with its project: plan approvals, open questions (task and plan), failed tasks, tasks awaiting review or merge (including merge failures and PR problems), and phases needing the owner. Each item MUST offer its relevant actions. | built (single project) / new (all projects, labels, phase items) |
-| REQ-HITL-02 | Every new inbox item and every run completion MUST trigger a push notification (when configured) whose text names the project and the task. | built (project name new) |
+| REQ-HITL-02 | Every new inbox item and every run completion MUST trigger a push notification (when configured) whose text names the project and the task. | built (project name in the title, TASK-09) |
 | REQ-HITL-03 | A worker MUST be able to ask the owner a question, optionally with answer options. Only that task pauses, the owner is notified, and after the answer the worker continues in its own session. Answering MUST NOT consume an attempt. | built |
 | REQ-HITL-04 | Agents MUST be able to record a decision with a rationale without pausing. | built |
 | REQ-HITL-05 | The decisions log MUST show every decision by planner, worker, validator, orchestrator and owner, in order, with actor, time, task (if any) and rationale. | built |
@@ -288,7 +288,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-ADAPT-01 | The planner, worker and validator roles (and the phase validator) MUST each be assignable to an agent CLI and model independently, at server level, with per-project overrides choosing among the server's configured CLIs. | built (server level) / new (project overrides, phase validator) |
+| REQ-ADAPT-01 | The planner, worker and validator roles (and the phase validator) MUST each be assignable to an agent CLI and model independently, at server level, with per-project overrides choosing among the server's configured CLIs. | built (server level; project overrides TASK-09) / new (phase validator, TASK-15) |
 | REQ-ADAPT-02 | orch MUST run Claude Code and Gemini CLI headlessly in a working copy, with the prompt, an optional model, and session resume. | built |
 | REQ-ADAPT-03 | Agent output MUST be shown live in the task view as one uniform stream: agent text, tool calls, tool results, errors, and session info including reported cost. | built |
 | REQ-ADAPT-04 | Agents MUST be able to use orch's agent-facing commands (decide, ask) from inside a task without any installation step, and those commands MUST act on the right task. | built |
@@ -342,7 +342,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-OPS-03 | A health check MUST be available without the token, reporting that orch is up and its version. `[ASSUMED]` | built (TASK-08) |
 | REQ-OPS-04 | Agent event logs of runs that finished more than a configured number of days ago MUST be archived to compressed files on the server, then removed from the live store. Decisions, questions, task summaries and verdicts MUST be kept. | new |
 | REQ-OPS-05 | Stored data from earlier versions MUST be upgraded automatically on start, without data loss. | built (`user_version` migrations, TASK-07) |
-| REQ-OPS-06 | orch MUST run as a systemd service and in Docker, keeping all of its state in one data directory. | built (per repo; ORCH_HOME layout in src/paths.ts, TASK-05) / new (daemon keeps all state there, TASK-09) |
+| REQ-OPS-06 | orch MUST run as a systemd service and in Docker, keeping all of its state in one data directory. | built (ORCH_HOME layout TASK-05; daemon keeps all state there TASK-09) |
 | REQ-OPS-07 | The access token and notification credentials MUST NOT be written to the store, the event log, or agent prompts. | built (TASK-08) |
 
 **Edge cases:**

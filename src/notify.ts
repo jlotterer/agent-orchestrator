@@ -1,12 +1,21 @@
-import type { Config } from "./config.js";
+import type { ServerConfig } from "./config.js";
 
 export type Priority = "min" | "low" | "default" | "high" | "urgent";
 
-export async function notify(cfg: Config, title: string, message: string, opts: { priority?: Priority; click?: string; tags?: string[] } = {}) {
+export interface NotifyOptions {
+  priority?: Priority;
+  click?: string;
+  tags?: string[];
+  /** Project name; the title becomes `[<project>] <title>` (REQ-HITL-02). */
+  project?: string;
+}
+
+/** ntfy push (architecture §14). Failures are logged to stderr, never thrown. */
+export async function notify(cfg: Pick<ServerConfig, "notify" | "publicUrl">, title: string, message: string, opts: NotifyOptions = {}) {
   if (!cfg.notify.ntfyUrl) return;
   try {
     const headers: Record<string, string> = {
-      Title: title,
+      Title: opts.project ? `[${opts.project}] ${title}` : title,
       Priority: opts.priority ?? "default",
       Click: opts.click ?? cfg.publicUrl,
     };

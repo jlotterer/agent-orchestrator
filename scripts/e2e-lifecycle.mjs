@@ -47,11 +47,11 @@ function baseConfig(port) {
 async function setup(port, { tasks, spec = "# Feature Specification: Lifecycle\n\nFiles in impl/.\n", config = {} } = {}) {
   const files = { "README.md": "# demo\n", "check.sh": CHECK_SH, [`${SPEC}/spec.md`]: spec };
   if (tasks !== null) files[`${SPEC}/tasks.md`] = `# Tasks\n\n${tasks}`;
-  const { tmp, repo, sh } = makeRepo({ prefix: "orch-e2e-life-", files });
+  const { tmp, repo, home, sh } = makeRepo({ prefix: "orch-e2e-life-", files });
   const stateDir = path.join(tmp, "state");
   fs.mkdirSync(stateDir);
   writeConfig(repo, merge(baseConfig(port), config));
-  const env = { FAKE_STATE_DIR: stateDir };
+  const env = { FAKE_STATE_DIR: stateDir, ORCH_HOME: home };
   let daemon = await startDaemon({ cwd: repo, port, env, name: `d${port}` });
   const api = apiFor(port);
   const h = {

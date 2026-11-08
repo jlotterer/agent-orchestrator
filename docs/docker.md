@@ -1,19 +1,23 @@
 # Running orch in Docker
 
 The container holds the toolchain (node, git, gh, Claude Code, orch). Everything that changes —
-your repo, the worktrees, the SQLite database and the config — lives on one mounted directory,
-`./work`, so you can rebuild the image freely.
+your repos, the worktrees, the SQLite database and the settings — lives on one mounted directory,
+`./work`, which is orch's data directory (`ORCH_HOME=/work` in the image), so you can rebuild the
+image freely.
 
 ```
-work/
-├── orch.config.json      ← ORCH_CONFIG points here
-├── repo/                 ← your project (a clone)
-├── orch-worktrees/       ← created by orch, one dir per running task
-└── .orch/orch.db         ← state
+work/                       ← ORCH_HOME
+├── server.json             ← server settings (written on the first start, see step 2)
+├── orch.db                 ← state for every project
+├── worktrees/<project>/    ← created by orch, one dir per active task
+└── repos/myapp/            ← a project (a clone), with its own orch.config.json
 ```
 
-Keeping the repo and the worktrees on the same mount matters: git records worktree paths in
-`repo/.git/worktrees/`, and those paths must be the same every time the container starts.
+Each repo is a project. One daemon runs them all, with a shared limit on concurrent agents
+(`scheduler.maxAgents` in `server.json`).
+
+Keeping the repos and the worktrees on the same mount matters: git records worktree paths in
+`<repo>/.git/worktrees/`, and those paths must be the same every time the container starts.
 
 ## 1. Build
 
@@ -26,21 +30,20 @@ If your project's tests need more than node (python, go, a database client), add
 marked section of the `Dockerfile` first. `validation.command` and `git.setupCommand` run inside
 this container, so whatever `npm test` or `pytest` needs has to be in the image.
 
-## 2. Put the repo and config in `work/`
+## 2. Put the repo and the first-start settings in `work/`
 
 ```bash
-mkdir -p work
-git clone git@github.com:you/myapp.git work/repo      # or https://
+mkdir -p work/repos
+git clone git@github.com:you/myapp.git work/repos/myapp      # or https://
 ```
 
-`work/orch.config.json` — paths are container paths:
+For the first start, write the settings as one file, `work/orch.config.json` (the image points
+`ORCH_CONFIG` at it). Paths are container paths:
 
 ```json
 {
-  "repo": "/work/repo",
+  "repo": "/work/repos/myapp",
   "baseBranch": "main",
-  "worktreeDir": "/work/orch-worktrees",
-  "dbPath": "/work/.orch/orch.db",
   "host": "0.0.0.0",
   "port": 4800,
   "auth": { "token": "", "allowInsecure": false },
@@ -52,6 +55,19 @@ git clone git@github.com:you/myapp.git work/repo      # or https://
   "notify": { "ntfyUrl": "https://ntfy.sh/your-topic", "ntfyToken": "" }
 }
 ```
+
+On its first start, orch splits this file in two and registers the repo as a project:
+
+* `work/server.json` gets the server keys: `host`, `port`, `publicUrl`, `auth`, `notify`, `agents`,
+  `scheduler.tickSeconds`, and `scheduler.maxAgents` (the global agent limit, set from
+  `scheduler.maxParallel`).
+* `work/orch.config.json` keeps only the project keys; the original is saved as
+  `work/orch.config.json.bak`. Because the repo has no settings file of its own, orch also writes the
+  project keys to `work/repos/myapp/orch.config.json`. That is the file it reads from then on, at the
+  start of every run. Commit it to the repo if you like.
+
+After that, change server settings in `work/server.json` (restart the container) and project
+settings in the repo's `orch.config.json` (no restart; they apply at the next run start).
 
 `host` must be `0.0.0.0` inside the container, or the published port can't reach orch. Because
 that is a non-local address, orch refuses to start without an access token (see
@@ -122,7 +138,7 @@ For SSH remotes instead, uncomment the `~/.ssh` mount in `docker-compose.yml` an
 key has no passphrase (there is no agent inside the container).
 
 **Local-merge mode** (`git.pr: false`) needs no GitHub credentials at all; the merged `main`
-sits in `work/repo` and you push it yourself.
+sits in `work/repos/myapp` and you push it yourself.
 
 ## 4. Run
 
@@ -135,7 +151,7 @@ Dashboard: `http://my-server:4800` (it asks for the access token once). The CLI 
 `docker compose exec`, which already has `ORCH_TOKEN`:
 
 ```bash
-docker compose exec orch orch plan /work/repo/specs/001-auth
+docker compose exec orch orch plan /work/repos/myapp/specs/001-auth
 docker compose exec orch orch status
 docker compose exec orch orch approve && docker compose exec orch orch run
 ```
@@ -150,6 +166,13 @@ cd ~/orch && git pull && docker compose build && docker compose up -d
 
 State is in `work/`, logins are in the named volumes; a rebuild loses nothing. If the daemon
 restarts mid-run, any task that was active goes back to `pending` and its worktree is kept.
+
+**From a single-repo install** (`work/orch.config.json` with `repo`, `dbPath: /work/.orch/orch.db`,
+`worktreeDir: /work/orch-worktrees`): the first start of the new image upgrades it as in step 2. It
+also copies `work/.orch/orch.db` to `work/orch.db` and assigns every existing run to the project, so
+the history stays visible; the **Decisions** tab records the upgrade. New worktrees go to
+`work/worktrees/<project>/`; tasks that already had a worktree in `work/orch-worktrees/` keep using it.
+Once the run history looks right, you can delete `work/.orch/`.
 
 ## Notes
 

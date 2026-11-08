@@ -275,7 +275,7 @@ export function writeExampleConfig(dir: string): string {
 // ---------------------------------------------------------------------------------------------
 // Two-level configuration (architecture §5.1, §5.2, §19; decision 0013).
 // Server settings live in $ORCH_HOME/server.json; project settings in <repo>/orch.config.json.
-// Until TASK-09 wires projects into the daemon, toLegacyConfig() maps the pair onto `Config`.
+// The daemon maps each project's pair onto a `Config` with toLegacyConfig() (its ProjectContext, §5).
 // ---------------------------------------------------------------------------------------------
 
 export interface AdapterConfig {
@@ -545,8 +545,8 @@ export function writeStarterProjectConfig(repoPath: string, opts: { baseBranch: 
 }
 
 /**
- * Compatibility adapter until TASK-09: a server + project pair as today's single-repo `Config`, so
- * orchestrator.ts runs unchanged. Worktrees and the DB live under ORCH_HOME (§5.1).
+ * A project's effective settings: the server + project pair as one `Config`, which the orchestrator
+ * keeps per project (ProjectContext, §5). Worktrees and the DB live under ORCH_HOME (§5.1).
  */
 export function toLegacyConfig(
   server: ServerConfig,

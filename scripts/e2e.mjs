@@ -12,7 +12,7 @@ import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, FA
 
 const PORT = 4811;
 const CHECK_SH = "#!/bin/sh\nfor f in impl/*.txt; do [ -f \"$f\" ] || continue; grep -q OK \"$f\" || { echo \"$f is not OK\"; exit 1; }; done\necho checks passed\n";
-const { repo, sh } = makeRepo({
+const { repo, home, sh } = makeRepo({
   prefix: "orch-e2e-",
   files: {
     "README.md": "# demo\n",
@@ -55,7 +55,7 @@ const raw = async (method, p, body) => {
 };
 let ok = false;
 try {
-  await startDaemon({ cwd: repo, port: PORT });
+  await startDaemon({ cwd: repo, port: PORT, env: { ORCH_HOME: home } });
   const html = await (await fetch(`http://127.0.0.1:${PORT}/`)).text();
   if (!html.includes("<title>orch</title>")) throw new Error("dashboard did not serve");
 
