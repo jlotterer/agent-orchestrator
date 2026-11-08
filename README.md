@@ -44,53 +44,81 @@ npm install && npm run build
 npm link            # puts `orch` on your PATH (optional; agents get it automatically)
 ```
 
-## Set up a project
+## Set up
+
+One daemon serves all your projects (repos). It keeps all of its state in one data directory,
+`$ORCH_HOME` (default `~/.orch`):
+
+```
+~/.orch/
+├── server.json             server settings (network, access token, notifications, agent CLIs, global agent limit)
+├── orch.db                 SQLite: every project's runs, tasks, decisions, questions
+└── worktrees/<project>/    one worktree per active task
+```
+
+Each repo carries its own project settings in `<repo>/orch.config.json`. Changes to that file take
+effect at the next run start, without restarting orch.
+
+### First project
 
 ```bash
 cd ~/projects/myapp
-orch init           # writes orch.config.json
+orch init           # writes orch.config.json (single-file format)
+# edit it: validation.command, notify.ntfyUrl, git.pr, ...
+orch serve          # dashboard on http://<host>:4800
 ```
 
-Edit `orch.config.json`:
+On its first start, `orch serve` converts the single file into the two-file layout, once:
+
+1. It writes `$ORCH_HOME/server.json` from the server keys (`host`, `port`, `publicUrl`, `auth`,
+   `notify`, `agents`, `scheduler.tickSeconds`, `git.ghCommand`). The global agent limit
+   `scheduler.maxAgents` starts at the file's `scheduler.maxParallel`.
+2. It saves the original as `orch.config.json.bak` and rewrites `orch.config.json` with the project
+   keys only.
+3. It registers the repo as a project. If the old database (`dbPath`, by default `.orch/orch.db`)
+   exists, orch copies it to `$ORCH_HOME/orch.db` and assigns every existing run to the project, so
+   past runs, decisions and questions stay visible.
+
+An existing single-repo install upgrades the same way. The upgrade runs only while `server.json`
+does not exist, and it is recorded in the **Decisions** tab. Registering more repos with the same
+daemon comes with the `orch project` commands in the next release.
+
+### Project settings: `<repo>/orch.config.json`
 
 | key | what |
 |---|---|
-| `repo` | path to the git repo (`.`) |
 | `baseBranch` | branch to branch from and merge into (`main`) |
 | `validation.command` | the deterministic gate run in every worktree before the validator (`npm test`, `pytest`, …) |
-| `scheduler.maxParallel` | `1` = sequential. Raise it once you trust the dependency graph |
+| `scheduler.maxParallel` | tasks of this project running at once. `1` = sequential. Raise it once you trust the dependency graph |
 | `scheduler.maxAttempts` | worker attempts before a task goes to your inbox (`2`) |
 | `git.pr` | `true` = push + `gh pr create` + `gh pr merge`; `false` = merge locally, no GitHub needed |
 | `git.mergePolicy` | default `auto` (merge when validated) or `manual` (wait for you). The planner marks risky tasks `manual` on its own |
 | `git.feedback` | PR mode only: wait for CI before auto-merging, and send CI failures and `/orch` review comments back to the worker. See [Merging](#merging) |
 | `git.copyFiles` / `git.setupCommand` | e.g. `[".env"]` and `npm ci` for each new worktree |
-| `agents.roles.{planner,worker,validator}` | which adapter and model each role uses, e.g. `{"adapter": "gemini", "model": "pro"}` for the validator |
-| `agents.adapters.claude.extraArgs` | defaults to `--permission-mode bypassPermissions`. Tighten with `--allowedTools` if you prefer |
-| `agents.adapters.gemini.extraArgs` | defaults to `--yolo --skip-trust` (both required for headless runs in a worktree) |
+| `roles.{planner,worker,validator}` | override which adapter and model a role uses in this project, e.g. `{"adapter": "gemini", "model": "pro"}`. The adapter must be defined in `server.json` |
+
+A project file can't set server keys (`agents`, `host`, `port`, `publicUrl`, `auth`, `notify`,
+`dbPath`, `worktreeDir`, `repo`, `git.ghCommand`). orch refuses to plan or start a project whose
+file has one, and the error names the key. So a cloned repo can't change which agent binaries run
+or which credentials they get. Unknown keys are ignored with a warning in the run's activity. Full
+example: [orch.config.example.json](orch.config.example.json).
+
+### Server settings: `$ORCH_HOME/server.json`
+
+| key | what |
+|---|---|
 | `host` / `port` | where the dashboard and API listen. Default `127.0.0.1:4800` (this machine only) |
 | `auth.token` | access token for the dashboard, API, live stream and CLI. `ORCH_TOKEN` in the environment overrides it. Empty = no auth. See [Access token](#access-token) |
 | `auth.allowInsecure` | `true` lets orch listen on a non-local `host` without a token. Default `false` |
-| `notify.ntfyUrl` | `https://ntfy.sh/<your-topic>` for push notifications |
+| `notify.ntfyUrl` | `https://ntfy.sh/<your-topic>` for push notifications. Titles start with `[<project name>]` |
 | `publicUrl` | what the notification links to, e.g. `http://my-server:4800` |
+| `scheduler.maxAgents` | agent sessions running at once across all projects (workers, validators, planners). Default `2`; `1` = strictly one at a time |
+| `agents.roles.{planner,worker,validator}` | default adapter and model per role for every project |
+| `agents.adapters.claude.extraArgs` | defaults to `--permission-mode bypassPermissions`. Tighten with `--allowedTools` if you prefer |
+| `agents.adapters.gemini.extraArgs` | defaults to `--yolo --skip-trust` (both required for headless runs in a worktree) |
+| `defaults` | project settings applied under every project's own file (same keys as `orch.config.json`) |
 
-Add `.orch/` to `.gitignore`.
-
-> **Settings are splitting in two (multi-project support).** Server-wide settings (`host`, `port`,
-> `publicUrl`, `auth`, `notify`, `agents.*`, `git.ghCommand`, scheduler `tickSeconds`/`maxAgents`)
-> will move to `$ORCH_HOME/server.json` (default `~/.orch/server.json`), and each repo's
-> `orch.config.json` will hold project keys only (`baseBranch`, `validation`, `git`, `handoff`,
-> `scheduler.maxParallel`, `roles`, …). A project file that sets a server key such as `agents` is
-> rejected, so a cloned repo cannot change which agent binaries run or what credentials they get.
-> See [orch.config.example.json](orch.config.example.json) and
-> [examples/server.example.json](examples/server.example.json). The loaders exist today; the daemon
-> switches to them, and upgrades an existing single-file config automatically, in a later release.
-> Until then `orch serve` reads the single `orch.config.json` described above.
-
-Start the daemon:
-
-```bash
-orch serve          # dashboard on http://<host>:4800
-```
+Full example: [examples/server.example.json](examples/server.example.json).
 
 ### Access token
 
@@ -99,7 +127,7 @@ By default orch listens on `127.0.0.1` only. To reach it from another machine, s
 address without one, and the error names both `auth.token` and `auth.allowInsecure`.
 
 ```bash
-export ORCH_TOKEN=$(openssl rand -hex 32)   # or put it in auth.token
+export ORCH_TOKEN=$(openssl rand -hex 32)   # or put it in auth.token in server.json
 orch serve
 ```
 
@@ -107,14 +135,15 @@ With a token set:
 
 * every API call and the live stream need it; requests without it get `401 {"error":"unauthorized"}`;
 * the dashboard asks for it once and keeps it in an `HttpOnly`, `SameSite=Strict` cookie;
-* the `orch` CLI sends it from `ORCH_TOKEN` or the config file, and agents get it in their environment
+* the `orch` CLI sends it from `ORCH_TOKEN` or `server.json`, and agents get it in their environment
   automatically, so `orch decide` and `orch ask` keep working;
 * `GET /api/health` stays open and returns `{ok, version, uptimeSec}` for monitoring.
 
 The token, the ntfy token and adapter `env` values are never written to the database, the event log
 or agent prompts. There is no TLS: use SSH, Tailscale, a private network or an HTTPS reverse proxy.
 
-For a server, use the included `orch.service` (systemd):
+For a server, use the included `orch.service` (systemd). Run the `sed` from your first project's
+repo, so the first start finds its `orch.config.json` and upgrades it; state goes to `~/.orch`:
 
 ```bash
 sed "s#WORKDIR#$PWD#; s#ORCHBIN#$(which orch)#; s#USER#$USER#" ~/orch/orch.service | sudo tee /etc/systemd/system/orch.service
@@ -125,7 +154,10 @@ sudo systemctl enable --now orch
 
 1. Write the spec with Spec Kit as usual: `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`.
    You end up with `specs/003-thing/{spec.md,plan.md,tasks.md}`.
-2. `orch plan specs/003-thing` (or **New plan…** in the dashboard). The planner reads the spec,
+2. `orch plan specs/003-thing` (or **New plan…** in the dashboard). The plan goes to the project
+   whose repo contains the folder. Each project has at most one unfinished run (planning, awaiting
+   approval, ready, running or paused); planning or starting another is refused with the name of
+   the unfinished one. The planner reads the spec,
    writes acceptance criteria for every task, checks the dependency graph, flags risky tasks as
    manual-merge, and logs its decisions. If something in the spec is ambiguous enough to matter it
    asks instead of guessing.
@@ -226,8 +258,13 @@ as a working-tree change in PR mode so you can commit it with your next push).
 
 ### Parallelism
 
-`scheduler.maxParallel: 2` runs two tasks at once when the dependency graph allows it. Each has its
-own worktree and branch; merges are serialized. The usual failure mode is two parallel tasks
+`scheduler.maxParallel: 2` runs two tasks of a project at once when the dependency graph allows it.
+Each has its own worktree and branch; merges into one repo are serialized.
+
+Several projects can run at the same time. `scheduler.maxAgents` in `server.json` caps the agent
+sessions across all of them (a running planner counts too), because they share your agent
+subscription. When slots are scarce, the project that started a task least recently goes next, so
+one busy project cannot starve another. The usual failure mode is two parallel tasks
 editing the same file; the planner tries to keep `[P]` tasks file-disjoint, and the validator will
 catch a bad merge, but if you see conflicts, add dependency edges in the Plan tab.
 
@@ -241,7 +278,7 @@ headlessly and how to read its event stream. Two ship today:
 | `claude` | Claude Code | `claude -p --output-format stream-json --verbose` | `--resume <session>` |
 | `gemini` | Gemini CLI | `gemini -p … --output-format stream-json --yolo --skip-trust` | `--resume <session>` |
 
-Pick per role in `orch.config.json`:
+Pick per role in `server.json` for every project:
 
 ```json
 "agents": {
@@ -252,6 +289,9 @@ Pick per role in `orch.config.json`:
   }
 }
 ```
+
+A project can choose differently among the adapters the server defines, with `roles` in its
+`orch.config.json`, for example `"roles": { "validator": { "adapter": "claude", "model": "opus" } }`.
 
 The validator is the natural place for a second vendor: it only reads the diff and runs tests,
 and a model from a different lab shares fewer blind spots with the worker than another Claude
@@ -306,6 +346,15 @@ at merge time, two parallel tasks conflicting on one file, skipping a failed dep
 question twice, and editing acceptance criteria before approval. Run a subset by letter:
 `node scripts/e2e-lifecycle.mjs b h`.
 
+`scripts/e2e-multi.mjs` runs one daemon over two registered repos with `scheduler.maxAgents: 1`: never
+more than one active task, the second project's task starting before the first project's third,
+refused plans and starts naming the unfinished run, worktrees under `ORCH_HOME`, and notification
+titles carrying the project name (captured by a local HTTP sink). A second scenario upgrades a
+single-repo install with a 0.1-schema database and checks that the old run stays visible.
+
+Every daemon an e2e script starts gets `ORCH_HOME` set to a directory in its temp folder, so a test run
+never touches `~/.orch`. Scripts that start from a single `orch.config.json` exercise the upgrade too.
+
 All e2e scripts use the shared helpers in `scripts/lib/e2e.mjs` (`makeRepo`, `writeConfig`, `startDaemon`,
 `api`, `waitFor`, `cleanup`), so a new scenario is mostly its config, a polling loop and its assertions.
 A failed run keeps its throwaway repo and prints its path.
@@ -328,19 +377,19 @@ container. Copy the source in so the container's `npm ci` does not replace your 
 ## Layout
 
 ```
-src/orchestrator.ts   gathers facts, calls src/core, performs side effects: plan → approve → run → validate → merge
+src/orchestrator.ts   per-project contexts; gathers facts, calls src/core, performs side effects: plan → approve → run → validate → merge
 src/core/             pure decisions: readiness (who starts), task transitions, PR-poll actions
 src/adapters/         one adapter per agent CLI (claude.ts, gemini.ts) + the shared process runner
 src/git.ts            worktrees, diffs, push, gh pr create/merge/view, CI logs, local merge
 src/prfeedback.ts     PR feedback loop helpers: check verdicts, review comments, worker feedback text
 src/speckit.ts        tasks.md parser and ticker
-src/config.ts         settings: today's single-file loader, plus server.json / per-project loaders
+src/config.ts         settings: server.json and per-project loaders, plus the single-file format read by the upgrade
 src/paths.ts          ORCH_HOME layout (server.json, orch.db, worktrees/, archive/, run/)
 src/db.ts             SQLite: projects, runs, tasks, phases, events, decisions, questions; versioned migrations
 src/projects.ts       project registry: register a repo, archive, find the project for a directory
 src/server.ts         REST + SSE, serves the dashboard; token gate, /api/health, /api/login
 src/auth.ts           token check (Bearer or cookie), login cookie, bind guard
-src/cli.ts            `orch` (human commands and the agent-facing decide/ask)
+src/cli.ts            `orch` (human commands, the agent-facing decide/ask, the single-repo upgrade in `serve`)
 prompts/*.md          the three role prompts
 dashboard/index.html  the UI, no build step
 ```
@@ -351,6 +400,6 @@ Workers run headless with `--permission-mode bypassPermissions` inside their wor
 point of the tool, but it means a worker can run anything your user can. Run the daemon as a
 low-privilege (non-root) user on a machine you don't mind an agent working in (the Docker image runs
 as uid 1000), set an [access token](#access-token) if anyone else can reach the port, keep secrets out of
-`git.copyFiles` unless the task needs them, and use `--allowedTools` in `agent.extraArgs` if you
+`git.copyFiles` unless the task needs them, and use `--allowedTools` in `agents.adapters.claude.extraArgs` if you
 want a tighter leash. Manual merge policy is your other lever: the planner already uses it for auth,
 migrations, billing and irreversible changes.

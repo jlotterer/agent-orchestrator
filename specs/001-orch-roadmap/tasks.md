@@ -19,7 +19,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T008 [P] Bearer-token auth, health check and bind guard. Brief: docs/tasks/TASK-08.md.
 
 ## Phase 5: Wave 5
-- [ ] T009 Multi-project orchestration and global agent cap. Brief: docs/tasks/TASK-09.md.
+- [x] T009 Multi-project orchestration and global agent cap. Brief: docs/tasks/TASK-09.md.
 
 ## Phase 6: Wave 6
 - [ ] T010 Projects API, global inbox and CLI scoping. Brief: docs/tasks/TASK-10.md.

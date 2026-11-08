@@ -22,7 +22,7 @@ export function startServer(orch: Orchestrator) {
   };
 
   // ---- read ----
-  route("GET", "/api/state", (_r, _s, _p, _b) => orch.snapshot());
+  route("GET", "/api/state", (req) => orch.snapshot(undefined, new URL(req.url!, "http://x").searchParams.get("project") ?? undefined));
   route("GET", "/api/runs/:id", (_r, _s, p) => orch.snapshot(p.id));
   route("GET", "/api/tasks/:id/events", (req, _s, p) => {
     const u = new URL(req.url!, "http://x");
@@ -35,7 +35,13 @@ export function startServer(orch: Orchestrator) {
   });
 
   // ---- run control ----
-  route("POST", "/api/plan", async (_r, _s, _p, b) => orch.plan(String(b.specDir), { llm: b.llm !== false }));
+  // Legacy plan route: `project` in the body, else the registered repo containing specDir, else the default project.
+  route("POST", "/api/plan", async (_r, _s, _p, b) => {
+    const specDir = String(b.specDir ?? "");
+    const project = b.project ? String(b.project) : orch.projectForPath(path.resolve(specDir))?.id;
+    if (!project) throw new Error("no projects registered");
+    return orch.plan(project, specDir, { llm: b.llm !== false });
+  });
   route("POST", "/api/runs/:id/approve", (_r, _s, p) => { orch.approvePlan(p.id); return { ok: true }; });
   route("POST", "/api/runs/:id/start", (_r, _s, p) => { orch.start(p.id); return { ok: true }; });
   route("POST", "/api/runs/:id/pause", (_r, _s, p) => { orch.pause(p.id); return { ok: true }; });
@@ -71,7 +77,7 @@ export function startServer(orch: Orchestrator) {
 
   const dashboardHtml = () => fs.readFileSync(path.join(PKG_ROOT, "dashboard", "index.html"), "utf8");
 
-  const token = orch.cfg.auth.token;
+  const token = orch.server.auth.token;
   const json = (res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => {
     res.writeHead(status, { "content-type": "application/json", ...headers });
     res.end(JSON.stringify(body));
@@ -126,8 +132,10 @@ export function startServer(orch: Orchestrator) {
     }
   });
 
-  server.listen(orch.cfg.port, orch.cfg.host, () => {
-    console.log(`orch dashboard: http://${orch.cfg.host === "0.0.0.0" ? "localhost" : orch.cfg.host}:${orch.cfg.port}  (repo: ${orch.cfg.repo}; auth ${token ? "on" : "off"})`);
+  const { host, port } = orch.server;
+  server.listen(port, host, () => {
+    const projects = orch.store.listProjects().map((p) => p.id);
+    console.log(`orch dashboard: http://${host === "0.0.0.0" ? "localhost" : host}:${port}  (data: ${orch.home}; projects: ${projects.join(", ") || "none"}; auth ${token ? "on" : "off"})`);
   });
   return server;
 }

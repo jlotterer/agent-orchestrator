@@ -43,7 +43,7 @@ State lives in SQLite (all projects), project repos (code, `tasks.md` ticks, pro
 src/
   cli.ts            orch entry: owner commands + agent-facing decide/ask; talks HTTP to the daemon
   server.ts         node:http router, auth gate, SSE, serves dashboard/index.html
-  orchestrator.ts   side-effecting coordinator: tick, runTask, validate, finalize, PR poll, human actions
+  orchestrator.ts   side-effecting coordinator: project contexts, tick, runTask, validate, finalize, PR poll, human actions
   core/             PURE (no fs, no child_process, no Date.now: time is passed in)
     readiness.ts    selectReady(): which tasks start now                      (built: TASK-03)
     transitions.ts  nextTaskState(): task status after an event               (built: TASK-03)
@@ -53,9 +53,9 @@ src/
     graph.ts        cycle detection over depends_on                           [planned: TASK-13]
   prfeedback.ts     PURE: gh JSON → checks/feedback; worker feedback text (built, R1)
   speckit.ts        tasks.md parser (pure) + spec dir reader + tick writer
-  config.ts         server + project config loaders, forbidden keys, legacy adapter  (built: TASK-05; daemon wiring TASK-09)
+  config.ts         server + project config loaders, forbidden keys, effective Config (built: TASK-05; daemon uses them since TASK-09)
   paths.ts          ORCH_HOME layout                                                  (built: TASK-05)
-  projects.ts       project registry (add/archive/resolve by cwd)                      (built: TASK-07; daemon use TASK-09)
+  projects.ts       project registry (add/archive/resolve by cwd)                      (built: TASK-07; daemon uses it since TASK-09)
   db.ts             better-sqlite3 store, schema + `user_version` migrations           (built: TASK-07)
   git.ts            Git class: worktrees, commits, diffs, merge, gh pr/run/api helpers
   auth.ts           token check, login cookie, bind guard                             (built: TASK-08)
@@ -87,7 +87,11 @@ scripts/            e2e*.mjs scenarios, fake-agent.mjs, fake-gh.mjs, fake-app.mj
 Single-threaded JS: DB writes are synchronous (better-sqlite3), so no row-level races. Re-read the task after every `await` before acting (status may have changed).
 
 ## 5. Projects & Configuration
-**[built: TASK-05 (loaders, paths), TASK-07 (registry); planned: TASK-09]** Today one daemon still serves one repo configured by a single legacy `orch.config.json` (`loadConfig()`). The two-level loaders below exist in `src/config.ts` and `src/paths.ts` and are unit-tested, but the daemon does not call them until TASK-09; `toLegacyConfig(server, project, repoPath)` maps the pair onto today's `Config` (worktrees under `worktrees/<project-id>/`, DB at `$ORCH_HOME/orch.db`) so that wiring needs no orchestrator change.
+**[built: TASK-05 (loaders, paths), TASK-07 (registry), TASK-09 (daemon)]** One daemon serves every registered project. `orch serve` reads `$ORCH_HOME/server.json` (`loadServerConfig`), opens `$ORCH_HOME/orch.db`, and builds the `Orchestrator` from `ServerConfig` + `Store`.
+
+**Project context** (`src/orchestrator.ts`, `ProjectContext`): per project id, `{project, cfg, git, warnings}`, where `cfg` = `toLegacyConfig(server, loadProjectConfig(repo, server).config, repo, {projectId, home})` (the effective settings as a `Config`: worktrees under `worktreesDir(project)`, roles resolved per project) and `git` = `new Git(repo, baseBranch, ghCommand)`. Rebuilt by `plan()` and `start()` (REQ-PROJ-06), built lazily on first use otherwise (e.g. a run that was running at daemon restart), never rebuilt mid-run. Each project has its own merge lock. A context fails to build when the repo directory is missing or the settings are invalid; the error names the project, `plan`/`start` refuse with it, the tick skips that project (stderr once per distinct error), and the snapshot's `config.error` shows it. Settings warnings are logged as `info` events on the run when the context is rebuilt. All run-scoped code takes the context from `run.project_id`.
+
+**Legacy routes** (until TASK-10's project API): they act on the **default project** = the first non-archived project by name, then id. `POST /api/plan` picks `body.project`, else the project whose repo contains `specDir` (deepest match), else the default project.
 
 ### 5.1 ORCH_HOME layout
 ```
@@ -120,11 +124,13 @@ Missing repo on disk → project `error` field set at load; views show it; plan/
 
 ### 5.5 Legacy upgrade
 `[ASSUMED]` Applies to single-repo installs.
-On `orch serve`, if `$ORCH_HOME/server.json` does not exist and a legacy config is found (`ORCH_CONFIG`, or upward search from cwd for an `orch.config.json` containing `repo` or `agents`):
-1. Write `server.json` from its server-level keys (host, port, publicUrl, notify, agents, `scheduler.tickSeconds`, `git.ghCommand`), with `scheduler.maxAgents` = its `maxParallel`.
-2. Back up the legacy file to `orch.config.json.bak`, rewrite it with only project-level keys.
-3. If the legacy `dbPath` exists and `$ORCH_HOME/orch.db` does not, copy it there, run migrations, register the repo as a project, and set `project_id` on all runs.
-4. Record an orchestrator decision "Upgraded single-repo install to project <id>".
+_(→ code: `upgradeLegacyInstall` in `src/cli.ts`; built: TASK-09)_
+On `orch serve`, before the bind guard, if `$ORCH_HOME/server.json` does not exist and a legacy config is found (`--config`, `ORCH_CONFIG`, or upward search from cwd for an `orch.config.json` containing `repo`, `agents` or the pre-0.2 `agent`):
+1. Read it with `loadConfig()` (validation, relative paths, the `agent` block mapping). Server-level keys present in the file (`host`, `port`, `publicUrl`, `notify`, `auth`, `agents`, `scheduler.tickSeconds`, `git.ghCommand`) go into the new server settings, with `scheduler.maxAgents` = its effective `maxParallel`. `auth` is copied as written in the file; an `ORCH_TOKEN` from the environment is never written.
+2. Back up the legacy file to `orch.config.json.bak` and rewrite it with every other key (project-level). If the legacy file is not `<repo>/orch.config.json` and the repo has none, the project keys are written there too.
+3. If the legacy `dbPath` exists and `$ORCH_HOME/orch.db` does not, copy it (and its `-wal`) there. Open the Store (migrations), register the repo as a project unless its path is already registered, and set `project_id` on all runs where it is NULL.
+4. Write `server.json` last: it marks the upgrade as done. If step 3 fails, the legacy file is restored from `.bak` and the next start tries again.
+5. Record an orchestrator decision "Upgraded single-repo install to project <id>" (rationale: what moved where) on the project's newest run, if it has one, and print it.
 
 ## 6. Spec Intake & Planner
 ### 6.1 Tasks file parser
@@ -145,7 +151,7 @@ Prompt `prompts/planner.md` receives title, spec files (except tasks.md, clipped
 `selectReady(input) → ReadinessResult`
 _(→ code: `src/core/readiness.ts`; built in TASK-03 including fairness and plan questions; inputs filled by the orchestrator from TASK-09/13; overlap needs TASK-14)_
 
-Until TASK-09 the orchestrator passes one project (`id: "default"`) with `maxAgents = maxParallel`, `busyAgents = 0`, `planQuestionsOpen = 0`, `lastStartAt = null` and empty `filesOwned`, so single-project behaviour is unchanged.
+The orchestrator (built: TASK-09) passes `maxAgents` = `server.json` `scheduler.maxAgents`, `busyAgents` = planners currently running (phase validators from TASK-15), one entry per non-archived project whose current run is `running` or `paused` (`maxParallel`/`resumeOnRetry` from its context, `lastStartAt` = `projects.last_start_at`; `runStatus: null` when its context fails to build), and the tasks of those runs. `planQuestionsOpen = 0` until TASK-13; `filesOwned` empty until TASK-14. Every start sets `projects.last_start_at` to the tick's time.
 Input:
 ```ts
 interface ReadinessInput {
@@ -174,10 +180,10 @@ _(→ code: `src/core/ownership.ts`; a stub returning `false` since TASK-03, [pl
 `ownedOverlap(a, b)`: false if either list is empty (unknown ownership = unconstrained, preserves today's behaviour). Otherwise, for each pattern compute its **static prefix**: path segments (split on `/`, normalized, no leading `./`) up to but excluding the first segment containing any of `* ? [ {`; a pattern without wildcards is its own prefix. Two patterns overlap if one prefix's segments are a prefix of the other's (equal included; empty prefix overlaps everything). Conservative by design: may serialize tasks that would not actually collide, never runs colliding ones together ([0017](decisions/0017-file-ownership.md)).
 
 ### 7.3 Tick
-Per tick: (1) resume `needs_input` tasks with no open questions; (2) PR polls (§12); (3) phase checks (§10.3); (4) `selectReady` → start tasks (not awaited), log held-for-overlap decisions; (5) per running run: if all tasks `done|skipped` (and phases validated or phase validation disabled) → run `done` + notify; else if nothing can progress without the owner → one "waiting on you" activity event (deduped by last event).
+One timer (`server.json` `scheduler.tickSeconds`), one tick across all projects, never two ticks at once. Per tick, for each project's current run that is `running`: (1) resume `needs_input` tasks with no open questions (T10; a resume continues a session that already held a slot and is not held back by `maxAgents`, so after answers the cap can be exceeded briefly); (2) PR polls (§12, per project settings); (3) phase checks (§10.3); then (4) one `selectReady` over every project (§7.1) → start tasks (not awaited), set `last_start_at`, log held-for-overlap decisions; (5) per running run: if no task is active and all tasks `done|skipped` (and phases validated or phase validation disabled) → run `done` + notify; else if nothing can progress without the owner → one "waiting on you" activity event (deduped by last event).
 
 ### 7.4 Run control
-- One unfinished run per project: `plan()` and `start()` refuse when another run of the project is in `planning|plan_pending|ready|running|paused` [planned: TASK-09].
+- One unfinished run per project: `plan(projectId, specDir, opts)` and `start(runId)` refuse when another run of the project is in `planning|plan_pending|ready|running|paused`, with `project '<id>' already has an unfinished run <runId> (<status>, "<title>"); finish or stop it first` (built: TASK-09). A project's **current run** is its newest run not `done|stopped|failed`; legacy routes without a run id act on the default project's current run.
 - `pause`: status `paused`; tick skips the run's starts; running agents finish.
 - `stop`: SIGTERM agent children of that run, active tasks → `pending`, run `stopped`. A stopped run may be started again if no other unfinished run exists.
 - `recover()` on daemon start: active tasks → `pending` (worktree kept, activity event), `planning` runs → `plan_pending`, kill leftover UI-mode apps from `run/*.pid` [TASK-16].
@@ -289,7 +295,7 @@ All roles end with one fenced ```json block; `extractJson` takes the last parsea
 ## 14. Inbox, Decisions & Notifications
 - Inbox is **derived** on read, never stored: per project/run: `approve_plan` (run `plan_pending`), `question` (unanswered; `task_id` null = plan question), `failed` tasks, `merge` (`pr_open` tasks, with `pr_url`, `feedback`, `ci_status`, `fix_rounds`), `phase` (`needs_human` phase rows) [TASK-15]. Global inbox = union over non-archived projects' current runs, each item with `project_id`, `project_name` [TASK-10].
 - Decisions: append-only rows (actor ∈ planner|worker|validator|phase_validator|orchestrator|human).
-- Notifications (`src/notify.ts`): ntfy POST with Title, Priority, Click (task PR url or `publicUrl`), Tags. Title prefix `[<project name>] ` [TASK-09]. Failures logged to stderr, never thrown.
+- Notifications (`src/notify.ts`): ntfy POST with Title, Priority, Click (task PR url or `publicUrl`), Tags. Title prefix `[<project name>] ` (registry name; built: TASK-09). Failures logged to stderr, never thrown.
 
 ## 15. Interface Contracts
 _(→ code: `src/server.ts`, `src/cli.ts`)_
@@ -306,7 +312,8 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 | GET `/api/projects/:id/state` | `?run=<id>` | snapshot `{project, run, tasks, decisions, questions, inbox, runs, config, costs}` | TASK-10 |
 | GET `/api/inbox` | — | global inbox items | TASK-10 |
 | POST `/api/projects/:id/plan` | `{specDir, llm, dryRun?}` | run, or `{tasks}` for dry run | TASK-10/12 |
-| GET `/api/state`, GET `/api/runs/:id` | `?project=` | legacy snapshot (default project) | built |
+| GET `/api/state`, GET `/api/runs/:id` | `/api/state?project=<id>` | legacy snapshot `{project:{id,name,repo}, run, tasks, decisions, questions, inbox, runs, config}`: the run by id, else the project's current (or newest) run; `runs` and `config` are that project's; no project → default project | built (`project`, `?project=`: TASK-09) |
+| POST `/api/plan`, POST `/api/{start,pause,stop}` | plan: `{specDir, llm, project?}` | legacy: plan resolves the project per §5; start/pause/stop act on the default project's current run | built |
 | POST `/api/runs/:id/{approve,start,pause,stop}` | — | `{ok}` | built |
 | POST `/api/tasks/:id/{retry,skip,stop,merge,mark-merged,edit}` | edit: patch | `{ok}` | built |
 | POST `/api/tasks/:id/request-changes` | `{feedback}` (non-empty) | `{ok}`; 400 unless `pr_open\|pr_checks` | built (TASK-06) |
@@ -325,7 +332,7 @@ Single `dashboard/index.html`. Regions: top bar (project switcher with status do
 
 ## 16. Authentication
 _(→ code: `src/auth.ts`, gate in `src/server.ts`, guard in `src/cli.ts` `serve`; built: TASK-08)_
-- Token: `ORCH_TOKEN` env > `server.json` `auth.token` (until TASK-09, the legacy `orch.config.json` `auth.token`; same precedence via `resolveToken()`). Empty = auth off. The legacy default host is `127.0.0.1` too.
+- Token: `ORCH_TOKEN` env > `server.json` `auth.token` (via `resolveToken()`). Empty = auth off. The human CLI reads port and token from `$ORCH_HOME/server.json` when it exists, else from a legacy `orch.config.json`.
 - Refused requests get 401 `{error:"unauthorized"}` with no reason. The CLI sends `Authorization: Bearer` from `ORCH_TOKEN` or the settings file; the daemon puts `ORCH_TOKEN` in every agent env (planner, worker, validator).
 - Accepted credentials: `Authorization: Bearer <token>` or cookie `orch_token=<token>` (set by `/api/login`: `HttpOnly; SameSite=Strict; Path=/; Max-Age` one year). Compare SHA-256 digests with `crypto.timingSafeEqual`.
 - Unauthenticated routes: `GET /` (dashboard shell), `GET /api/health`, `POST /api/login`. Everything else, including SSE, needs auth when a token is set.
@@ -425,6 +432,7 @@ _(→ code: `src/db.ts`)_
   - `ownership.json` [TASK-14 extends], `phases.json` [TASK-15 extends].
 - **E2E** (`scripts/e2e*.mjs`, Linux/macOS or `node:22` container): throwaway repos, real git, the daemon via `dist/cli.js serve`, fakes: `fake-agent.mjs` (Claude and Gemini dialects, scripted by task key/prompt markers), `fake-gh.mjs` (PR state files + local bare `origin`), `fake-app.mjs` [TASK-16] (HTTP server on `PORT`). Notifications captured with a local HTTP sink when asserted.
   - `e2e.mjs`: full happy-path loop (Claude worker, Gemini validator). `e2e-pr.mjs`: PR mode and feedback loop. `e2e-lifecycle.mjs` [TASK-04]: 13 independent regression scenarios (a)–(m), each its own repo, daemon and port (`node scripts/e2e-lifecycle.mjs b h` runs a subset): stop, `kill -9` + restart, timeout, setup failure, no commits, missing `tasks.md`, planner failure, answer while paused, dirty main checkout, merge conflict, skipped dependency, double answer, criteria edit. Scenario (h2) is `todo`: answering while paused still costs an attempt (T11, owner decision pending).
+  - `e2e-multi.mjs` [TASK-09]: (multi) one daemon, two projects registered through `dist/projects.js` before start, `server.json` with `maxAgents: 1` and ntfy pointed at a local HTTP sink: never more than one active task (polled), the second project's task starts before the first's third (worker-start event ids), refused plan/start naming the unfinished run, worktrees under `ORCH_HOME/worktrees/<id>/`, titles prefixed with the project name; (legacy) a legacy `orch.config.json` plus a 0.1-schema DB with a done run → project registered, old run + decisions visible, files split, a new run completes. Every e2e daemon gets `ORCH_HOME=<tmp>/home` (`makeRepo()` returns it); scripts that write a legacy config exercise the upgrade on each start.
   - `fake-agent.mjs` markers (anywhere in the prompt): `PLANNER_FAIL` (planner exits 1), `SLEEP_LONG` (worker commits `impl/<KEY>.wip`, writes its pid to `$FAKE_STATE_DIR`, sleeps; exits if orphaned), `NO_COMMIT` (done without changes), `CONFLICT_FILE` (also writes `shared.txt`); task key T002 asks a question, T003/T004 fail once at the gate/validator, `CI_TRAP` fails CI once.
 - **E2E helpers** (`scripts/lib/e2e.mjs`): `makeRepo({files, origin?, prefix?})` (throwaway repo on `main` with a local git identity, optional bare `origin`), `writeConfig(repo, cfg)`, `startDaemon({cwd, env, port})` (prefixed logs, resolves when `/api/state` answers), `api(port)` → `(method, path, body)`, `waitFor(fn, {timeoutMs, intervalMs})`, `cleanup({ok})` (kills daemons; keeps temp repos on failure). New scenarios should be a config, a loop and assertions.
 - **Invariants** (`scripts/check-invariants.mjs`, `npm run check`): `dependencies` is exactly `better-sqlite3` (REQ-NFR-02); `/claude|gemini|anthropic/i` in `src/**/*.ts` outside `src/adapters/` fails unless the line matches the allowlist in the script (built-in adapter defaults and legacy migration in `src/config.ts`) (REQ-NFR-04); files in `src/core/` must not import `node:fs`, `node:child_process` or `../db`, nor call `Date.now()` / `new Date()` without arguments (REQ-NFR-05, [0020](decisions/0020-pure-core-and-fixtures.md)).

@@ -29,7 +29,8 @@ export const sh = (cmd, cwd) => execSync(cmd, { cwd, stdio: "pipe", encoding: "u
 /**
  * Create a throwaway git repo on `main` with `files` (relative path -> content) committed.
  * `origin: true` also creates a local bare repo at `<tmp>/origin.git`, adds it as `origin` and pushes main.
- * Returns { tmp, repo, origin, sh } where `sh(cmd, cwd = repo)` runs in the repo.
+ * Returns { tmp, repo, origin, home, sh } where `sh(cmd, cwd = repo)` runs in the repo and `home` (`<tmp>/home`,
+ * not created) is meant as the daemon's ORCH_HOME, so all of its state stays in the temp dir.
  */
 export function makeRepo({ files = {}, origin = false, prefix = "orch-e2e-" } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -50,7 +51,7 @@ export function makeRepo({ files = {}, origin = false, prefix = "orch-e2e-" } = 
   }
   run("git add -A && git -c user.name=t -c user.email=t@x commit -q -m init");
   if (originPath) run(`git remote add origin "${originPath}" && git push -q -u origin main`);
-  return { tmp, repo, origin: originPath, sh: run };
+  return { tmp, repo, origin: originPath, home: path.join(tmp, "home"), sh: run };
 }
 
 /** Write `orch.config.json` into `repo` (left untracked). */

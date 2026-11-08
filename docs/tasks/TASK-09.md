@@ -1,5 +1,5 @@
 # TASK-09: Multi-project orchestration and global agent cap
-**Status:** todo · **Wave:** 5 · **Depends on:** TASK-03, TASK-07, TASK-08 · **Parallel:** No
+**Status:** done · **Wave:** 5 · **Depends on:** TASK-03, TASK-07, TASK-08 · **Parallel:** No
 
 ## Goal
 Make one daemon run many projects. Each project gets its effective config, git context and merge lock. Each project has at most one unfinished run. A global cap limits concurrent agents, and starts are shared fairly between projects. Existing single-repo installs upgrade automatically.

@@ -5,6 +5,8 @@ After=network.target
 [Service]
 Type=simple
 User=USER
+# Your first project's repo: on the first start, orch finds its single-file orch.config.json there and
+# upgrades it (server settings to $ORCH_HOME/server.json, the repo registered as a project).
 WorkingDirectory=WORKDIR
 ExecStart=ORCHBIN serve
 Restart=on-failure
@@ -12,6 +14,8 @@ RestartSec=5
 Environment=NODE_ENV=production
 # Claude Code reads its login from the user's home directory.
 Environment=HOME=/home/USER
+# All orch state: server.json, orch.db, worktrees/<project>/ (architecture §5.1).
+Environment=ORCH_HOME=/home/USER/.orch
 
 [Install]
 WantedBy=multi-user.target

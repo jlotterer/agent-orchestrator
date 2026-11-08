@@ -14,7 +14,7 @@ import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, FA
 
 const PORT = 4812;
 const CHECK_SH = "#!/bin/sh\nfor f in impl/*.txt; do [ -f \"$f\" ] || continue; grep -q OK \"$f\" || { echo \"$f is not OK\"; exit 1; }; done\necho checks passed\n";
-const { tmp, repo, sh } = makeRepo({
+const { tmp, repo, home, sh } = makeRepo({
   prefix: "orch-e2e-pr-",
   origin: true,
   files: {
@@ -54,7 +54,7 @@ const readPr = (branch) => JSON.parse(fs.readFileSync(prFile(branch), "utf8"));
 
 let ok = false;
 try {
-  await startDaemon({ cwd: repo, port: PORT, env: { FAKE_GH_DIR: ghDir } });
+  await startDaemon({ cwd: repo, port: PORT, env: { FAKE_GH_DIR: ghDir, ORCH_HOME: home } });
   const run = await api("POST", "/api/plan", { specDir: path.join(repo, "specs/002-pr"), llm: true });
   let s = await api("GET", "/api/state");
   const policy = Object.fromEntries(s.tasks.map((t) => [t.key, t.merge_policy]));
