@@ -138,6 +138,7 @@ If you upgrade from a single-repo container, the first start of the new image up
 ## Things to know
 
 - The container runs as the non-root user `orch` (user ID 1000), because Claude Code refuses full permissions as root. Don't override `user:` in the compose file.
+- The compose file sets `init: true`, so the container cleans up processes that agents or tests leave behind. Keep it. Without it, a test command that stops background processes can hang.
 - Don't start the container from inside a Claude Code session with the Docker socket mounted. Claude Code detects the nesting and refuses to run.
 - To allow access only from the server itself, publish the port as `"127.0.0.1:4800:4800"`.
 - Each working copy is a full checkout, plus anything `setupCommand` installs. Finished working copies are removed. Stopped or failed ones stay until you retry or skip the task.

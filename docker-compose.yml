@@ -3,6 +3,9 @@ services:
     build: .
     image: orch:local
     container_name: orch
+    # Run an init process as PID 1 so orphaned agent processes are reaped. Without it, a test
+    # suite that kills background processes (orch's own e2e lifecycle tests, for one) hangs.
+    init: true
     restart: unless-stopped
     ports:
       # Reachable from other machines. For localhost-only access use "127.0.0.1:4800:4800".
