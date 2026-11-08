@@ -4,11 +4,14 @@
  * starts the daemon with the fake agent, plans, approves, runs, answers the
  * question, reviews T004's diff and sends it back with feedback (TASK-06), approves the
  * manual merge, and checks that everything lands on main.
+ * TASK-13: `orch plan --dry-run` creates nothing; the planner's plan question (PLAN_QUESTION in spec.md)
+ * has no task and holds every start until answered; approval refuses a dependency cycle.
  *   node scripts/e2e.mjs
  */
 import fs from "node:fs";
 import path from "node:path";
-import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, FAKE_AGENT } from "./lib/e2e.mjs";
+import { spawnSync } from "node:child_process";
+import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, sleep, FAKE_AGENT, ROOT } from "./lib/e2e.mjs";
 
 const PORT = 4811;
 const CHECK_SH = "#!/bin/sh\nfor f in impl/*.txt; do [ -f \"$f\" ] || continue; grep -q OK \"$f\" || { echo \"$f is not OK\"; exit 1; }; done\necho checks passed\n";
@@ -17,7 +20,7 @@ const { repo, home, sh } = makeRepo({
   files: {
     "README.md": "# demo\n",
     "check.sh": CHECK_SH,
-    "specs/001-demo/spec.md": "# Feature Specification: Demo greeting\n\nUsers get greeted.\n",
+    "specs/001-demo/spec.md": "# Feature Specification: Demo greeting\n\nUsers get greeted.\n\nPLAN_QUESTION: capitalization is not settled yet.\n",
     "specs/001-demo/plan.md": "# Implementation Plan: Demo greeting\n\nPlain text files in impl/.\n",
     "specs/001-demo/tasks.md": `# Tasks
 
@@ -59,16 +62,55 @@ try {
   const html = await (await fetch(`http://127.0.0.1:${PORT}/`)).text();
   if (!html.includes("<title>orch</title>")) throw new Error("dashboard did not serve");
 
-  const run = await api("POST", "/api/plan", { specDir: path.join(repo, "specs/001-demo"), llm: true });
+  // TASK-13 (REQ-INTAKE-10): a dry run prints the plan and creates nothing.
+  const specDir = path.join(repo, "specs/001-demo");
+  const dry = spawnSync("node", [path.join(ROOT, "dist/cli.js"), "plan", "--dry-run", specDir], {
+    cwd: repo, encoding: "utf8", env: { ...process.env, ORCH_HOME: home, ORCH_URL: `http://127.0.0.1:${PORT}`, ORCH_TOKEN: "", ORCH_PROJECT: "" },
+  });
+  if (dry.status !== 0) throw new Error(`orch plan --dry-run exited ${dry.status}\n${dry.stdout}\n${dry.stderr}`);
+  for (const k of ["T001", "T002", "T003", "T004", "[P]", "Phase 1: Setup", "Phase 2: Core"]) {
+    if (!dry.stdout.includes(k)) throw new Error(`dry run output lacks ${k}:\n${dry.stdout}`);
+  }
+  if (!/T004 .*\n\s+depends on: T001, T003/.test(dry.stdout)) throw new Error("dry run output lacks T004's dependencies:\n" + dry.stdout);
+  const afterDry = await api("GET", "/api/state");
+  if (afterDry.run || afterDry.runs.length) throw new Error("dry run created a run: " + JSON.stringify(afterDry.runs));
+  console.log("dry run ok:", dry.stdout.split("\n")[0]);
+
+  const run = await api("POST", "/api/plan", { specDir, llm: true });
   console.log("planned:", run.id, run.status);
   let s = await api("GET", "/api/state");
   const t004 = s.tasks.find((t) => t.key === "T004");
   if (t004.merge_policy !== "manual") throw new Error("planner enrichment not applied");
   if (!s.tasks.every((t) => t.acceptance.length === 1)) throw new Error("acceptance criteria missing");
   if (!s.inbox.some((i) => i.type === "approve_plan")) throw new Error("approve_plan not in inbox");
+  // TASK-13 (REQ-INTAKE-07): the planner's question is about the plan, not about a task.
+  const planQ = s.inbox.find((i) => i.type === "question");
+  if (!planQ || planQ.task_id || planQ.task_key || !planQ.plan) throw new Error("expected a plan question with no task: " + JSON.stringify(s.inbox));
+  if (s.questions.some((q) => q.task_id)) throw new Error("plan question was attached to a task");
+
+  // TASK-13 (§6.3): approval refuses a dependency cycle and names its keys. T004 already depends on T001.
+  const t001 = s.tasks.find((t) => t.key === "T001");
+  await api("POST", `/api/tasks/${t001.id}/edit`, { depends_on: ["T004"] });
+  const cyc = await raw("POST", `/api/runs/${run.id}/approve`);
+  if (cyc.status !== 400 || !/cycle/.test(cyc.body.error ?? "") || !cyc.body.error.includes("T001") || !cyc.body.error.includes("T004")) {
+    throw new Error("approving a cycle should be 400 naming T001 and T004: " + JSON.stringify(cyc));
+  }
+  if ((await api("GET", "/api/state")).run.status !== "plan_pending") throw new Error("a refused approval changed the run");
+  console.log("cycle refused:", cyc.body.error);
+  await api("POST", `/api/tasks/${t001.id}/edit`, { depends_on: [] });
 
   await api("POST", `/api/runs/${run.id}/approve`);
   await api("POST", `/api/runs/${run.id}/start`);
+
+  // While the plan question is open no task starts (several ticks at tickSeconds 1).
+  await sleep(3500);
+  s = await api("GET", "/api/state");
+  if (s.run.status !== "running") throw new Error("run should be running, is " + s.run.status);
+  if (!s.tasks.every((t) => t.status === "pending" && t.attempt === 0)) throw new Error("a task started while the plan question was open: " + s.tasks.map((t) => `${t.key}=${t.status}`).join(" "));
+  const evsHeld = await api("GET", `/api/runs/${run.id}/events?limit=1000`);
+  if (!evsHeld.some((e) => e.kind === "state" && /plan questions/.test(e.data.message ?? ""))) throw new Error("no 'waiting on you' event for the plan question");
+  console.log("answering plan question:", planQ.title);
+  await api("POST", `/api/questions/${planQ.id}/answer`, { answer: "Yes" });
 
   const seen = new Set();
   let sentBack = false;
@@ -117,7 +159,7 @@ try {
   const tasksMd = fs.readFileSync(path.join(repo, "specs/001-demo/tasks.md"), "utf8");
   if ((tasksMd.match(/\[x\]/g) || []).length !== 4) throw new Error("tasks.md not ticked");
   const decisions = s.decisions.map((d) => `${d.actor}:${d.text}`);
-  for (const must of ["planner:Marked T004", "worker:Used a plain text file for T001", "human:Answered", "human:Approved merge of T004", "validator:T004 passed validation", "orchestrator:Retrying T003", "orchestrator:Retrying T004", "human:Sending owner feedback on T004"]) {
+  for (const must of ["planner:Marked T004", "human:Answered plan question", "worker:Used a plain text file for T001", "human:Answered", "human:Approved merge of T004", "validator:T004 passed validation", "orchestrator:Retrying T003", "orchestrator:Retrying T004", "human:Sending owner feedback on T004"]) {
     if (!decisions.some((d) => d.startsWith(must))) throw new Error(`missing decision: ${must}\n${decisions.join("\n")}`);
   }
   const evs = await api("GET", `/api/runs/${run.id}/events?limit=1000`);

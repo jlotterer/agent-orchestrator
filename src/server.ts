@@ -34,8 +34,8 @@ export function startServer(orch: Orchestrator) {
   route("DELETE", "/api/projects/:id", (_r, _s, p) => { orch.archiveProject(p.id); return { ok: true }; });
   route("GET", "/api/projects/:id/state", (req, _s, p) => orch.snapshot(p.id, query(req).get("run") ?? undefined));
   route("POST", "/api/projects/:id/plan", async (_r, _s, p, b) => {
-    if (b.dryRun) throw new Error("dryRun is not supported yet"); // TASK-13
     if (typeof b.specDir !== "string" || !b.specDir) throw new Error("specDir is required");
+    if (b.dryRun) return orch.previewPlan(b.specDir, p.id); // REQ-INTAKE-10: no run, no agent, nothing written
     return orch.plan(p.id, b.specDir, { llm: b.llm !== false });
   });
   route("GET", "/api/inbox", () => orch.globalInbox());
@@ -68,6 +68,7 @@ export function startServer(orch: Orchestrator) {
   // Legacy plan route: `project` in the body, else the registered repo containing specDir, else the default project.
   route("POST", "/api/plan", async (_r, _s, _p, b) => {
     const specDir = String(b.specDir ?? "");
+    if (b.dryRun) return orch.previewPlan(specDir);
     const project = b.project ? String(b.project) : orch.projectForPath(path.resolve(specDir))?.id;
     if (!project) throw new Error("no projects registered");
     return orch.plan(project, specDir, { llm: b.llm !== false });
