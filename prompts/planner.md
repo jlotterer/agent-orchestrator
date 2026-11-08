@@ -19,6 +19,7 @@ For EVERY task key above, produce:
 - `depends_on`: the minimal list of task keys that must be merged before this one can start.
 - `merge_policy`: "auto" if a passing validator is enough to merge; "manual" if a human should review the PR first (auth, data migrations, billing, deletion of data, public API changes, anything irreversible).
 - `validate_cmd`: an optional shell command specific to this task that must exit 0 (e.g. a single test file). Null to use the project default.
+- `validate_mode`: "ui" if the task changes what a user sees or does in a browser (pages, components, styles, client-side behaviour) and its criteria are best checked against the running app; otherwise "standard". In UI mode the orchestrator starts the app and the validator checks the criteria in a browser, so write those criteria as things a user can observe on a page.
 - `files_owned`: the repo-relative files or globs this task is expected to change (e.g. `["src/auth/**", "test/auth.test.ts"]`). The orchestrator never runs two tasks with overlapping `files_owned` at the same time, so keep each list as narrow as the task allows; tasks that touch the same files will run one after the other. Use `[]` if you cannot tell (the task is then unconstrained).
 
 Also record:
@@ -30,7 +31,7 @@ Respond with your reasoning briefly, then end your message with ONE fenced ```js
 ```json
 {
   "tasks": [
-    {"key": "T001", "acceptance": ["..."], "depends_on": [], "merge_policy": "auto", "validate_cmd": null, "files_owned": ["src/example/**"]}
+    {"key": "T001", "acceptance": ["..."], "depends_on": [], "merge_policy": "auto", "validate_cmd": null, "validate_mode": "standard", "files_owned": ["src/example/**"]}
   ],
   "decisions": [{"text": "...", "rationale": "..."}],
   "questions": [{"text": "...", "options": ["...", "..."]}]

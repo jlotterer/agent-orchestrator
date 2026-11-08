@@ -33,6 +33,13 @@
  * FAKE_ACTIVE_DIR=<dir> (env): each worker/validator keeps <dir>/active-<KEY> while it runs and appends
  * "<KEY> with <OTHER>" to <dir>/concurrent.log for every other task active when it starts.
  *
+ * UI validation mode (scripts/e2e-ui.mjs, TASK-16): the planner gives tasks whose title has UI_MODE, UI_BLOCKED or
+ * UI_HANG `validate_mode: "ui"`. The UI validator (its prompt has "## App under test") fetches the app's URL and
+ * PASSes only on HTTP 200 (findings: "app answered <status> at <url>"). Markers in the task:
+ *   UI_BLOCKED -> verdict BLOCKED ("no browser tool available")
+ *   UI_HANG    -> once per task (flag $FAKE_STATE_DIR/hung-<KEY>): writes its pid to $FAKE_STATE_DIR/validator-<KEY>.pid
+ *                 and sleeps (up to 120 s; exits early if orphaned); later runs behave normally
+ *
  * FAKE_PROMPT_LOG=<file> (env, scripts/e2e-auth.mjs) appends every prompt received to <file>, so a
  * test can check what reached an agent.
  */
@@ -99,7 +106,7 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
   const tasks = JSON.parse(m[1]);
   say("Reading the spec and tasks.");
   finish({
-    tasks: tasks.map((t) => ({ key: t.key, acceptance: [`impl/${t.key}.txt exists and contains OK`], depends_on: t.depends_on, merge_policy: t.key === "T004" || /(manual)/.test(t.title) ? "manual" : "auto", validate_cmd: null, files_owned: process.env.FAKE_ACTIVE_DIR ? OWNED[t.key] ?? [] : [] })),
+    tasks: tasks.map((t) => ({ key: t.key, acceptance: [`impl/${t.key}.txt exists and contains OK`], depends_on: t.depends_on, merge_policy: t.key === "T004" || /(manual)/.test(t.title) ? "manual" : "auto", validate_cmd: null, validate_mode: /UI_(MODE|BLOCKED|HANG)/.test(t.title) ? "ui" : "standard", files_owned: process.env.FAKE_ACTIVE_DIR ? OWNED[t.key] ?? [] : [] })),
     decisions: [{ text: "Marked T004 manual merge", rationale: "it touches the public API" }],
     // PLAN_QUESTION in spec.md: one question about the spec as a whole (TASK-13, REQ-INTAKE-07).
     questions: prompt.includes("PLAN_QUESTION") ? [{ text: "Should greetings be capitalized throughout the spec?", options: ["Yes", "No"] }] : [],
@@ -113,6 +120,32 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
   finish(trapped
     ? { verdict: "FAIL", reasons: ["integration check failed: PHASE_TRAP (the phase's files are not wired together)"], unmet: ["impl/ files of phase 1 work together"], suggestions: ["add an integration note in impl/"] }
     : { verdict: "PASS", reasons: [], unmet: [], suggestions: [] }, "Phase validated.");
+} else if (prompt.includes("You are the VALIDATOR") && prompt.includes("## App under test")) {
+  // TASK-16: UI mode. The app's URL is the line after "answering at:".
+  const url = (prompt.match(/answering at:\s*\n\s*(\S+)/) || [])[1];
+  const stateDir = process.env.FAKE_STATE_DIR;
+  if (prompt.includes("UI_BLOCKED")) {
+    say("I have no browser tool in this session.");
+    finish({ verdict: "BLOCKED", criteria: [], reasons: ["no browser tool available"], suggestions: [] }, "Blocked.");
+  } else if (prompt.includes("UI_HANG") && stateDir && !fs.existsSync(path.join(stateDir, `hung-${taskKey}`))) {
+    fs.writeFileSync(path.join(stateDir, `hung-${taskKey}`), url ?? "");
+    fs.writeFileSync(path.join(stateDir, `validator-${taskKey}.pid`), String(process.pid));
+    say("Exploring the app for a long time…");
+    const parent = process.ppid, deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      if (process.ppid !== parent) process.exit(1);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    finish({ verdict: "FAIL", criteria: [], reasons: ["hung too long"], suggestions: [] });
+  } else {
+    let status = 0;
+    try { status = (await fetch(url)).status; } catch (e) { status = 0; }
+    tool("browser_navigate", { url }, `HTTP ${status}`);
+    const ok = status === 200;
+    finish(ok
+      ? { verdict: "PASS", criteria: [{ criterion: "the page loads", met: true, evidence: `HTTP 200 from ${url}` }], reasons: [], suggestions: [], findings: [`app answered ${status} at ${url}`] }
+      : { verdict: "FAIL", criteria: [{ criterion: "the page loads", met: false, evidence: `HTTP ${status} from ${url}` }], reasons: [`app answered ${status} at ${url}`], suggestions: [], findings: [`app answered ${status} at ${url}`] }, "Validated in the browser.");
+  }
 } else if (prompt.includes("You are the VALIDATOR")) {
   const diffBad = prompt.includes("NEEDS_REVIEW");
   // REQ-VAL-05: report orch's out-of-scope list as findings; they never turn a PASS into a FAIL.
@@ -167,7 +200,8 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
     if (key === "T001" && process.env.FAKE_ACTIVE_DIR) { fs.mkdirSync("notes", { recursive: true }); fs.writeFileSync("notes/T001.md", "out of scope\n"); }
     tool("Write", { file_path: `impl/${key}.txt`, content }, "written");
     if (!retry) orch(`decide "Used a plain text file for ${key}" --why "the spec does not require a format"`);
-    execSync(`git add -A && git -c user.name=fake -c user.email=f@x commit -q -m "${key}: implement"`, { stdio: "ignore" });
+    // A rerun that writes the same content (e.g. after a stop during validation) has nothing new to commit.
+    execSync(`git add -A && (git diff --cached --quiet || git -c user.name=fake -c user.email=f@x commit -q -m "${key}: implement")`, { stdio: "ignore" });
     tool("Bash", { command: "git commit" }, "committed");
     finish({ status: "done", summary: `${key} implemented in impl/${key}.txt (${content}).`, files: [`impl/${key}.txt`], decisions: [] }, "Implemented.");
   }

@@ -125,6 +125,7 @@ that project.
 | `baseBranch` | branch to branch from and merge into (`main`) |
 | `validation.command` | the deterministic gate run in every worktree before the validator (`npm test`, `pytest`, …) |
 | `validation.phase` | `{enabled, command, maxFixups}`: validate each phase on the base branch once its tasks are done (default on; `command` empty = `validation.command`; `maxFixups` 2). See [Phase validation](#phase-validation) |
+| `validation.ui` | `{startCommand, url, readyTimeoutSeconds, env}`: how orch starts your app for tasks in UI validation mode (`url` default `http://127.0.0.1:{port}/`, timeout 120 s). See [UI validation mode](#ui-validation-mode) |
 | `scheduler.maxParallel` | tasks of this project running at once. `1` = sequential. Raise it once you trust the dependency graph |
 | `scheduler.maxAttempts` | worker attempts before a task goes to your inbox (`2`) |
 | `git.pr` | `true` = push + `gh pr create` + `gh pr merge`; `false` = merge locally, no GitHub needed |
@@ -276,9 +277,10 @@ Any markdown file that follows the `- [ ] T001 …` convention works, Spec Kit o
 
 * **Worker**: the task, acceptance criteria, `plan.md` + `spec.md` (capped by `handoff.specChars`),
   the hand-off brief, the files it owns, and any feedback from a failed attempt. Prompt: `prompts/worker.md`.
-* **Validator**: the task, criteria, the worker's summary (as claims to check), the diff, and the
-  changed files outside the task's owned files, which it reports as `findings` (never a FAIL by
-  themselves). It runs the checks itself. Prompt: `prompts/validator.md`.
+* **Validator**: the task, criteria, the worker's summary (as claims to check), the diff, the test
+  gate's output, and the changed files outside the task's owned files, which it reports as `findings`
+  (never a FAIL by themselves). It runs the checks itself. Prompt: `prompts/validator.md`, or
+  `prompts/validator-ui.md` in UI mode, which adds the running app's address.
 * **Phase validator**: the phase's tasks with their criteria and workers' summaries, the spec excerpt and the
   phase command's output, in a checkout of the base branch. Prompt: `prompts/phase-validator.md`.
 * **Planner**: all spec files plus the parsed task list. Prompt: `prompts/planner.md`.
@@ -306,6 +308,50 @@ validation passes", merge auto) that every later unfinished task now depends on,
 decision. Fix-up tasks run like any task, are never ticked in `tasks.md`, and carry a **fix-up** badge.
 After `validation.phase.maxFixups` rounds (`0` = straight away) the phase goes to the inbox with
 **Re-run validation** and **Accept phase**. `validation.phase.enabled: false` turns it all off.
+
+### UI validation mode
+
+For tasks that change what users see, the validator can check the criteria against the running app in
+a browser. The planner proposes `validate_mode: "ui"` for such tasks; change it in the Plan tab's edit
+dialog (**Validation mode**) or with `POST /api/tasks/:id/edit {"validate_mode": "ui"}`.
+
+Tell orch how to start the app in `orch.config.json`:
+
+```json
+{
+  "validation": {
+    "command": "npm test",
+    "ui": { "startCommand": "npm run dev -- --port $PORT --host 127.0.0.1", "readyTimeoutSeconds": 120, "env": { "NODE_ENV": "development" } }
+  }
+}
+```
+
+After the test gate passes, orch picks a free port, runs `startCommand` with `sh -c` in the task's
+worktree with `PORT` set, and polls `validation.ui.url` (default `http://127.0.0.1:{port}/`) every
+second until it answers with a status below 500. The validator gets that address. orch always stops
+the app's whole process group afterwards (SIGTERM, then SIGKILL after 5 s): after the verdict, when you
+stop the task or the run, when orch shuts down, and, from a pidfile in `$ORCH_HOME/run/`, on the next
+start after a crash. Your app must listen on `$PORT`.
+
+* The app doesn't answer within `readyTimeoutSeconds`, or exits: the attempt fails, and the feedback
+  holds the app's last 3000 characters of output.
+* The validator answers `BLOCKED` because it has no browser tool, or `startCommand` isn't set: the task
+  fails at once, without retries, and goes to your inbox. Fix the setup, then **Re-run from scratch**.
+
+**Give the validator a browser.** orch doesn't drive a browser itself; the validator's agent program
+does, with its own tools. For Claude Code, add the Playwright MCP server for the user that runs orch
+(headless on a server):
+
+```bash
+claude mcp add --scope user playwright -- npx -y @playwright/mcp@latest --headless
+claude mcp list    # playwright: ✓ connected
+```
+
+The built-in `claude` adapter runs with `--permission-mode bypassPermissions`, so the browser tools need
+no approval. To give only validators a browser, define a second adapter in `server.json` (e.g.
+`"claude-ui"` with `"extraArgs": ["--permission-mode", "bypassPermissions", "--mcp-config", "/home/you/playwright-mcp.json"]`)
+and point the project's `roles.validator` at it. In Docker, install the browser in the image
+(`npx playwright install --with-deps chromium`). UI mode needs Linux or macOS (process groups).
 
 ### Merging
 
@@ -452,6 +498,13 @@ item: Re-run validates again, Accept lets phase 2 proceed. A phase ticked before
 across the upgrade (`kill -9`, phase rows deleted, restart), pass their finished phase without a check.
 Run one scenario with `node scripts/e2e-phase.mjs b`.
 
+`scripts/e2e-ui.mjs` checks UI validation mode with a fake app (`scripts/fake-app.mjs`): a UI task
+passes only when the fake validator gets HTTP 200 from the address it was given, both validator prompts
+carry the gate output, an app that never gets ready (`NEVER_READY`, 3 s timeout) fails the attempt with
+its output, a `BLOCKED` verdict fails the task on attempt 1, and the app is stopped after `kill -9` and
+restart, on stopping the task, and on daemon shutdown. Each scenario checks that no app process or
+pidfile is left. Run one with `node scripts/e2e-ui.mjs d`.
+
 `scripts/e2e-multi.mjs` runs one daemon over two registered repos with `scheduler.maxAgents: 1`: never
 more than one active task, the second project's task starting before the first project's third,
 refused plans and starts naming the unfinished run, worktrees under `ORCH_HOME`, and notification
@@ -486,7 +539,7 @@ skipped until the task that builds them removes the marker.
 
 The e2e tests need Linux or macOS (they spawn `.mjs` files and `sh`). On Windows, run them in a
 container. Copy the source in so the container's `npm ci` does not replace your Windows `node_modules`:
-`docker run --rm -v "$PWD:/src:ro" node:22 sh -c "mkdir /w && cd /src && tar --exclude=./node_modules --exclude=./dist --exclude=./.git -cf - . | tar -xf - -C /w && cd /w && npm ci && npm test"`.
+`docker run --rm --init -v "$PWD:/src:ro" node:22 sh -c "mkdir /w && cd /src && tar --exclude=./node_modules --exclude=./dist --exclude=./.git -cf - . | tar -xf - -C /w && cd /w && npm ci && npm test"`.
 
 ## Layout
 

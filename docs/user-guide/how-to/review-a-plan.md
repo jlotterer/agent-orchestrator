@@ -10,7 +10,8 @@ No task runs until you approve the plan. Use the time to check that each task ha
    - The title and the acceptance criteria. A task without criteria shows "no acceptance criteria (validator will use the description)".
    - The dependencies, as "after T001, T002" or "no deps".
    - The merge policy and, if the task has one, its own test command.
-   - The files each task owns, and under **not with**, the tasks it never runs beside because they own some of the same files. The validation mode (**Planned**).
+   - The files each task owns, and under **not with**, the tasks it never runs beside because they own some of the same files.
+   - **🖥 UI validation** for tasks in UI validation mode. If the project has no start command for the app, the row also shows **⚠ no start command**.
 3. Go to the **Decisions** tab to read why the planner made each choice.
 
 ## Edit a task
@@ -28,7 +29,7 @@ You can edit a task before approval. After approval, you can still edit tasks th
    | **Depends on (comma-separated task keys)** | For example, `T001, T003`. |
    | **Merge policy** | **auto — merge when validated**, or **manual — wait for my review**. |
    | **Validation command (blank = project default)** | A task-specific test command, or nothing to use the project's `validation.command`. |
-   | Validation mode (**Planned**) | `standard`, or `ui` to test the running app. See [Validate UI tasks in a browser](validate-ui-tasks.md). |
+   | **Validation mode** | `standard`, or `ui` to test the running app. See [Validate UI tasks in a browser](validate-ui-tasks.md). |
    | Owned files | Files or folders the task changes, one per line, such as `src/auth/**`. Leave it blank for no restriction. See [Run tasks in parallel](run-in-parallel.md). |
 
 4. Select **Save**.

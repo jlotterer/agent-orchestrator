@@ -10,7 +10,7 @@ Every task has one status at a time. The dashboard shows it on the task card, an
 | `needs_input` | **Needs input** | The worker asked a question and stopped. | Answer, skip |
 | `pr_checks` | **Waiting on CI** | An `auto` task's pull request is open, and orch waits for checks before merging. | Merge now, send back, merged elsewhere, re-run |
 | `pr_open` | **Review / merge** | The task waits for your review, or merging or the pull request needs you. | Edit, merge now, send back, merged elsewhere, re-run |
-| `failed` | **Failed** | The task ran out of attempts, its pull request was closed without merging, or (**Planned**) its UI validator couldn't use a browser. | Edit, retry, skip |
+| `failed` | **Failed** | The task ran out of attempts, its pull request was closed without merging, or its UI validation was blocked (the validator couldn't use a browser, or the project has no start command for the app). | Edit, retry, skip |
 | `done` | **Done** | Merged. Its working copy is removed. | Re-run |
 | `skipped` | **Done** | You skipped it. Tasks that depend on it can start. | Re-run |
 

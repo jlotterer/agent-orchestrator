@@ -8,7 +8,7 @@ This page describes what each agent role receives, what it can do while it works
 | :--- | :--- | :--- |
 | Planner | The feature title, every file in the feature folder except `tasks.md` (up to twice `handoff.specChars`), and the imported task list. | Not applicable |
 | Worker | The task's key, title, description and acceptance criteria; an excerpt of `plan.md` and `spec.md` (up to `handoff.specChars`); a hand-off brief; its branch and base branch; the test command; and feedback from a failed attempt, fix round or **Send back**. The files it owns. | Other tasks' sessions |
-| Validator | The task, its acceptance criteria, the worker's summary as claims to check, and the diff against the base branch. The test gate's output (**Planned**). The list of changes outside the task's owned files. The app's address in UI mode (**Planned**). | The worker's reasoning or conversation |
+| Validator | The task, its acceptance criteria, the worker's summary as claims to check, and the diff against the base branch. The test gate's output. The list of changes outside the task's owned files. The app's address in UI mode. | The worker's reasoning or conversation |
 | Phase validator | The phase's tasks and their summaries, an excerpt of the spec, and the phase test output. | Not applicable |
 
 ### The hand-off brief
@@ -48,7 +48,7 @@ Each role ends its final message with one JSON block. orch reads the last JSON b
 }
 ```
 
-orch ignores entries for task keys that don't exist. Each task can also have `files_owned`, a list of files or glob patterns. **Planned:** `validate_mode` (`standard` or `ui`).
+orch ignores entries for task keys that don't exist. Each task can also have `files_owned`, a list of files or glob patterns, and `validate_mode` (`standard` or `ui`).
 
 ### Worker
 
@@ -77,7 +77,9 @@ orch ignores entries for task keys that don't exist. Each task can also have `fi
 
 Anything other than `PASS`, including a missing block, fails the attempt. The worker's next attempt gets the reasons and the unmet criteria.
 
-The verdict can include `findings`, such as changes outside the task's owned files. Findings don't fail the task by themselves. **Planned:** a `BLOCKED` verdict in UI mode when the validator can't use a browser, which fails the task without retries.
+The verdict can include `findings`, such as changes outside the task's owned files. Findings don't fail the task by themselves.
+
+In UI mode, the validator uses a different prompt (`validator-ui.md`) that adds the app's address, and its verdict can also be `BLOCKED` when it can't use a browser. `BLOCKED` fails the task at once, without retries. In standard mode, `BLOCKED` fails the attempt like `FAIL`.
 
 ### Phase validator
 

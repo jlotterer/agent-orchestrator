@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import type { ChildProcess } from "node:child_process";
-import type { Config, ServerConfig } from "./config.js";
+import type { Config, ProjectConfig, ServerConfig } from "./config.js";
 import { loadProjectConfig, toLegacyConfig, DEFAULT_PROJECT_CONFIG } from "./config.js";
 import type { Store } from "./db.js";
 import { Git, shell } from "./git.js";
@@ -20,7 +20,8 @@ import { findCycle } from "./core/graph.js";
 import { nextTaskState, type TaskEvent, type TransitionResult, type Effect } from "./core/transitions.js";
 import { decidePrAction } from "./core/prpoll.js";
 import { UNFINISHED_RUN_STATUSES, resolveProjectForCwd, registerProject, archiveProject, type RegisterResult } from "./projects.js";
-import { orchHome } from "./paths.js";
+import { orchHome, runDir } from "./paths.js";
+import { startApp, killLeftovers, AppStartError, APP_OUTPUT_CHARS, type AppProcess } from "./appserver.js";
 
 const FINISHED: TaskStatus[] = ["done", "skipped"];
 const ACTIVE: TaskStatus[] = ["running", "validating"];
@@ -57,12 +58,16 @@ export interface ProjectContext {
   git: Git;
   /** Phase validation settings (`validation.phase`, §10.3) and the phase validator's role (defaults to the validator's). */
   phase: { enabled: boolean; command: string; maxFixups: number; role: RoleConfig };
+  /** UI validation mode settings (`validation.ui`, §10.4). */
+  ui: ProjectConfig["validation"]["ui"];
   /** Unknown settings keys that were ignored; logged to the run's activity when the context is rebuilt. */
   warnings: string[];
 }
 
 export class Orchestrator extends EventEmitter {
   private procs = new Map<string, ChildProcess>(); // task id -> running agent
+  /** Apps under test of UI-mode validations, by task id (§10.4). Stopped in `finally`, on stop and on shutdown. */
+  private apps = new Map<string, AppProcess>();
   private timer: NodeJS.Timeout | null = null;
   private ticking = false;
   private contexts = new Map<string, ProjectContext>();
@@ -95,6 +100,7 @@ export class Orchestrator extends EventEmitter {
     return {
       project, cfg, git: new Git(cfg.repo, cfg.baseBranch, cfg.git.ghCommand), warnings: loaded.warnings,
       phase: { enabled: ph.enabled, command: ph.command, maxFixups: ph.maxFixups, role: { adapter: role.adapter, model: role.model } },
+      ui: loaded.config.validation.ui,
     };
   }
   /** Re-read the project's settings (at run creation and start, REQ-PROJ-06). */
@@ -292,6 +298,7 @@ export class Orchestrator extends EventEmitter {
       // Needs no project settings, so stopping works even when the project's context cannot be built.
       this.procs.get(cur.id)?.kill("SIGTERM");
       this.procs.delete(cur.id);
+      void this.stopApp(cur.id); // a UI-mode app under test goes with its validator (§10.4)
       return;
     }
     const ctx = this.ctxOf(run), { cfg, git } = ctx;
@@ -390,6 +397,7 @@ export class Orchestrator extends EventEmitter {
         if (pt.merge_policy === "manual" || pt.merge_policy === "auto") patch.merge_policy = pt.merge_policy;
         if (typeof pt.validate_cmd === "string" && pt.validate_cmd.trim()) patch.validate_cmd = pt.validate_cmd.trim();
         if (Array.isArray(pt.files_owned)) patch.files_owned = cleanOwned(pt.files_owned);
+        if (pt.validate_mode === "ui" || pt.validate_mode === "standard") patch.validate_mode = pt.validate_mode;
         this.store.updateTask(t.id, patch);
       }
       for (const d of out.decisions ?? []) this.decide(run, null, "planner", String(d.text ?? d), d.rationale ?? null);
@@ -424,9 +432,14 @@ export class Orchestrator extends EventEmitter {
   }
 
   /** Human edits to the plan before approval (also allowed later for pending tasks). */
-  editTask(taskId: string, patch: Partial<Pick<Task, "title" | "description" | "acceptance" | "depends_on" | "merge_policy" | "validate_cmd" | "max_attempts" | "files_owned">>) {
+  editTask(taskId: string, patch: Partial<Pick<Task, EditableField>>) {
     const t = this.store.getTask(taskId);
     if (!t) throw new Error("task not found");
+    const unknown = Object.keys(patch ?? {}).filter((k) => !EDITABLE.includes(k as EditableField));
+    if (unknown.length) throw new Error(`cannot edit ${unknown.join(", ")}; editable fields: ${EDITABLE.join(", ")}`);
+    if (patch.validate_mode !== undefined && patch.validate_mode !== "standard" && patch.validate_mode !== "ui") {
+      throw new Error(`validate_mode must be "standard" or "ui"`);
+    }
     if (patch.files_owned !== undefined) {
       if (!Array.isArray(patch.files_owned)) throw new Error("files_owned must be an array of paths or globs");
       patch = { ...patch, files_owned: cleanOwned(patch.files_owned) };
@@ -729,61 +742,118 @@ export class Orchestrator extends EventEmitter {
 
   private async validate(run: Run, task: Task) {
     const worktree = task.worktree!;
-    const { cfg, git } = this.ctxOf(run);
+    const ctx = this.ctxOf(run), { cfg, git } = ctx;
 
     if ((await git.commitsAhead(worktree)) === 0) {
       await this.failOrRetry(run, task, "No commits on the task branch; the worker produced no changes.");
       return;
     }
 
-    // 1. Deterministic gate.
+    // 1. Deterministic gate. Its output goes to the validator too (REQ-VAL-02).
     const cmd = validateCmd(cfg, task);
+    let gateOutput = "";
     if (cmd) {
       this.log(run, task, "state", { message: `validation gate: ${cmd}` });
       const r = await shell(cmd, worktree, { timeoutMs: 20 * 60_000 });
       this.log(run, task, "tool", { role: "gate", name: "shell", input: { command: cmd }, exit: r.code, output: clip(r.stdout + r.stderr, 3000) });
+      gateOutput = clip((r.stdout + "\n" + r.stderr).trim(), 4000);
       if (r.code !== 0) {
-        await this.failOrRetry(run, task, `Validation command failed (exit ${r.code}): \`${cmd}\`\n\n${clip(r.stdout + "\n" + r.stderr, 4000)}`);
+        await this.failOrRetry(run, task, `Validation command failed (exit ${r.code}): \`${cmd}\`\n\n${gateOutput}`);
         return;
       }
     }
 
-    // 2. Independent validator agent.
+    // 2. Independent validator agent; in UI mode against the running app (§10.4).
     if (cfg.validation.agent) {
-      const validatorAgent = this.roleAgent(cfg, "validator");
-      this.log(run, task, "state", { message: `validator started (${validatorAgent.label})` });
-      const diff = await git.diffFromBase(worktree);
-      // REQ-VAL-05: orch lists edits outside the owned files; the validator reports them as findings, never a FAIL.
-      const changed = task.files_owned.length ? (await git.diffFiles(worktree, 0)).files.map((f) => f.path) : [];
-      const scope = outOfScope(changed, task.files_owned);
-      const prompt = render(loadPrompt("validator", cfg.repo), {
-        files_owned: ownedSection(task.files_owned),
-        out_of_scope: task.files_owned.length ? (scope.length ? scope.map((f) => `- ${f}`).join("\n") : "(none)") : "(the task declares no owned files)",
-        task_key: task.key, task_title: task.title, task_description: task.description, acceptance: this.bullets(task.acceptance),
-        worker_summary: task.summary ?? "(none)", diff, branch: task.branch, base_branch: cfg.baseBranch,
-        validate_hint: cmd ? ` (\`${cmd}\` already passed; re-run or extend it)` : "",
-      });
-      const res = await runAgent({
-        ...validatorAgent, cwd: worktree, prompt, env: this.taskEnv(task, "validator"),
-        onSpawn: (c) => this.procs.set(task.id, c),
-        onEvent: (kind, data) => this.log(run, task, kind, { role: "validator", ...data }),
-      });
-      this.procs.delete(task.id);
-      const cur = this.store.getTask(task.id)!;
-      if (cur.status !== "validating") return; // stopped
-      const v = res.structured ?? {};
-      const verdict = String(v.verdict ?? "").toUpperCase();
-      this.log(run, task, "verdict", { verdict: verdict || "NONE", reasons: v.reasons ?? [], criteria: v.criteria ?? [], suggestions: v.suggestions ?? [], findings: Array.isArray(v.findings) ? v.findings.map(String) : [], out_of_scope: scope, cost_usd: res.costUsd });
-      if (verdict !== "PASS") {
-        const reasons = Array.isArray(v.reasons) && v.reasons.length ? v.reasons.map((r: any) => `- ${r}`).join("\n") : clip(res.text, 1500) || "validator gave no verdict";
-        const unmet = Array.isArray(v.criteria) ? v.criteria.filter((c: any) => c && c.met === false).map((c: any) => `- UNMET: ${c.criterion} (${c.evidence ?? "no evidence"})`).join("\n") : "";
-        await this.failOrRetry(run, task, `Validator verdict: ${verdict || "NONE"}\n${reasons}\n${unmet}`);
+      const ui = task.validate_mode === "ui";
+      if (ui && !ctx.ui.startCommand.trim()) {
+        await this.blocked(run, task, "validation.ui.startCommand is not set in the project's orch.config.json, so orch cannot start the app");
         return;
       }
-      this.decide(run, task, "validator", `${task.key} passed validation`, Array.isArray(v.criteria) ? `${v.criteria.filter((c: any) => c.met).length}/${v.criteria.length} criteria met` : null);
+      let app: AppProcess | null = null;
+      try {
+        if (ui) {
+          this.log(run, task, "state", { message: `starting app: ${ctx.ui.startCommand}` });
+          try {
+            app = await startApp({
+              cwd: worktree, startCommand: ctx.ui.startCommand, urlTemplate: ctx.ui.url, env: ctx.ui.env,
+              readyTimeoutSeconds: ctx.ui.readyTimeoutSeconds, pidDir: runDir(this.home), taskId: task.id,
+              onSpawn: (a) => this.apps.set(task.id, a),
+            });
+          } catch (e: any) {
+            if (this.store.getTask(task.id)!.status !== "validating") return; // stopped while the app started
+            const output = e instanceof AppStartError ? e.output : "";
+            this.log(run, task, "tool", { role: "app", name: "shell", input: { command: ctx.ui.startCommand }, exit: null, output: clip(output, 3000) });
+            await this.failOrRetry(run, task, `${e?.message ?? e}\n\nApp output (last ${APP_OUTPUT_CHARS} chars):\n${output.trim() || "(no output)"}`);
+            return;
+          }
+          this.log(run, task, "state", { message: `app ready at ${app.url} (pid ${app.pid})` });
+          if (this.store.getTask(task.id)!.status !== "validating") return; // stopped meanwhile; finally stops the app
+        }
+        await this.runValidator(run, task, cmd, gateOutput, app);
+      } finally {
+        if (ui) {
+          await this.stopApp(task.id);
+          if (app) this.log(run, task, "state", { message: `app stopped (pid ${app.pid})` });
+        }
+      }
+      return;
     }
 
     await this.finalize(run, this.store.getTask(task.id)!);
+  }
+
+  /** The validator agent (§10.2) and its verdict: PASS → finalize; BLOCKED in UI mode → T19; anything else → T3/T4. */
+  private async runValidator(run: Run, task: Task, cmd: string, gateOutput: string, app: AppProcess | null) {
+    const worktree = task.worktree!;
+    const { cfg, git } = this.ctxOf(run);
+    const validatorAgent = this.roleAgent(cfg, "validator");
+    this.log(run, task, "state", { message: `validator started (${validatorAgent.label}${app ? `, UI mode at ${app.url}` : ""})` });
+    const diff = await git.diffFromBase(worktree);
+    // REQ-VAL-05: orch lists edits outside the owned files; the validator reports them as findings, never a FAIL.
+    const changed = task.files_owned.length ? (await git.diffFiles(worktree, 0)).files.map((f) => f.path) : [];
+    const scope = outOfScope(changed, task.files_owned);
+    const prompt = render(loadPrompt(app ? "validator-ui" : "validator", cfg.repo), {
+      files_owned: ownedSection(task.files_owned),
+      out_of_scope: task.files_owned.length ? (scope.length ? scope.map((f) => `- ${f}`).join("\n") : "(none)") : "(the task declares no owned files)",
+      task_key: task.key, task_title: task.title, task_description: task.description, acceptance: this.bullets(task.acceptance),
+      worker_summary: task.summary ?? "(none)", diff, branch: task.branch, base_branch: cfg.baseBranch,
+      validate_hint: cmd ? ` (\`${cmd}\` already passed; re-run or extend it)` : "",
+      gate_output: cmd ? `\`${cmd}\` passed. Its output:\n\n\`\`\`\n${gateOutput || "(no output)"}\n\`\`\`` : "(no test command is configured for this task or project)",
+      app_url: app?.url ?? "",
+    });
+    const res = await runAgent({
+      ...validatorAgent, cwd: worktree, prompt, env: this.taskEnv(task, "validator"),
+      onSpawn: (c) => this.procs.set(task.id, c),
+      onEvent: (kind, data) => this.log(run, task, kind, { role: "validator", ...data }),
+    });
+    this.procs.delete(task.id);
+    const cur = this.store.getTask(task.id)!;
+    if (cur.status !== "validating") return; // stopped
+    const v = res.structured ?? {};
+    const verdict = String(v.verdict ?? "").toUpperCase();
+    this.log(run, task, "verdict", { verdict: verdict || "NONE", reasons: v.reasons ?? [], criteria: v.criteria ?? [], suggestions: v.suggestions ?? [], findings: Array.isArray(v.findings) ? v.findings.map(String) : [], out_of_scope: scope, ...(app ? { app_url: app.url } : {}), cost_usd: res.costUsd });
+    const reasonList: string[] = Array.isArray(v.reasons) ? v.reasons.map(String).filter(Boolean) : [];
+    // BLOCKED is only meaningful in UI mode (no browser tool); elsewhere it is a non-PASS like any other.
+    if (verdict === "BLOCKED" && app) {
+      await this.blocked(run, task, reasonList.join("; ") || "the validator could not drive a browser");
+      return;
+    }
+    if (verdict !== "PASS") {
+      const reasons = reasonList.length ? reasonList.map((r) => `- ${r}`).join("\n") : clip(res.text, 1500) || "validator gave no verdict";
+      const unmet = Array.isArray(v.criteria) ? v.criteria.filter((c: any) => c && c.met === false).map((c: any) => `- UNMET: ${c.criterion} (${c.evidence ?? "no evidence"})`).join("\n") : "";
+      await this.failOrRetry(run, task, `Validator verdict: ${verdict || "NONE"}\n${reasons}\n${unmet}`);
+      return;
+    }
+    this.decide(run, task, "validator", `${task.key} passed validation`, Array.isArray(v.criteria) ? `${v.criteria.filter((c: any) => c.met).length}/${v.criteria.length} criteria met` : null);
+    await this.finalize(run, this.store.getTask(task.id)!);
+  }
+
+  /** T19: UI validation cannot run; the task fails without retries and goes to the inbox (REQ-VAL-09). */
+  private async blocked(run: Run, task: Task, reason: string) {
+    const r = await this.fire(run, task.id, { type: "validator_blocked", reason });
+    if (r.rejected) return;
+    this.log(run, task, "state", { message: "UI validation blocked; failed without retrying; needs a human", feedback: clip(r.patch?.last_feedback ?? reason, 2000) });
   }
 
   /** T3/T4: retry with feedback, or fail and notify when the attempt budget is used. */
@@ -1313,6 +1383,18 @@ export class Orchestrator extends EventEmitter {
     return this.ctxOf(this.store.getRun(task.run_id)!).git.diffFiles(task.worktree);
   }
 
+  /** Stop the UI-mode app of a task, if one is running. */
+  private async stopApp(taskId: string) {
+    const app = this.apps.get(taskId);
+    if (!app) return;
+    this.apps.delete(taskId);
+    await app.stop();
+  }
+  /** Daemon shutdown (SIGINT/SIGTERM): stop every UI-mode app so none outlives orch (REQ-VAL-08). */
+  async shutdown() {
+    await Promise.all([...this.apps.keys()].map((id) => this.stopApp(id).catch((e) => console.error("[shutdown]", e))));
+  }
+
   /** T14: only active tasks can be stopped. */
   stopTask(taskId: string) {
     void this.human(taskId, { type: "human_stop" }).catch((e) => console.error("[stop]", e));
@@ -1442,17 +1524,26 @@ export class Orchestrator extends EventEmitter {
     const s = this.server;
     const server = { maxAgents: s.scheduler.maxAgents, ntfy: !!s.notify.ntfyUrl, ntfyToken: !!s.notify.ntfyToken, auth: !!s.auth.token };
     if (!project) return { repo: null, ...server };
-    let c: Config, ph: ProjectContext["phase"];
+    let c: Config, ph: ProjectContext["phase"], ui: ProjectContext["ui"];
     try {
-      ({ cfg: c, phase: ph } = this.context(project.id));
+      ({ cfg: c, phase: ph, ui } = this.context(project.id));
     } catch (e: any) {
       return { repo: project.repo_path, error: e?.message ?? String(e), ...server };
     }
-    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries({ ...c.agents.roles, phaseValidator: ph.role }).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), phaseValidation: { enabled: ph.enabled, command: ph.command, maxFixups: ph.maxFixups }, ...server, prFeedback: c.git.pr && c.git.feedback.enabled ? { waitForChecks: c.git.feedback.waitForChecks, maxRounds: c.git.feedback.maxRounds, trigger: c.git.feedback.trigger } : null };
+    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries({ ...c.agents.roles, phaseValidator: ph.role }).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), phaseValidation: { enabled: ph.enabled, command: ph.command, maxFixups: ph.maxFixups }, uiValidation: { startCommand: ui.startCommand, url: ui.url, readyTimeoutSeconds: ui.readyTimeoutSeconds }, ...server, prFeedback: c.git.pr && c.git.feedback.enabled ? { waitForChecks: c.git.feedback.waitForChecks, maxRounds: c.git.feedback.maxRounds, trigger: c.git.feedback.trigger } : null };
   }
 
   /** On daemon start: anything that was 'running' when we died goes back to pending. */
   recover() {
+    // UI-mode apps a crashed daemon left running (§10.4): their pidfiles name the task.
+    const leftovers = killLeftovers(runDir(this.home));
+    for (const l of leftovers.found) {
+      const task = this.store.getTask(l.taskId);
+      const message = l.alive ? `daemon restarted: stopped the leftover UI app (pid ${l.pid})` : `daemon restarted: removed the pidfile of UI app pid ${l.pid} (already gone)`;
+      if (task) this.log(task.run_id, task, "state", { message });
+      else console.warn(`[recover] ${message} for unknown task ${l.taskId}`);
+    }
+    leftovers.done.catch((e) => console.error("[recover] leftover apps:", e));
     for (const run of this.store.listRuns()) {
       if (CLOSED_RUN.has(run.status)) continue;
       for (const t of this.store.listTasks(run.id)) {
@@ -1472,6 +1563,10 @@ export class Orchestrator extends EventEmitter {
     this.ensureTicking();
   }
 }
+
+/** Task fields the owner may edit (REQ-INTAKE-09). */
+const EDITABLE = ["title", "description", "acceptance", "depends_on", "merge_policy", "validate_cmd", "validate_mode", "max_attempts", "files_owned"] as const;
+type EditableField = (typeof EDITABLE)[number];
 
 /** Planner/owner `files_owned`: trimmed non-empty strings, no duplicates. */
 function cleanOwned(v: unknown[]): string[] {
