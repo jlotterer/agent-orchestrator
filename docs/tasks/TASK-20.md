@@ -19,11 +19,12 @@ REQ-INTAKE-11 (parse and preview; plan values are wired in TASK-22), REQ-INTAKE-
 - `src/core/brief.ts` (pure):
   - `parseFrontmatter(text)`: the YAML subset the contract allows (scalars, flow lists, comments). Unknown keys are kept and reported as warnings; anything else is a parse error with a line.
   - `parseBrief(key, text)`: returns `{version, fields, criteria, targetFiles, contracts, cites, warnings, errors}`; version missing or unsupported → error naming the file.
-  - `checkFeature(spec)`: markers in `spec.md` and briefs (`[NEEDS CLARIFICATION`, `TBD`, `TODO`) → errors; parallel target-file overlap, brief over `briefChars`, test-only task, unresolved contract, `[P]`/frontmatter conflict → warnings. Each with file, line and message.
-  - `mergeBriefIntoTask(imported, brief)`: frontmatter wins; returns the merged task and the conflicts for decisions.
+  - `checkFeature(spec)`: markers in `spec.md`, briefs and `contracts/*.md` (`[NEEDS CLARIFICATION`, `TBD`, `TODO`) → errors; parallel target-file overlap, brief over `briefChars`, test-only task (paths under `fixtures/` are not test paths), unresolved contract → warnings; `[P]`/frontmatter differences → conflicts (decisions, not warnings). Each problem with file, line and message, in the order §6.4 defines.
+  - `mergeBriefIntoTask(imported, brief)`: frontmatter wins; effective `depends_on` = earlier-phase tasks ∪ the brief's list (REQ-INTAKE-02); `cites` is the `covers` list only; `fromBrief` names only the keys and sections present. Returns the merged task and the conflicts for decisions.
+- `test/fixtures/spec-dir/nocriteria/` + `nocriteria.expected.json`: one brief without `## Acceptance criteria` (otherwise valid), so the planner-fallback edge case of REQ-INTAKE-11 has a fixture: `acceptance: []`, `fromBrief` without `acceptance`, no problems. New fixture folder, owner reviews the expected JSON in this PR (decision 0020).
 - `src/speckit.ts`: `readSpecDir` also reads `tasks/*.md` and one level of subfolders (`contracts/*`); `files` keeps relative paths. Attach parsed briefs to `ImportedTask` (new optional `brief` field in `src/types.ts`).
-- `src/cli.ts`: `plan --dry-run` prints, per task, "brief: yes (fields: …)" or "brief: no", then warnings and errors; errors make it exit 1 unless `--allow-open` is given. `orch plan` (non-dry) refuses on errors the same way; the override is recorded as a decision by TASK-22.
-- `test/unit/brief.test.mjs`: drives `parseBrief`, `checkFeature` and `mergeBriefIntoTask` from every `test/fixtures/spec-dir/*` expected JSON; `full` has no warnings, `bad` has exactly four, `version` errors, `speckit` has no briefs.
+- `src/cli.ts`: `plan --dry-run` prints, per task, "brief: yes (fields: …)" or "brief: no" and the effective dependencies, then conflicts, warnings and errors; errors make it exit 1 unless `--allow-open` is given. `orch plan` (non-dry) refuses on errors the same way; the override is recorded as a decision by TASK-22.
+- `test/unit/brief.test.mjs`: drives `parseBrief`, `checkFeature` and `mergeBriefIntoTask` from every `test/fixtures/spec-dir/*` expected JSON; `full` has no warnings, `bad` has exactly four, `version` errors, `speckit` has no briefs, `nocriteria` has an empty `acceptance`.
 - `scripts/check-invariants.mjs`: no change expected; confirm `src/core/brief.ts` stays free of fs and clock reads.
 
 ## Out of scope
@@ -35,9 +36,10 @@ Building the plan from briefs, decisions, prompts, context assembly (TASK-21, TA
 - `src/types.ts` (`ImportedTask.brief` only)
 - `src/cli.ts` (`plan --dry-run` output and `--allow-open`)
 - `test/unit/brief.test.mjs`
+- `test/fixtures/spec-dir/nocriteria/**`, `test/fixtures/spec-dir/nocriteria.expected.json`, the `spec-dir` table in `test/fixtures/README.md`
 
 ## Done when
-- Unit: every `test/fixtures/spec-dir/*` expected JSON matches without edits to the fixtures.
+- Unit: every `test/fixtures/spec-dir/*` expected JSON matches without edits to the existing fixtures.
 - `orch plan test/fixtures/spec-dir/bad --dry-run` exits 1 listing the four problems; with `--allow-open` it exits 0 and still lists them as warnings.
 - `orch plan test/fixtures/spec-dir/full --dry-run` shows each task's brief fields and no warnings.
 - `npm run check` passes (core purity).

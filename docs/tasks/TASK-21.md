@@ -17,11 +17,11 @@ REQ-WORK-09, REQ-WORK-10 (pure half; wiring in TASK-22)
 
 ## Scope
 - `src/core/context.ts` (pure):
-  - `extractReqRows(requirementsMd, ids)`: for each `REQ-<DOMAIN>-NN`, the table row and the acceptance-criteria bullets that cite it; missing IDs → `"REQ-X-NN: not found in <file>"` lines.
+  - `extractReqRows({text, name}, ids)`: for each `REQ-<DOMAIN>-NN`, the table rows whose first cell is the ID, then the bullet lines that contain it (edge cases and acceptance criteria), per §6.4; missing IDs → `"REQ-X-NN: not found in <name>"` lines. `name` is the configured path (`docs/requirements.md`) used in the header and the not-found line; the fixtures supply `requirements.sample.md` as `text` with that `name`.
   - `resolveContracts(spec, names)`: a `## Contracts` subsection of `spec.md` by heading, else a file in the folder; both present → section wins plus a warning.
-  - `assembleSpecContext({brief, reqRows, contracts, rules, specFiles}, budgets)`: returns `{text, cuts: [{part, from, to}]}`. Order with a brief: brief, requirements, contracts, rules. Order without: `spec.md`, `data-model.md`, `plan.md`, other `*.md`, `contracts/*`, then rules. Each part is clipped on its own with the existing marker style (`… (truncated, N more chars)`).
+  - `assembleSpecContext({brief, reqRows, contracts, rules: [{text, name}], specFiles}, budgets)`: returns `{text, cuts: [{part, source, from, to}]}`. Order with a brief: brief, requirements, contracts (one part each), rules (one part each). Order without: `handoff.contextFiles` in order, other root `*.md`, `contracts/*`, then rules; never `tasks.md` or `tasks/*`. Each part is clipped on its own with the existing marker style (`… (truncated, N more chars)`) and the headers §6.4 lists.
 - `src/config.ts`: `handoff.briefChars` (8000), `handoff.reqChars` (4000), `handoff.contractChars` (6000), `handoff.rulesChars` (6000), `handoff.requirementsFile` (`docs/requirements.md`), `handoff.projectFiles` (`["AGENTS.md"]`); `handoff.contextFiles` default becomes `["spec.md", "data-model.md", "plan.md"]`; `specChars` now applies per file. Document each in the comments and in `orch.config.example.json` if one exists.
-- `test/unit/context.test.mjs`: the T003 expectation from the `full` fixture (order and contents, cut at 8,000), the `speckit` expectation (all of `spec.md`, `plan.md` cut), missing REQ ID, contract section vs file.
+- `test/unit/context.test.mjs`: the `full` T003 expectation (order and contents, nothing cut), the `bad` T004 expectation (brief cut at 8,000 with one marker and one `cuts` entry), the `speckit` expectation (all of `spec.md`, `plan.md` cut), missing REQ ID, contract section vs file, an absent rules file.
 
 ## Out of scope
 Calling the new function from the orchestrator, prompts, decisions (TASK-22). Reading files (the caller passes contents).
@@ -35,4 +35,4 @@ Calling the new function from the orchestrator, prompts, decisions (TASK-22). Re
 - Unit: the fixture context expectations pass without edits to the fixtures.
 - Unit: given a 20,000-character brief and `briefChars: 8000`, `cuts` has one entry for `brief` and the text contains exactly one truncation marker.
 - `npm run check` passes (core purity; `AGENTS.md` and `docs/requirements.md` are not vendor names).
-- `npm run typecheck && npm test` pass; architecture §9 and §19 and the user guide's settings reference list the new settings; this brief's status line and the task index are updated in the same PR.
+- `npm run typecheck && npm test` pass; architecture §9 and the user guide's settings reference list the new settings; the §19 table gains rows for `handoff.briefChars`, `reqChars`, `contractChars`, `rulesChars`, `requirementsFile` and `projectFiles` and updates the `contextFiles` default (§6.4 already refers to them); this brief's status line and the task index are updated in the same PR.

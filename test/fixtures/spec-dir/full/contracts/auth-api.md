@@ -13,4 +13,4 @@ Rules:
 - A 401 never says whether the user exists.
 - `POST /api/login` with a malformed body is 400 `{ "error": "bad request" }`.
 - The middleware (T004) answers 401 for every route that is not in the public list: `/login`, `/api/login`, `/healthz`, and anything under `/static/`.
-- `expiresAt` in `/api/me` reflects a refresh performed by the same request (T003), so a client can read the new deadline.
+- `expiresAt` in `/api/me` reflects a refresh performed by the same request (T004 calls T003's `refreshIfDue` before the handler runs), so a client can read the new deadline.

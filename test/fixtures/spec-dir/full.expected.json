@@ -61,7 +61,7 @@
       "phase": "Phase 2: Core",
       "done": false,
       "brief": "tasks/T003.md",
-      "briefChars": 2300,
+      "briefChars": 2118,
       "orch": 1,
       "depends_on": ["T001"],
       "parallel": true,
@@ -73,7 +73,6 @@
         "Given `sessionMinutes: 30`, `refreshWindowMinutes: 5` and a session expiring at 1,800,000, When `touch(id, 1_500_001)` is called, Then `expiresAt` becomes 3,300,001.",
         "Given the same session, When `touch(id, 1_500_000)` is called, Then `expiresAt` stays 1,800,000 and the returned session is the stored one.",
         "Given the same session, When `touch(id, 1_800_000)` is called, Then the result is `null` and the session is gone from the store.",
-        "Given a signed-in request inside the refresh window, When `GET /api/me` is handled, Then the body's `expiresAt` equals the refreshed value and the `sid` cookie is unchanged.",
         "Given the fixture table `test/fixtures/sessions.json`, When the unit tests run, Then every `touch` case passes and none is skipped."
       ],
       "cites": ["REQ-AUTH-03", "REQ-AUTH-04"],
@@ -91,7 +90,7 @@
       "phase": "Phase 2: Core",
       "done": false,
       "brief": "tasks/T004.md",
-      "briefChars": 1824,
+      "briefChars": 2000,
       "orch": 1,
       "depends_on": ["T001", "T002", "T003"],
       "parallel": false,
@@ -104,6 +103,7 @@
         "Given a cookie whose signature does not verify, When any protected route is requested, Then the response is 401 and the store is not consulted.",
         "Given a valid session, When `GET /api/me` is requested, Then the response is 200 and `req.session` was set for the handler.",
         "Given a valid session inside the refresh window, When any protected route is requested, Then `refreshIfDue` was called once with the session id.",
+        "Given a signed-in request inside the refresh window, When `GET /api/me` is handled, Then the body's `expiresAt` equals the refreshed value and the `sid` cookie is unchanged.",
         "Given `/login`, `/api/login`, `/healthz` and `/static/app.css`, When requested without a cookie, Then none of them is answered 401 by the middleware."
       ],
       "cites": ["REQ-AUTH-02", "REQ-AUTH-04"],
@@ -135,7 +135,7 @@
       "projectFilesFixture": ["test/fixtures/spec-dir/AGENTS.sample.md"]
     },
     "parts": [
-      { "part": "brief", "header": "### Brief: tasks/T003.md", "source": "tasks/T003.md", "budget": 8000, "chars": 2300, "cut": false },
+      { "part": "brief", "header": "### Brief: tasks/T003.md", "source": "tasks/T003.md", "budget": 8000, "chars": 2118, "cut": false },
       {
         "part": "requirements",
         "header": "### Requirements: REQ-AUTH-03, REQ-AUTH-04 (docs/requirements.md)",
@@ -154,7 +154,7 @@
       },
       { "part": "contract", "header": "### Contract: SessionStore (spec.md)", "source": "spec.md#SessionStore", "budget": 6000, "chars": 925, "cut": false },
       { "part": "contract", "header": "### Contract: TokenCodec (spec.md)", "source": "spec.md#TokenCodec", "budget": 6000, "chars": 475, "cut": false },
-      { "part": "contract", "header": "### Contract: contracts/auth-api.md", "source": "contracts/auth-api.md", "budget": 6000, "chars": 1060, "cut": false },
+      { "part": "contract", "header": "### Contract: contracts/auth-api.md", "source": "contracts/auth-api.md", "budget": 6000, "chars": 1112, "cut": false },
       { "part": "rules", "header": "### Rules: AGENTS.md", "source": "AGENTS.md", "budget": 6000, "chars": 647, "cut": false },
       { "part": "handoff", "header": null, "source": "orchestrator (REQ-WORK-02: summaries, decisions, answers, feedback)", "budget": 6000, "chars": null, "cut": null }
     ],
