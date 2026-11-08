@@ -21,8 +21,36 @@ export type TaskStatus =
 
 export type MergePolicy = "auto" | "manual";
 
+export type ValidateMode = "standard" | "ui";
+
+/** Phase validation state (architecture §10.3). Schema TASK-07, used by TASK-15. */
+export type PhaseStatus = "pending" | "validating" | "passed" | "failed" | "needs_human";
+
+/** A registered repository (architecture §5.3). */
+export interface Project {
+  id: string;                  // slug of the repo directory name, `-2`, `-3`… on collision
+  name: string;
+  repo_path: string;           // realpath of the repo root; unique
+  archived: boolean;
+  last_start_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One phase of a run (architecture §10.3), UNIQUE(run_id, name). */
+export interface Phase {
+  id: number;
+  run_id: string;
+  name: string;
+  idx: number;
+  status: PhaseStatus;
+  fixup_rounds: number;
+  updated_at: string;
+}
+
 export interface Run {
   id: string;
+  project_id: string | null;   // null only for runs from before projects existed (until upgraded, §5.5)
   spec_dir: string;
   title: string;
   status: RunStatus;
@@ -30,6 +58,9 @@ export interface Run {
   created_at: string;
   updated_at: string;
   notes: string | null;
+  cost_usd: number | null;     // planner + phase-validator spend (§18); NULL = unknown
+  agent_ms: number | null;
+  archived_at: string | null;  // when the run's events were archived (§17)
 }
 
 export interface Task {
@@ -61,6 +92,11 @@ export interface Task {
   pr_feedback_at: string | null; // newest PR comment/review already consumed (watermark)
   ci_head: string | null;      // sha whose CI failure was already acted on
   ci_status: string | null;    // pass | fail | pending | none (last poll)
+  files_owned: string[];       // files/globs the planner assigned to this task (§7.2)
+  validate_mode: ValidateMode;
+  synthetic: boolean;          // orch-created phase fix-up task (§10.3); stored as 0/1
+  cost_usd: number | null;     // worker + validator spend (§18); NULL = unknown
+  agent_ms: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -87,7 +123,7 @@ export interface Decision {
 export interface Question {
   id: number;
   run_id: string;
-  task_id: string;
+  task_id: string | null;     // null = a question about the whole plan
   ts: string;
   text: string;
   options: string[];

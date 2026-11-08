@@ -306,7 +306,8 @@ src/prfeedback.ts     PR feedback loop helpers: check verdicts, review comments,
 src/speckit.ts        tasks.md parser and ticker
 src/config.ts         settings: today's single-file loader, plus server.json / per-project loaders
 src/paths.ts          ORCH_HOME layout (server.json, orch.db, worktrees/, archive/, run/)
-src/db.ts             SQLite: runs, tasks, events, decisions, questions
+src/db.ts             SQLite: projects, runs, tasks, phases, events, decisions, questions; versioned migrations
+src/projects.ts       project registry: register a repo, archive, find the project for a directory
 src/server.ts         REST + SSE, serves the dashboard
 src/cli.ts            `orch` (human commands and the agent-facing decide/ask)
 prompts/*.md          the three role prompts
