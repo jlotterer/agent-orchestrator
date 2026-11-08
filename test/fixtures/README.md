@@ -31,7 +31,7 @@ Runner: `parseTasksMd(fs.readFileSync("<case>.md", "utf8"))` (`src/speckit.ts`),
 | `key-widths` | 2- and 4-digit keys; 1- and 5-digit keys, lower-case `t` and missing keys are not tasks |
 | `unknown-dependency` | an unknown key (`T999`) is dropped |
 | `self-dependency` | a self-reference is dropped |
-| `forward-reference` | a reference to a later task is kept (cycles are refused later by plan approval, TASK-13) |
+| `forward-reference` | a reference to a later task is kept (cycles are refused later by plan approval, `core/graph.ts`, since TASK-13) |
 | `before-heading` | tasks before any `##` heading have phase `null` and form the first phase; `#` (h1) is not a phase |
 | `h3-headings` | `###` and `####` headings are phases; headings without tasks create no phase; phase names are trimmed |
 | `crlf-line-endings` | CRLF input |
@@ -44,7 +44,7 @@ Covers: single fence; last fenced block wins; invalid last block falls back to a
 ### `readiness.json`
 `[{ name, pending?, input: ReadinessInput, expected: ReadinessResult }]` exactly as in [architecture §7.1](../../docs/architecture.md#71-readiness). Runner: `deepStrictEqual(selectReady(input), expected)`. The order of `start` is significant. `heldForOverlap` is always present (empty when nothing is held).
 
-Covers: dependencies done / skipped / unmet (running, failed, needs_input, pr_open, pr_checks, missing key, other run); open task question; open plan question (`pending: TASK-13`); `maxParallel` with `orderIdx` ordering; active tasks counting against `maxParallel`; tasks waiting on the owner not using a slot; global `maxAgents` across two projects (REQ-PROJ-08); `busyAgents`; free slots never negative; fairness by `lastStartAt`, null first, ties by id, round-robin (REQ-PROJ-09); a paused run starts nothing but its agents still count; runs that are not `running`; tasks of another run; only `pending` tasks are candidates; resume flag combinations (§7.1 step 5); empty `filesOwned` never blocks; disjoint ownership; overlap with an active or already-chosen task gives `heldForOverlap` (`pending: TASK-14`); no overlap check across projects.
+Covers: dependencies done / skipped / unmet (running, failed, needs_input, pr_open, pr_checks, missing key, other run); open task question; open plan question (built by TASK-13; passes); `maxParallel` with `orderIdx` ordering; active tasks counting against `maxParallel`; tasks waiting on the owner not using a slot; global `maxAgents` across two projects (REQ-PROJ-08); `busyAgents`; free slots never negative; fairness by `lastStartAt`, null first, ties by id, round-robin (REQ-PROJ-09); a paused run starts nothing but its agents still count; runs that are not `running`; tasks of another run; only `pending` tasks are candidates; resume flag combinations (§7.1 step 5); empty `filesOwned` never blocks; disjoint ownership; overlap with an active or already-chosen task gives `heldForOverlap` (`pending: TASK-14`); no overlap check across projects.
 
 ### `transitions.json`
 `[{ name, row, pending?, task, event, config, expected }]`. Runner: `nextTaskState(task, event, config)` (`src/core/transitions.ts`), then:
@@ -130,7 +130,7 @@ Cases whose expected output differs from what the code did when the fixtures wer
 | `extract-json.json` | indented fence | Today the closing fence must start at column 0, so a JSON block indented inside a list item is lost (`null`). |
 | `transitions.json` | T14: stop is rejected for a task that is not active | Today `stopTask` resets any task to `pending`, so "stop" on a `pr_open` task silently drops it out of the inbox. §8 only allows stopping active tasks. |
 | `readiness.json` | global `maxAgents` and `busyAgents` cases | New inputs. Since TASK-09 the orchestrator passes `server.json` `scheduler.maxAgents` and the running planners as `busyAgents`. |
-| `readiness.json` | fairness cases (built by TASK-09; pass), plan question (`pending: TASK-13`), ownership overlap (`pending: TASK-14`) | New behaviour built by those tasks. |
+| `readiness.json` | fairness cases (built by TASK-09; pass), plan question (built by TASK-13; passes), ownership overlap (`pending: TASK-14`) | New behaviour built by those tasks. |
 | `transitions.json` | T17 (built by TASK-06; passes), T19 (`pending: TASK-16`), fix-up tasks (`pending: TASK-15`) | New behaviour built by those tasks. |
 
 Everything else (all 15 `tasks-md` cases, the other 13 `extract-json` cases, all 36 `pr-poll` cases and the non-pending transitions) matches the code's behaviour when the fixtures were written. The `tasks-md`, `extract-json` and `pr-poll` cases were checked mechanically against `parseTasksMd`, `extractJson` and a transcription of `pollPr` on the real `prfeedback.ts` helpers.

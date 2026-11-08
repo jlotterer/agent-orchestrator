@@ -590,7 +590,6 @@
   },
   {
     "name": "an open plan question blocks every start in that project only",
-    "pending": "TASK-13",
     "input": {
       "maxAgents": 4,
       "busyAgents": 0,

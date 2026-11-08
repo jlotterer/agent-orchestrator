@@ -16,6 +16,7 @@
  *
  * Lifecycle markers (scripts/e2e-lifecycle.mjs), matched anywhere in the prompt:
  *   PLANNER_FAIL  (spec.md, planner) -> prints to stderr and exits 1 with no plan
+ *   PLAN_QUESTION (spec.md, planner) -> also returns one plan question (scripts/e2e.mjs, TASK-13)
  *   SLEEP_LONG    (task, worker)     -> commits impl/<KEY>.wip, writes its pid to $FAKE_STATE_DIR/<KEY>.pid,
  *                                       then sleeps (up to 120 s; exits early if orphaned). Once
  *                                       impl/<KEY>.wip exists in the worktree it behaves normally.
@@ -77,7 +78,8 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
   finish({
     tasks: tasks.map((t) => ({ key: t.key, acceptance: [`impl/${t.key}.txt exists and contains OK`], depends_on: t.depends_on, merge_policy: t.key === "T004" || /(manual)/.test(t.title) ? "manual" : "auto", validate_cmd: null })),
     decisions: [{ text: "Marked T004 manual merge", rationale: "it touches the public API" }],
-    questions: [],
+    // PLAN_QUESTION in spec.md: one question about the spec as a whole (TASK-13, REQ-INTAKE-07).
+    questions: prompt.includes("PLAN_QUESTION") ? [{ text: "Should greetings be capitalized throughout the spec?", options: ["Yes", "No"] }] : [],
   }, "Plan drafted.");
 } else if (prompt.includes("You are the VALIDATOR")) {
   const diffBad = prompt.includes("NEEDS_REVIEW");

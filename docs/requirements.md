@@ -89,10 +89,10 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-INTAKE-04 | When planning is requested with the planner, a planner agent MUST propose, per task: acceptance criteria, dependencies, a merge policy (automatic or owner review), an optional task-specific test command, a validation mode (standard or UI), and the files or globs the task owns. Proposals referring to unknown tasks MUST be ignored. | built (criteria, deps, policy, command) / new (mode, files) |
 | REQ-INTAKE-05 | The planner's decisions MUST be recorded in the decisions log with their rationale. | built |
 | REQ-INTAKE-06 | If the planner fails or returns nothing usable, the plan MUST fall back to the imported tasks unchanged, and that fallback MUST be recorded as a decision. | built |
-| REQ-INTAKE-07 | Questions the planner raises about the spec as a whole MUST appear in the inbox as plan questions, not attached to any single task. While a plan question is open, no task of that run may start. | new |
+| REQ-INTAKE-07 | Questions the planner raises about the spec as a whole MUST appear in the inbox as plan questions, not attached to any single task. While a plan question is open, no task of that run may start. | built (TASK-13) |
 | REQ-INTAKE-08 | A plan MUST wait for the owner's approval before any task runs. | built |
 | REQ-INTAKE-09 | Before approval, and afterwards for tasks that have not started, the owner MUST be able to edit a task's acceptance criteria, dependencies, merge policy, test command, validation mode, owned files and attempt limit. Each edit MUST be recorded as a human decision. | built (except mode, files) |
-| REQ-INTAKE-10 | The owner SHOULD be able to preview the imported tasks, phases and dependencies of a feature directory without creating a run or calling an agent. | new |
+| REQ-INTAKE-10 | The owner SHOULD be able to preview the imported tasks, phases and dependencies of a feature directory without creating a run or calling an agent. | built (TASK-13) |
 
 **Edge cases:**
 - `tasks.md` uses `*` bullets, indentation, or 2–4 digit IDs → still imported.
@@ -118,7 +118,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-SCHED-01 | A task MUST start only when all of these hold: its dependencies are done or skipped; it has no open questions; no plan question is open; its project's parallel limit has room; the global agent limit has room. | built (global limit TASK-09; except plan questions, TASK-13) |
+| REQ-SCHED-01 | A task MUST start only when all of these hold: its dependencies are done or skipped; it has no open questions; no plan question is open; its project's parallel limit has room; the global agent limit has room. | built (global limit TASK-09; plan questions TASK-13) |
 | REQ-SCHED-02 | Two tasks whose owned files overlap MUST NOT run at the same time, even if both are ready. When orch holds one back for this reason, it MUST record a decision naming both tasks and show the implicit ordering in the plan view. | new |
 | REQ-SCHED-03 | Pausing a run MUST let running agent sessions finish and start nothing new until resumed. | built |
 | REQ-SCHED-04 | Stopping a run MUST end its running agent sessions and return their tasks to pending, keeping their working copies and commits. | built |
@@ -314,7 +314,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-UI-04 | For a task awaiting review, the owner MUST be able to send it back to the worker with written feedback from the task view (see REQ-HITL-07). | built |
 | REQ-UI-05 | The owner MUST be able to view past runs of a project. | built (run selector per project, TASK-11) |
 | REQ-UI-06 | The dashboard MUST show cost and agent time per task, per run and per project where the agent CLI reports them, and "n/a" where it doesn't. | new |
-| REQ-UI-07 | The CLI MUST offer the owner's main actions: register, list and archive projects; plan (and preview); approve; run, pause, stop; status; answer; retry, skip, merge. Commands MUST act on the project given explicitly, else the project whose repo contains the current directory, else the only project. Otherwise they fail, listing the projects. | built (actions; projects and scoping, TASK-10) / new (plan preview `--dry-run`, TASK-13) |
+| REQ-UI-07 | The CLI MUST offer the owner's main actions: register, list and archive projects; plan (and preview); approve; run, pause, stop; status; answer; retry, skip, merge. Commands MUST act on the project given explicitly, else the project whose repo contains the current directory, else the only project. Otherwise they fail, listing the projects. | built (actions; projects and scoping, TASK-10; plan preview `--dry-run`, TASK-13) |
 | REQ-UI-08 | CLI commands MUST exit 0 on success, 1 on failure (with the error on stderr), and 2 on usage errors. `[ASSUMED]` | built (TASK-10) |
 
 **Edge cases:**

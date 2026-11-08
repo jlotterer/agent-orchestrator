@@ -1,5 +1,5 @@
 # TASK-13: Plan questions, plan preview and cycle check
-**Status:** todo · **Wave:** 8 · **Depends on:** TASK-11, TASK-12 · **Parallel:** No
+**Status:** done · **Wave:** 8 · **Depends on:** TASK-11, TASK-12 · **Parallel:** No
 
 ## Goal
 Fix the plan-question workaround: questions about the whole spec are not attached to a task, and they hold the run until answered. Add a no-side-effect plan preview, and refuse to approve plans with dependency cycles.

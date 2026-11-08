@@ -4,7 +4,7 @@
  *
  *   orch serve                        start the daemon + dashboard (run this under systemd)
  *   orch project add <path> [--name n] | project list [--archived] | project remove <id>
- *   orch plan <specDir> [--no-llm]    import a Spec Kit feature dir and draft a plan
+ *   orch plan <specDir> [--no-llm] [--dry-run]   import a Spec Kit feature dir and draft a plan (or preview it)
  *   orch approve [runId]              approve the pending plan
  *   orch run | pause | stop           control the project's current run
  *   orch status                       print the board
@@ -43,7 +43,7 @@ function flag(name: string): string | undefined {
   return v;
 }
 function has(name: string) { return argv.includes(`--${name}`); }
-const BOOL_FLAGS = new Set(["--no-llm", "--archived", "--help"]);
+const BOOL_FLAGS = new Set(["--no-llm", "--archived", "--help", "--dry-run"]);
 /** Arguments after the command, without flags and their values. */
 function positional(): string[] {
   const out: string[] = [];
@@ -123,6 +123,7 @@ const HELP = `orch — orchestrator/worker/validator runner
   orch project list [--archived]       list projects with run status and inbox count
   orch project remove <id>             archive a project (repo and history are kept)
   orch plan <specDir> [--no-llm]       import Spec Kit tasks.md and draft a plan
+       [--dry-run]                     only print phases, tasks and dependencies; create nothing
   orch approve [runId]                 approve the plan
   orch run | pause | stop              control the project's current run
   orch status                          show the board and inbox
@@ -200,9 +201,14 @@ async function main() {
     }
     case "plan": {
       const dir = positional()[0];
-      if (!dir) throw new UsageError("usage: orch plan <specDir> [--no-llm]");
+      if (!dir) throw new UsageError("usage: orch plan <specDir> [--no-llm] [--dry-run]");
       const specDir = path.resolve(dir);
       const project = await resolveProject(specDir);
+      if (has("dry-run")) {
+        const pv = await api("POST", `/api/projects/${encodeURIComponent(project.id)}/plan`, { specDir, dryRun: true });
+        console.log(formatPreview(pv, project.id));
+        return;
+      }
       console.log(has("no-llm") ? `importing tasks into ${project.id}…` : `importing tasks into ${project.id} and running the planner (this takes a minute)…`);
       const run = await api("POST", `/api/projects/${encodeURIComponent(project.id)}/plan`, { specDir, llm: !has("no-llm") });
       console.log(`run ${run.id} "${run.title}" → ${run.status}. Review the plan in the dashboard, then: orch approve`);
@@ -299,6 +305,19 @@ async function main() {
 }
 
 function pad(s: string, n: number) { return s.padEnd(n); }
+
+/** `orch plan --dry-run` output (REQ-INTAKE-10): phases, tasks with `[P]` and done marks, dependencies. */
+function formatPreview(pv: { dir: string; title: string; tasks: any[]; cycle: string[] | null }, projectId: string): string {
+  const lines = [`dry run: "${pv.title}" (${pv.dir}) for project ${projectId}: ${pv.tasks.length} tasks; nothing was created`];
+  let phase: string | null | undefined;
+  for (const t of pv.tasks) {
+    if (t.phase !== phase) { phase = t.phase; lines.push("", phase ?? "(no phase)"); }
+    const flags = `${t.done ? "[x]" : "[ ]"} ${t.parallel ? "[P]" : "   "}`;
+    lines.push(`  ${flags} ${t.key}  ${t.title}`, `            depends on: ${t.depends_on.length ? t.depends_on.join(", ") : "none"}`);
+  }
+  if (pv.cycle) lines.push("", `warning: dependency cycle ${pv.cycle.join(" → ")}; approval will be refused until it is removed`);
+  return lines.join("\n");
+}
 
 /** One archive pass over `$ORCH_HOME/archive` (§17); prints what it did. */
 async function runArchive(store: Store, eventDays: number, home: string) {

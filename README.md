@@ -190,9 +190,13 @@ sudo systemctl enable --now orch
    the unfinished one. The planner reads the spec,
    writes acceptance criteria for every task, checks the dependency graph, flags risky tasks as
    manual-merge, and logs its decisions. If something in the spec is ambiguous enough to matter it
-   asks instead of guessing.
+   asks instead of guessing: a question about the spec as a whole shows in the inbox with a **Plan**
+   label, and no task starts until you answer it (you can still approve and start the run).
+   To preview first, `orch plan specs/003-thing --dry-run` prints the phases, tasks, `[P]` flags and
+   dependencies without creating a run or calling an agent.
 3. Open the dashboard. **Plan** tab: read the acceptance criteria, click any task to edit them,
-   its dependencies or merge policy. **Approve plan**.
+   its dependencies or merge policy. **Approve plan**. Approval is refused if the dependencies form a
+   cycle; the error names the tasks in it, so edit one of them and approve again.
 4. **Start**. Watch the **Board** or walk away. Your phone buzzes when:
    * a worker asks a question → answer with one tap or a sentence
    * a task fails after its retries → inspect the log, retry or skip
@@ -392,7 +396,8 @@ the dashboard loads builds in under a second.
 `scripts/e2e.mjs` runs the whole loop against a fake agent (`scripts/fake-agent.mjs`) in a throwaway
 repo, with workers on the Claude adapter and the validator on the Gemini adapter: planning,
 approval, two parallel workers, a question answered mid-task with session resume, a gate failure
-retried, a validator rejection retried, the review diff of a manual-merge task, sending it back
+retried, a validator rejection retried, a `--dry-run` preview that creates nothing, a plan question
+that holds every task until answered, a dependency cycle refused at approval, the review diff of a manual-merge task, sending it back
 with owner feedback that reaches the worker, the merge approval, and tasks.md ticked on main.
 
 `scripts/e2e-pr.mjs` runs PR mode against a fake `gh` (`scripts/fake-gh.mjs`) and a local bare

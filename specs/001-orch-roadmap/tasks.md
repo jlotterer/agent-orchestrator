@@ -29,7 +29,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T012 [P] Event archive and retention. Brief: docs/tasks/TASK-12.md.
 
 ## Phase 8: Wave 8
-- [ ] T013 Plan questions, plan preview and cycle check. Brief: docs/tasks/TASK-13.md.
+- [x] T013 Plan questions, plan preview and cycle check. Brief: docs/tasks/TASK-13.md.
 
 ## Phase 9: Wave 9
 - [ ] T014 File ownership: safe parallelism. Brief: docs/tasks/TASK-14.md.

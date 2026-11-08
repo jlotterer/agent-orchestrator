@@ -10,10 +10,11 @@ import { runAgent, getAdapter } from "./adapters/index.js";
 import type { RoleName } from "./config.js";
 import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
 import { notify, type NotifyOptions } from "./notify.js";
-import { readSpecDir, parseTasksMd, markTaskDoneInFile } from "./speckit.js";
+import { readSpecDir, parseTasksMd, markTaskDoneInFile, type ImportedTask } from "./speckit.js";
 import type { Project, Question, Run, Task, TaskStatus } from "./types.js";
 import { formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
 import { selectReady } from "./core/readiness.js";
+import { findCycle } from "./core/graph.js";
 import { nextTaskState, type TaskEvent, type TransitionResult, type Effect } from "./core/transitions.js";
 import { decidePrAction } from "./core/prpoll.js";
 import { UNFINISHED_RUN_STATUSES, resolveProjectForCwd, registerProject, archiveProject, type RegisterResult } from "./projects.js";
@@ -381,12 +382,11 @@ export class Orchestrator extends EventEmitter {
       }
       for (const d of out.decisions ?? []) this.decide(run, null, "planner", String(d.text ?? d), d.rationale ?? null);
       for (const q of out.questions ?? []) {
-        // Plan-level questions attach to the first pending task so they surface in the inbox.
-        const first = tasks.find((t) => t.status === "pending");
-        if (first) {
-          const question = this.store.addQuestion(run.id, first.id, `[plan] ${q.text}`, Array.isArray(q.options) ? q.options.map(String) : []);
-          this.log(run, first, "question", { text: question.text, options: question.options, id: question.id });
-        }
+        // Plan questions belong to no task (REQ-INTAKE-07); while one is open no task of the run starts (§7.1).
+        const text = String(q?.text ?? q ?? "").trim();
+        if (!text) continue;
+        const question = this.store.addQuestion(run.id, null, text, Array.isArray(q?.options) ? q.options.map(String) : []);
+        this.log(run, null, "question", { role: "planner", plan: true, text: question.text, options: question.options, id: question.id });
       }
       this.log(run, null, "state", { message: "planner finished", cost_usd: res.costUsd });
     }
@@ -395,6 +395,20 @@ export class Orchestrator extends EventEmitter {
     this.changed("tasks", { runId: run.id });
     await this.notify(ctx, `Plan ready: ${run.title}`, `${tasks.length} tasks. Review and approve in the dashboard.`, { tags: ["clipboard"] });
     return this.store.getRun(run.id)!;
+  }
+
+  /**
+   * Dry run (REQ-INTAKE-10): parse a Spec Kit dir and derive dependencies as `plan` would, without creating a
+   * run, calling an agent or writing anything. `cycle` is the first dependency cycle (§6.3), else null.
+   */
+  previewPlan(specDir: string, projectId?: string): { dir: string; title: string; tasks: ImportedTask[]; cycle: string[] | null } {
+    if (projectId !== undefined) this.requireProject(projectId); // 404 for an unknown project, like the real plan
+    const spec = readSpecDir(specDir);
+    const tasksMd = spec.files["tasks.md"];
+    if (!tasksMd) throw new Error(`no tasks.md in ${spec.dir}. Run /speckit.tasks first.`);
+    const tasks = parseTasksMd(tasksMd);
+    if (!tasks.length) throw new Error(`no tasks found in ${path.join(spec.dir, "tasks.md")}`);
+    return { dir: spec.dir, title: spec.title, tasks, cycle: findCycle(tasks.map((t) => ({ key: t.key, dependsOn: t.depends_on }))) };
   }
 
   /** Human edits to the plan before approval (also allowed later for pending tasks). */
@@ -411,6 +425,8 @@ export class Orchestrator extends EventEmitter {
     const run = this.store.getRun(runId);
     if (!run) throw new Error("run not found");
     if (run.status !== "plan_pending") throw new Error(`run is ${run.status}, not plan_pending`);
+    const cycle = findCycle(this.store.listTasks(runId).map((t) => ({ key: t.key, dependsOn: t.depends_on })));
+    if (cycle) throw new Error(`dependency cycle: ${cycle.join(" → ")}; edit the dependencies of ${[...new Set(cycle)].join(", ")} and approve again`);
     this.store.setRunStatus(runId, "ready");
     this.decide(run, null, "human", "Plan approved", null);
     this.changed("run", { run: this.store.getRun(runId) });
@@ -513,7 +529,7 @@ export class Orchestrator extends EventEmitter {
         busyAgents: this.busyAgents,
         projects: entries.map(({ project, run, ctx }) => ({
           id: project.id, runId: run.id, runStatus: ctx ? run.status : null, maxParallel: ctx?.cfg.scheduler.maxParallel ?? 0,
-          lastStartAt: project.last_start_at, planQuestionsOpen: 0, resumeOnRetry: ctx?.cfg.scheduler.resumeOnRetry ?? false,
+          lastStartAt: project.last_start_at, planQuestionsOpen: this.openPlanQuestions(run.id).length, resumeOnRetry: ctx?.cfg.scheduler.resumeOnRetry ?? false,
         })),
         tasks: entries.flatMap(({ project, run, ctx }) => {
           const supportsResume = ctx ? this.roleAgent(ctx.cfg, "worker").adapter.supportsResume : false;
@@ -553,6 +569,12 @@ export class Orchestrator extends EventEmitter {
       this.log(run, null, "state", { message: "all tasks done" });
       this.changed("run", { run: this.store.getRun(run.id) });
       await this.notify(ctx, `Run complete: ${run.title}`, `${tasks.length} tasks finished.`, { tags: ["tada"], priority: "high" });
+    } else if (this.openPlanQuestions(run.id).length) {
+      // An open plan question holds every start (§7.1); say so once.
+      const lastEv = this.store.listEvents({ runId: run.id, limit: 1 })[0];
+      if (!(lastEv?.kind === "state" && lastEv.data?.waiting)) {
+        this.log(run, null, "state", { message: "waiting on you: answer the plan questions in the inbox before tasks start", waiting: true });
+      }
     } else if (unfinished.every((t) => ["failed", "needs_input", "pr_open"].includes(t.status) || (t.status === "pending" && !t.depends_on.every((k) => doneKeys.has(k))))) {
       // Nothing can progress without a human. Stay 'running' so answering resumes automatically, but say so once.
       const blocked = unfinished.filter((t) => t.status !== "pending");
@@ -883,10 +905,16 @@ export class Orchestrator extends EventEmitter {
     if (q.answer) throw new Error("already answered");
     this.store.answerQuestion(questionId, answer);
     const run = this.store.getRun(q.run_id)!;
-    const task = q.task_id ? this.store.getTask(q.task_id) ?? null : null; // null task_id = plan question (TASK-13)
-    this.decide(run, task, "human", `Answered: ${clip(q.text, 120)} → ${answer}`, null);
+    const task = q.task_id ? this.store.getTask(q.task_id) ?? null : null; // null task_id = plan question
+    this.decide(run, task, "human", `Answered${task ? "" : " plan question"}: ${clip(q.text, 120)} → ${answer}`, null);
     this.changed("questions", { runId: run.id });
     if (task?.status === "needs_input") await this.resumeAfterAnswer(run, task);
+    // The last plan question answered: tasks may start now rather than at the next timer tick.
+    if (!task && run.status === "running" && !this.openPlanQuestions(run.id).length) setTimeout(() => void this.tick(), 50);
+  }
+  /** Unanswered questions of the run that belong to no task (plan questions, REQ-INTAKE-07). */
+  private openPlanQuestions(runId: string): Question[] {
+    return this.store.listQuestions(runId, true).filter((q) => !q.task_id);
   }
   /**
    * T10/T11: once every question is answered, continue the worker without consuming an attempt
@@ -1019,7 +1047,7 @@ export class Orchestrator extends EventEmitter {
     if (run.status === "plan_pending") inbox.push({ type: "approve_plan", run_id: run.id, title: "Plan awaits approval", detail: `${tasks.length} tasks`, ts: run.updated_at });
     for (const q of questions.filter((q) => !q.answer)) {
       const t = tasks.find((x) => x.id === q.task_id);
-      inbox.push({ type: "question", id: q.id, run_id: run.id, task_id: q.task_id, task_key: t?.key, title: q.text, options: q.options, ts: q.ts });
+      inbox.push({ type: "question", id: q.id, run_id: run.id, task_id: q.task_id, task_key: t?.key, plan: !q.task_id, title: q.text, options: q.options, ts: q.ts });
     }
     for (const t of tasks) {
       if (t.status === "failed") inbox.push({ type: "failed", run_id: run.id, task_id: t.id, task_key: t.key, title: `${t.key} failed after ${t.attempt} attempts`, detail: t.last_feedback, ts: t.updated_at });
