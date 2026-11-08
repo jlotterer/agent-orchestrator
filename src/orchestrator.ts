@@ -7,11 +7,12 @@ import { loadProjectConfig, toLegacyConfig, DEFAULT_PROJECT_CONFIG } from "./con
 import type { Store } from "./db.js";
 import { Git, shell } from "./git.js";
 import { runAgent, getAdapter } from "./adapters/index.js";
-import type { RoleName } from "./config.js";
+import type { RoleName, RoleConfig } from "./config.js";
 import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
 import { notify, type NotifyOptions } from "./notify.js";
 import { readSpecDir, parseTasksMd, markTaskDoneInFile, type ImportedTask } from "./speckit.js";
-import type { Project, Question, Run, Task, TaskStatus } from "./types.js";
+import type { Decision, Phase, Project, Question, Run, Task, TaskStatus } from "./types.js";
+import { phaseList, phaseName, phaseLabel, phasesToValidate, planFixup, type PhaseVerdict } from "./core/phases.js";
 import { formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
 import { selectReady } from "./core/readiness.js";
 import { ownedOverlap, outOfScope } from "./core/ownership.js";
@@ -54,6 +55,8 @@ export interface ProjectContext {
   project: Project;
   cfg: Config;
   git: Git;
+  /** Phase validation settings (`validation.phase`, §10.3) and the phase validator's role (defaults to the validator's). */
+  phase: { enabled: boolean; command: string; maxFixups: number; role: RoleConfig };
   /** Unknown settings keys that were ignored; logged to the run's activity when the context is rebuilt. */
   warnings: string[];
 }
@@ -87,7 +90,12 @@ export class Orchestrator extends EventEmitter {
       throw new Error(`project '${project.id}': ${e?.message ?? e}`);
     }
     const cfg = toLegacyConfig(this.server, loaded.config, project.repo_path, { projectId: project.id, home: this.home });
-    return { project, cfg, git: new Git(cfg.repo, cfg.baseBranch, cfg.git.ghCommand), warnings: loaded.warnings };
+    const ph = loaded.config.validation.phase;
+    const role = loaded.config.roles.phaseValidator ?? loaded.config.roles.validator;
+    return {
+      project, cfg, git: new Git(cfg.repo, cfg.baseBranch, cfg.git.ghCommand), warnings: loaded.warnings,
+      phase: { enabled: ph.enabled, command: ph.command, maxFixups: ph.maxFixups, role: { adapter: role.adapter, model: role.model } },
+    };
   }
   /** Re-read the project's settings (at run creation and start, REQ-PROJ-06). */
   refreshContext(projectId: string): ProjectContext {
@@ -193,7 +201,9 @@ export class Orchestrator extends EventEmitter {
   }
   /** Adapter + model for a role from the project's effective config (a project may pick among the server's adapters). */
   private roleAgent(cfg: Config, role: RoleName) {
-    const r = cfg.agents.roles[role];
+    return this.agentFor(cfg, cfg.agents.roles[role]);
+  }
+  private agentFor(cfg: Config, r: RoleConfig) {
     const adapterConfig = cfg.agents.adapters[r.adapter];
     return { adapter: getAdapter(adapterConfig.type), adapterConfig, model: r.model || undefined, timeoutMs: cfg.agents.timeoutMinutes * 60_000, label: `${adapterConfig.type}${r.model ? ":" + r.model : ""}` };
   }
@@ -481,6 +491,13 @@ export class Orchestrator extends EventEmitter {
     for (const t of this.store.listTasks(run.id)) {
       if (ACTIVE.includes(t.status)) this.fire(run, t.id, { type: "run_stop" }).catch((e) => console.error("[stop]", e)); // T14: state + kill are synchronous
     }
+    // A running phase validation is abandoned: its agent is killed and the phase goes back to pending (§10.3).
+    for (const [phaseId, job] of this.phaseJobs) {
+      if (job.runId !== run.id) continue;
+      job.stopped = true;
+      job.child?.kill("SIGTERM");
+      this.store.updatePhase(phaseId, { status: "pending" });
+    }
     this.store.setRunStatus(run.id, "stopped");
     this.log(run, null, "state", { message: "run stopped; active agents killed" });
     this.changed("run", { run: this.store.getRun(run.id) });
@@ -527,6 +544,8 @@ export class Orchestrator extends EventEmitter {
         }
         if (ctx!.cfg.git.pr && ctx!.cfg.git.feedback.enabled) this.pollPullRequests(run, ctx!, tasks);
       }
+      // Phase checks (§10.3): validate finished phases while a global agent slot is free.
+      for (const { run, ctx } of running) this.checkPhases(run, ctx!, entries.map((e) => e.run.id));
 
       // Readiness is decided by src/core (§7.1); tasks are re-read so resumed ones count as active.
       const tasksByRun = new Map(entries.map((e) => [e.run.id, this.store.listTasks(e.run.id)]));
@@ -536,13 +555,14 @@ export class Orchestrator extends EventEmitter {
         projects: entries.map(({ project, run, ctx }) => ({
           id: project.id, runId: run.id, runStatus: ctx ? run.status : null, maxParallel: ctx?.cfg.scheduler.maxParallel ?? 0,
           lastStartAt: project.last_start_at, planQuestionsOpen: this.openPlanQuestions(run.id).length, resumeOnRetry: ctx?.cfg.scheduler.resumeOnRetry ?? false,
+          phases: ctx?.phase.enabled ? this.store.listPhases(run.id).map((p) => ({ name: p.name, idx: p.idx, status: p.status })) : undefined,
         })),
         tasks: entries.flatMap(({ project, run, ctx }) => {
           const supportsResume = ctx ? this.roleAgent(ctx.cfg, "worker").adapter.supportsResume : false;
           return tasksByRun.get(run.id)!.map((t) => ({
             id: t.id, projectId: project.id, runId: t.run_id, key: t.key, orderIdx: t.order_idx, status: t.status, dependsOn: t.depends_on, filesOwned: t.files_owned,
             openQuestions: t.status === "pending" ? this.store.openQuestionsForTask(t.id).length : 0,
-            attempt: t.attempt, fixRounds: t.fix_rounds, hasSession: !!t.session_id, adapterSupportsResume: supportsResume,
+            attempt: t.attempt, fixRounds: t.fix_rounds, hasSession: !!t.session_id, adapterSupportsResume: supportsResume, phase: t.phase,
           }));
         }),
       });
@@ -573,8 +593,20 @@ export class Orchestrator extends EventEmitter {
   private async checkRunProgress(run: Run, ctx: ProjectContext) {
     const tasks = this.store.listTasks(run.id);
     if (tasks.some((t) => ACTIVE.includes(t.status))) return;
+    if (this.phaseJobOf(run.id) !== undefined) return; // a phase validation is running
     const doneKeys = new Set(tasks.filter((t) => FINISHED.includes(t.status)).map((t) => t.key));
     const unfinished = tasks.filter((t) => !FINISHED.includes(t.status));
+    // With phase validation on, the run is done only when every phase passed (§7.3 step 5).
+    const phases = ctx.phase.enabled ? this.store.listPhases(run.id) : [];
+    const waitingPhase = phases.find((p) => p.status === "needs_human" || p.status === "failed");
+    if (waitingPhase) {
+      const lastEv = this.store.listEvents({ runId: run.id, limit: 1 })[0];
+      if (!(lastEv?.kind === "state" && lastEv.data?.waiting)) {
+        this.log(run, null, "state", { message: `waiting on you: phase "${phaseLabel(waitingPhase.name)}" failed validation; re-run it or accept it in the inbox`, waiting: true });
+      }
+      return;
+    }
+    if (!unfinished.length && phases.some((p) => p.status !== "passed")) return; // the next phase check validates it
     if (!unfinished.length) {
       this.store.setRunStatus(run.id, "done");
       this.log(run, null, "state", { message: "all tasks done" });
@@ -787,7 +819,7 @@ export class Orchestrator extends EventEmitter {
    */
   private async tickTasksMd(run: Run, task: Task) {
     const ctx = this.ctxOf(run), { cfg, git } = ctx;
-    if (!cfg.git.tickTasksMd) return;
+    if (!cfg.git.tickTasksMd || task.synthetic) return; // fix-up tasks are not in tasks.md (§10.3)
     const tasksPath = path.join(run.spec_dir, "tasks.md");
     const rel = path.relative(cfg.repo, tasksPath);
     if (rel.startsWith("..")) return;
@@ -913,6 +945,245 @@ export class Orchestrator extends EventEmitter {
     const label = human ? `Owner feedback round ${round}` : `PR fix round ${round}/${fb.maxRounds}`;
     this.log(run, task, "state", { message: `${label}: ${why}`, feedback: clip(r.patch?.last_feedback ?? feedback, 2000) });
     if (this.deadlineGuard(run)) setTimeout(() => void this.tick(), 50);
+  }
+
+  // ------------------------------------------------------------------ phase validation (§10.3)
+  /** Phase validations in flight by phase id; `child` is the phase validator while it runs, so stop can kill it. */
+  private phaseJobs = new Map<number, { runId: string; child: ChildProcess | null; stopped: boolean }>();
+  private phaseJobOf(runId: string): number | undefined {
+    for (const [id, j] of this.phaseJobs) if (j.runId === runId) return id;
+    return undefined;
+  }
+
+  /** The run's phase rows, created `pending` from its tasks' phases when missing. */
+  private ensurePhases(run: Run, tasks: Task[]): Phase[] {
+    const have = this.store.listPhases(run.id);
+    const wanted = phaseList(tasks.map((t) => ({ key: t.key, phase: t.phase, status: t.status, orderIdx: t.order_idx })));
+    if (wanted.every((w) => have.some((p) => p.name === w.name))) return have;
+    for (const w of wanted) this.store.upsertPhase(run.id, w.name, w.idx);
+    return this.store.listPhases(run.id);
+  }
+
+  /**
+   * Called from tick() for a running run (§7.3 step 3). Disabled: every pending phase passes at once.
+   * Enabled: phases with nothing to validate pass; the next due phase starts validating when a global
+   * agent slot is free (a phase validator counts as one busy agent, §7.1).
+   */
+  private checkPhases(run: Run, ctx: ProjectContext, runIds: string[]) {
+    const tasks = this.store.listTasks(run.id);
+    const phases = this.ensurePhases(run, tasks);
+    if (!ctx.phase.enabled) {
+      const open = phases.filter((p) => p.status === "pending");
+      for (const p of open) this.store.updatePhase(p.id, { status: "passed" });
+      if (open.length) this.changed("phases", { runId: run.id });
+      return;
+    }
+    if (this.phaseJobOf(run.id) !== undefined) return;
+    const facts = tasks.map((t) => ({ key: t.key, phase: t.phase, status: t.status, orderIdx: t.order_idx }));
+    for (const due of phasesToValidate(facts, phases)) {
+      if (due.action === "pass") {
+        this.store.updatePhase(due.phaseId, { status: "passed" });
+        this.decide(run, null, "orchestrator", `Phase "${phaseLabel(due.name)}" passed without validation: ${due.reason}`, null);
+        this.changed("phases", { runId: run.id });
+        continue;
+      }
+      const active = runIds.reduce((n, id) => n + this.store.listTasks(id).filter((t) => ACTIVE.includes(t.status)).length, 0);
+      if (this.server.scheduler.maxAgents - active - this.busyAgents <= 0) return; // wait for a free slot
+      // Claim the slot and the phase synchronously, before the first await.
+      this.busyAgents++;
+      this.phaseJobs.set(due.phaseId, { runId: run.id, child: null, stopped: false });
+      this.store.updatePhase(due.phaseId, { status: "validating" });
+      this.changed("phases", { runId: run.id });
+      void this.validatePhase(run, ctx, due.phaseId)
+        .catch((e) => console.error("[phase]", e))
+        .finally(() => {
+          this.busyAgents--;
+          this.phaseJobs.delete(due.phaseId);
+          void this.tick();
+        });
+      return;
+    }
+  }
+
+  /**
+   * Validate one phase on the base branch: detached worktree at the base ref, setup, the phase command
+   * (`validation.phase.command`, else `validation.command`), then the phase validator agent. The worktree
+   * is always removed. An error of orch itself (e.g. the worktree cannot be created) goes to the owner.
+   */
+  private async validatePhase(run: Run, ctx: ProjectContext, phaseId: number) {
+    const { cfg, git } = ctx;
+    const phase = this.store.getPhase(phaseId)!;
+    const job = this.phaseJobs.get(phaseId)!;
+    const label = phaseLabel(phase.name);
+    const dir = path.join(cfg.worktreeDir, `${run.id}-phase-${phase.idx}`);
+    const tasks = this.store.listTasks(run.id);
+    const own = tasks.filter((t) => phaseName(t.phase) === phase.name);
+    const agent = this.agentFor(cfg, ctx.phase.role);
+    this.log(run, null, "state", { message: `phase validation started: "${label}" (${own.length} tasks${cfg.validation.agent ? `, ${agent.label}` : ""})`, phase: phase.name });
+
+    let verdict: PhaseVerdict;
+    let actor = "orchestrator";
+    try {
+      const ref = await git.baseRef();
+      await git.addDetachedWorktree(dir, ref);
+      this.log(run, null, "git", { message: `phase worktree ${dir} at ${ref} (detached)` });
+      for (const f of cfg.git.copyFiles) {
+        const src = path.join(cfg.repo, f);
+        if (fs.existsSync(src)) fs.copyFileSync(src, path.join(dir, f));
+      }
+      const fail = (failure: string): PhaseVerdict => ({ verdict: "FAIL", failure, reasons: [], unmet: [], suggestions: [] });
+      const setup = cfg.git.setupCommand ? await shell(cfg.git.setupCommand, dir, { timeoutMs: 15 * 60_000 }) : null;
+      if (setup) this.log(run, null, "git", { message: `setup: ${cfg.git.setupCommand} → exit ${setup.code}`, output: clip(setup.stdout + setup.stderr, 2000) });
+      const cmd = ctx.phase.command || cfg.validation.command;
+      let gateOutput = "";
+      if (setup && setup.code !== 0) {
+        verdict = fail(`Setup command failed on ${cfg.baseBranch} (exit ${setup.code}): \`${cfg.git.setupCommand}\`\n\n${clip((setup.stdout + "\n" + setup.stderr).trim(), 4000)}`);
+      } else {
+        let gateFailed: PhaseVerdict | null = null;
+        if (cmd) {
+          this.log(run, null, "state", { message: `phase gate: ${cmd}`, phase: phase.name });
+          const r = await shell(cmd, dir, { timeoutMs: 20 * 60_000 });
+          gateOutput = clip((r.stdout + "\n" + r.stderr).trim(), 4000);
+          this.log(run, null, "tool", { role: "phase gate", name: "shell", input: { command: cmd }, exit: r.code, output: clip(r.stdout + r.stderr, 3000) });
+          if (r.code !== 0) gateFailed = fail(`Phase command failed on ${cfg.baseBranch} (exit ${r.code}): \`${cmd}\`\n\n${gateOutput}`);
+        }
+        if (gateFailed) verdict = gateFailed;
+        else if (!cfg.validation.agent) verdict = { verdict: "PASS", failure: "", reasons: [], unmet: [], suggestions: [] };
+        else {
+          actor = "phase_validator";
+          verdict = await this.runPhaseValidator(run, ctx, phase, own, dir, cmd, gateOutput, job);
+        }
+      }
+    } catch (e: any) {
+      const message = e?.message ?? String(e);
+      this.log(run, null, "error", { message: `phase validation of "${label}" failed to run: ${message}` });
+      if (!job.stopped) await this.phaseNeedsOwner(run, ctx, this.store.getPhase(phaseId)!, `Phase validation could not run: ${message}`);
+      return;
+    } finally {
+      await git.removeWorktree(dir, false).catch(() => {});
+    }
+    if (job.stopped || this.store.getPhase(phaseId)?.status !== "validating") return; // run stopped meanwhile
+    await this.applyPhaseVerdict(run, ctx, this.store.getPhase(phaseId)!, verdict, actor);
+  }
+
+  /** The phase validator agent (role `phaseValidator`) in the phase worktree; its JSON verdict per §13.2. */
+  private async runPhaseValidator(run: Run, ctx: ProjectContext, phase: Phase, own: Task[], dir: string, cmd: string, gateOutput: string, job: { child: ChildProcess | null }): Promise<PhaseVerdict> {
+    const { cfg } = ctx;
+    const agent = this.agentFor(cfg, ctx.phase.role);
+    const count = this.store.listPhases(run.id).length;
+    const taskLines = own.map((t) => {
+      const head = `### ${t.key}${t.synthetic ? " (fix-up)" : ""}: ${t.title} (${t.status})`;
+      const crit = t.acceptance.length ? `Acceptance criteria:\n${t.acceptance.map((a) => `- ${a}`).join("\n")}` : "";
+      return [head, crit, `Summary: ${t.summary ?? "(none)"}`].filter(Boolean).join("\n");
+    });
+    const prompt = render(loadPrompt("phase-validator", cfg.repo), {
+      phase_label: phaseLabel(phase.name), phase_idx: phase.idx, phase_count: count, base_branch: cfg.baseBranch,
+      phase_tasks: clip(taskLines.join("\n\n"), cfg.handoff.historyChars * 2),
+      spec_context: this.specContext(cfg, run),
+      command_section: cmd ? `\`${cmd}\` passed on ${cfg.baseBranch}. Its output:\n\n\`\`\`\n${gateOutput || "(no output)"}\n\`\`\`` : "(none configured; run the project's checks yourself)",
+      fixup_section: phase.fixup_rounds ? `## Earlier rounds\nThis phase failed validation ${phase.fixup_rounds} time${phase.fixup_rounds > 1 ? "s" : ""} before; the fix-up tasks above were meant to fix that. Check that they did.` : "",
+    });
+    this.log(run, null, "state", { message: `phase validator started (${agent.label})`, phase: phase.name });
+    const res = await runAgent({
+      ...agent, cwd: dir, prompt,
+      env: { ...this.apiEnv(), ORCH_RUN_ID: run.id, ORCH_ACTOR: "phase_validator", PATH: `${path.join(PKG_ROOT, "bin")}${path.delimiter}${process.env.PATH ?? ""}` },
+      onSpawn: (c) => { job.child = c; },
+      onEvent: (kind, data) => this.log(run, null, kind, { role: "phase_validator", phase: phase.name, ...data }),
+    });
+    job.child = null;
+    const v = res.structured ?? {};
+    const strs = (x: any): string[] => (Array.isArray(x) ? x.map(String).filter((s) => s.trim()) : []);
+    const word = String(v.verdict ?? "").toUpperCase();
+    const reasons = strs(v.reasons), unmet = strs(v.unmet), suggestions = strs(v.suggestions);
+    this.log(run, null, "verdict", { role: "phase_validator", phase: phase.name, verdict: word || "NONE", reasons, unmet, suggestions, cost_usd: res.costUsd });
+    if (word === "PASS") return { verdict: "PASS", failure: "", reasons, unmet, suggestions };
+    return {
+      verdict: "FAIL", failure: `Phase validator verdict: ${word || "NONE"}`,
+      reasons: reasons.length ? reasons : [clip(res.text, 1500) || "phase validator gave no verdict"], unmet, suggestions,
+    };
+  }
+
+  /** PASS → passed. FAIL → a fix-up task while rounds remain (REQ-VAL-07), else the owner's inbox. */
+  private async applyPhaseVerdict(run: Run, ctx: ProjectContext, phase: Phase, v: PhaseVerdict, actor: string) {
+    const label = phaseLabel(phase.name);
+    if (v.verdict === "PASS") {
+      this.store.updatePhase(phase.id, { status: "passed" });
+      this.decide(run, null, actor, `Phase "${label}" passed validation`, phase.fixup_rounds ? `after ${phase.fixup_rounds} fix-up round${phase.fixup_rounds > 1 ? "s" : ""}` : null);
+      this.log(run, null, "state", { message: `phase "${label}" passed validation`, phase: phase.name });
+      this.changed("phases", { runId: run.id });
+      return;
+    }
+    const summary = clip([v.failure, ...v.reasons.map((r) => `- ${r}`), ...v.unmet.map((u) => `- UNMET: ${u}`)].filter(Boolean).join("\n"), 1500);
+    this.decide(run, null, actor, `Phase "${label}" failed validation`, summary);
+    const max = ctx.phase.maxFixups;
+    if (phase.fixup_rounds >= max) {
+      await this.phaseNeedsOwner(run, ctx, phase, `${max ? `${phase.fixup_rounds} fix-up round${phase.fixup_rounds === 1 ? "" : "s"} used (validation.phase.maxFixups = ${max})` : "fix-up tasks are off (validation.phase.maxFixups = 0)"}`, summary);
+      return;
+    }
+    const round = phase.fixup_rounds + 1;
+    const tasks = this.store.listTasks(run.id);
+    const phases = this.store.listPhases(run.id);
+    const idxOf = new Map(phases.map((p) => [p.name, p.idx]));
+    const own = tasks.filter((t) => phaseName(t.phase) === phase.name);
+    const later = tasks.filter((t) => (idxOf.get(phaseName(t.phase)) ?? 0) > phase.idx);
+    const plan = planFixup(
+      { name: phase.name, idx: phase.idx, lastOrderIdx: Math.max(...own.map((t) => t.order_idx)) },
+      round, v,
+      later.map((t) => ({ key: t.key, orderIdx: t.order_idx, status: t.status, dependsOn: t.depends_on })),
+    );
+    const byKey = new Map(tasks.map((t) => [t.key, t]));
+    // Later tasks move down first so the fix-up's order_idx is free.
+    for (const r of plan.reorder) this.store.updateTask(byKey.get(r.taskKey)!.id, { order_idx: r.orderIdx });
+    const fix = this.store.insertTask({
+      run_id: run.id, key: plan.task.key, title: plan.task.title, description: plan.task.description, acceptance: plan.task.acceptance,
+      depends_on: plan.task.dependsOn, parallel: 0, phase: plan.task.phase, order_idx: plan.task.orderIdx, status: "pending",
+      attempt: 0, max_attempts: ctx.cfg.scheduler.maxAttempts, merge_policy: plan.task.mergePolicy, validate_cmd: null,
+      worktree: null, branch: null, pr_url: null, session_id: null, summary: null, files: [], last_feedback: null, synthetic: true,
+    });
+    for (const e of plan.edges) {
+      const t = byKey.get(e.taskKey)!;
+      this.store.updateTask(t.id, { depends_on: [...t.depends_on, e.dependsOn] });
+    }
+    this.store.updatePhase(phase.id, { status: "pending", fixup_rounds: round });
+    this.decide(run, fix, "orchestrator", `Created fix-up task ${fix.key} for phase "${label}" (round ${round}/${max}); later phases wait for it`, clip(v.reasons.join("; ") || v.failure, 300));
+    this.log(run, fix, "state", { message: `fix-up task ${fix.key} created from the phase validation failure`, feedback: clip(fix.description, 2000) });
+    this.changed("tasks", { runId: run.id });
+    this.changed("phases", { runId: run.id });
+  }
+
+  /** The phase waits for the owner (inbox item with Re-run and Accept) and a notification goes out (REQ-HITL-01). */
+  private async phaseNeedsOwner(run: Run, ctx: ProjectContext, phase: Phase, why: string, detail: string | null = null) {
+    const label = phaseLabel(phase.name);
+    this.store.updatePhase(phase.id, { status: "needs_human" });
+    this.decide(run, null, "orchestrator", `Phase "${label}" needs the owner: ${why}`, detail);
+    this.changed("phases", { runId: run.id });
+    await this.notify(ctx, `Phase needs you: ${label}`, clip(`${why}. Re-run the phase validation or accept the phase in the inbox.`, 300), { priority: "high", tags: ["warning"] });
+  }
+
+  /** The phase row for an owner action, which must be waiting on the owner. */
+  private ownerPhase(phaseId: number, action: string): { phase: Phase; run: Run } {
+    const phase = this.store.getPhase(phaseId);
+    if (!phase) throw new NotFoundError(`no phase ${phaseId}`);
+    const run = this.store.getRun(phase.run_id);
+    if (!run) throw new NotFoundError(`no run '${phase.run_id}'`);
+    if (phase.status !== "needs_human" && phase.status !== "failed") throw new Error(`phase "${phaseLabel(phase.name)}" is ${phase.status}; only a phase waiting on you can be ${action}`);
+    return { phase, run };
+  }
+  /** Owner: validate the phase again (e.g. after fixing it by hand). The fix-up round count is kept. */
+  revalidatePhase(phaseId: number) {
+    const { phase, run } = this.ownerPhase(phaseId, "re-run");
+    this.store.updatePhase(phase.id, { status: "pending" });
+    this.decide(run, null, "human", `Re-running validation of phase "${phaseLabel(phase.name)}"`, null);
+    this.changed("phases", { runId: run.id });
+    void this.tick();
+  }
+  /** Owner: accept the phase as it is; later phases proceed. */
+  acceptPhase(phaseId: number) {
+    const { phase, run } = this.ownerPhase(phaseId, "accepted");
+    this.store.updatePhase(phase.id, { status: "passed" });
+    this.decide(run, null, "human", `Accepted phase "${phaseLabel(phase.name)}" without passing validation`, null);
+    this.changed("phases", { runId: run.id });
+    void this.tick();
   }
 
   // ------------------------------------------------------------------ human actions
@@ -1069,7 +1340,7 @@ export class Orchestrator extends EventEmitter {
    * Inbox items of one run (§14), derived from its tasks and questions; never from the events table.
    * Pass `tasks`/`questions` when the caller already loaded them.
    */
-  private runInbox(run: Run, tasks: Task[] = this.store.listTasks(run.id), questions: Question[] = this.store.listQuestions(run.id, true)): any[] {
+  private runInbox(run: Run, tasks: Task[] = this.store.listTasks(run.id), questions: Question[] = this.store.listQuestions(run.id, true), decisions?: Decision[]): any[] {
     const inbox: any[] = [];
     if (run.status === "plan_pending") inbox.push({ type: "approve_plan", run_id: run.id, title: "Plan awaits approval", detail: `${tasks.length} tasks`, ts: run.updated_at });
     for (const q of questions.filter((q) => !q.answer)) {
@@ -1079,6 +1350,15 @@ export class Orchestrator extends EventEmitter {
     for (const t of tasks) {
       if (t.status === "failed") inbox.push({ type: "failed", run_id: run.id, task_id: t.id, task_key: t.key, title: `${t.key} failed after ${t.attempt} attempts`, detail: t.last_feedback, ts: t.updated_at });
       if (t.status === "pr_open") inbox.push({ type: "merge", run_id: run.id, task_id: t.id, task_key: t.key, title: `${t.key} ready to merge`, detail: t.pr_url ?? t.branch, pr_url: t.pr_url, feedback: t.last_feedback, ci_status: t.ci_status, fix_rounds: t.fix_rounds, ts: t.updated_at });
+    }
+    // Phases whose validation failed after the fix-up rounds (§10.3); the detail is the latest failure.
+    const waiting = this.store.listPhases(run.id).filter((p) => p.status === "needs_human" || p.status === "failed");
+    if (waiting.length) {
+      const decs = decisions ?? this.store.listDecisions(run.id);
+      for (const p of waiting) {
+        const last = lastPhaseFailure(decs, p);
+        inbox.push({ type: "phase", run_id: run.id, phase_id: p.id, phase_name: p.name, title: `Phase "${phaseLabel(p.name)}" failed validation`, detail: last?.rationale ?? null, fixup_rounds: p.fixup_rounds, ts: p.updated_at });
+      }
     }
     return inbox;
   }
@@ -1107,11 +1387,12 @@ export class Orchestrator extends EventEmitter {
       project: project ? { id: project.id, name: project.name, repo: project.repo_path, archived: project.archived } : null,
       runs, config: this.publicConfig(project),
     };
-    if (!run) return { ...common, run: null, tasks: [], decisions: [], questions: [], inbox: [], inboxCount: 0 };
+    if (!run) return { ...common, run: null, tasks: [], decisions: [], questions: [], phases: [], inbox: [], inboxCount: 0 };
     const tasks = this.store.listTasks(run.id);
     const questions = this.store.listQuestions(run.id);
-    const inbox = this.runInbox(run, tasks, questions);
-    return { ...common, run, tasks, decisions: this.store.listDecisions(run.id), questions, inbox, inboxCount: inbox.length };
+    const decisions = this.store.listDecisions(run.id);
+    const inbox = this.runInbox(run, tasks, questions, decisions);
+    return { ...common, run, tasks, decisions, questions, phases: this.store.listPhases(run.id), inbox, inboxCount: inbox.length };
   }
 
   /**
@@ -1150,13 +1431,13 @@ export class Orchestrator extends EventEmitter {
     const s = this.server;
     const server = { maxAgents: s.scheduler.maxAgents, ntfy: !!s.notify.ntfyUrl, ntfyToken: !!s.notify.ntfyToken, auth: !!s.auth.token };
     if (!project) return { repo: null, ...server };
-    let c: Config;
+    let c: Config, ph: ProjectContext["phase"];
     try {
-      c = this.context(project.id).cfg;
+      ({ cfg: c, phase: ph } = this.context(project.id));
     } catch (e: any) {
       return { repo: project.repo_path, error: e?.message ?? String(e), ...server };
     }
-    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries(c.agents.roles).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), ...server, prFeedback: c.git.pr && c.git.feedback.enabled ? { waitForChecks: c.git.feedback.waitForChecks, maxRounds: c.git.feedback.maxRounds, trigger: c.git.feedback.trigger } : null };
+    return { repo: c.repo, baseBranch: c.baseBranch, maxParallel: c.scheduler.maxParallel, maxAttempts: c.scheduler.maxAttempts, pr: c.git.pr, mergePolicy: c.git.mergePolicy, validationCommand: c.validation.command, validatorAgent: c.validation.agent, roles: Object.fromEntries(Object.entries({ ...c.agents.roles, phaseValidator: ph.role }).map(([k, v]) => [k, `${c.agents.adapters[v.adapter]?.type ?? v.adapter}${v.model ? ":" + v.model : ""}`])), phaseValidation: { enabled: ph.enabled, command: ph.command, maxFixups: ph.maxFixups }, ...server, prFeedback: c.git.pr && c.git.feedback.enabled ? { waitForChecks: c.git.feedback.waitForChecks, maxRounds: c.git.feedback.maxRounds, trigger: c.git.feedback.trigger } : null };
   }
 
   /** On daemon start: anything that was 'running' when we died goes back to pending. */
@@ -1169,6 +1450,11 @@ export class Orchestrator extends EventEmitter {
           this.fire(run, t.id, { type: "daemon_restart" }).catch((e) => console.error("[recover]", e));
           this.log(run, t, "state", { message: "daemon restarted while task was active; task reset to pending (worktree kept)" });
         }
+      }
+      for (const p of this.store.listPhases(run.id)) {
+        if (p.status !== "validating") continue;
+        this.store.updatePhase(p.id, { status: "pending" }); // validated again by the next phase check
+        this.log(run, null, "state", { message: `daemon restarted during validation of phase "${phaseLabel(p.name)}"; it runs again` });
       }
       if (run.status === "planning") this.store.setRunStatus(run.id, "plan_pending");
     }
@@ -1192,4 +1478,14 @@ function validateCmd(cfg: Config, task: Task): string {
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "task";
+}
+
+/** Why a phase waits on the owner: the newest hand-over decision's failure summary, else its text. */
+function lastPhaseFailure(decisions: Decision[], phase: Phase): { rationale: string | null } | undefined {
+  const label = phaseLabel(phase.name);
+  for (let i = decisions.length - 1; i >= 0; i--) {
+    const d = decisions[i];
+    if (d.text.startsWith(`Phase "${label}" needs the owner: `)) return { rationale: d.rationale ?? d.text };
+  }
+  return undefined;
 }

@@ -35,9 +35,9 @@ orch ignores unknown keys and shows a warning in the run's **Activity** tab.
 | :--- | :--- | :--- | :--- |
 | `validation.command` | string | `""` | The test gate command, run in each task's working copy before the validator, for example `npm test`. Empty skips the gate. A task's own test command replaces it. Times out after 20 minutes. |
 | `validation.agent` | boolean | `true` | Whether the validator agent runs. `false` lets the test gate decide alone. |
-| `validation.phase.enabled` | boolean | `true` | **Planned.** Whether to validate each phase on the base branch. See [Validate whole phases](../how-to/validate-phases.md). |
-| `validation.phase.command` | string | `""` | **Planned.** The phase test command. Empty uses `validation.command`. |
-| `validation.phase.maxFixups` | integer | `2` | **Planned.** Fix-up tasks per phase before the phase goes to your inbox. |
+| `validation.phase.enabled` | boolean | `true` | Whether to validate each phase on the base branch. See [Validate whole phases](../how-to/validate-phases.md). |
+| `validation.phase.command` | string | `""` | The phase test command. Empty uses `validation.command`. |
+| `validation.phase.maxFixups` | integer | `2` | Fix-up tasks per phase before the phase goes to your inbox. |
 | `validation.ui.startCommand` | string | `""` | **Planned.** The command that starts your app for UI validation. See [Validate UI tasks in a browser](../how-to/validate-ui-tasks.md). |
 | `validation.ui.url` | string | `http://127.0.0.1:{port}/` | **Planned.** The app address given to the validator. `{port}` is replaced with the chosen port. |
 | `validation.ui.readyTimeoutSeconds` | integer | `120` | **Planned.** How long to wait for the app to answer. |
@@ -87,7 +87,7 @@ Text over a limit is cut with a visible marker, not dropped.
 | `roles.planner` | `{ "adapter", "model" }` | From `server.json` | The agent and model for planning. |
 | `roles.worker` | `{ "adapter", "model" }` | From `server.json` | The agent and model for writing code. |
 | `roles.validator` | `{ "adapter", "model" }` | From `server.json` | The agent and model for validation. |
-| `roles.phaseValidator` | `{ "adapter", "model" }` | The validator's setting | **Planned.** The agent and model for phase validation. |
+| `roles.phaseValidator` | `{ "adapter", "model" }` | The validator's setting | The agent and model for phase validation. |
 
 `adapter` must name an adapter defined in `server.json`. An empty `model` uses the agent program's default. See [Choose agents and models](../how-to/configure-agents.md).
 

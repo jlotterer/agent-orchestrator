@@ -1,6 +1,6 @@
 # Choose agents and models
 
-orch launches an agent program for each role: planner, worker, validator, and (**Planned**) phase validator. You choose which program and model each role uses. Two agent programs are supported: Claude Code and Gemini CLI.
+orch launches an agent program for each role: planner, worker, validator, and phase validator. You choose which program and model each role uses. Two agent programs are supported: Claude Code and Gemini CLI.
 
 ## Supported agent programs
 
@@ -54,7 +54,7 @@ A project can choose a different adapter or model for a role, from the adapters 
 
 If the adapter name isn't defined in `server.json`, orch refuses to plan or start the project and names the problem.
 
-For phase validation (**Planned**), set the `phaseValidator` role. If you don't, it uses the validator's settings.
+For phase validation, set the `phaseValidator` role. If you don't, it uses the validator's settings.
 
 ## Sign in to the agent programs
 

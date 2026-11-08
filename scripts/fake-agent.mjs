@@ -13,6 +13,9 @@
  *                Owner feedback (scripts/e2e.mjs, TASK-06): a retry whose prompt says "trailing note"
  *                writes "OK note"
  *   validator -> FAIL if the diff contains NEEDS_REVIEW, else PASS
+ *   phase validator (TASK-15) -> PASS, except: PHASE_TRAP in the spec makes it FAIL phase 1 while the
+ *                checkout of the base branch has no impl/FIX-1.<round>.txt (a fix-up task writes one; workers
+ *                on FIX-<n>.<round> keys behave like any other task)
  *
  * Lifecycle markers (scripts/e2e-lifecycle.mjs), matched anywhere in the prompt:
  *   PLANNER_FAIL  (spec.md, planner) -> prints to stderr and exits 1 with no plan
@@ -75,7 +78,8 @@ else emit({ type: "system", subtype: "init", model: "fake", session_id: sessionI
 await new Promise((r) => setTimeout(r, 200));
 
 const OWNED = { T001: ["impl/T001.txt"], T002: ["impl/T002.txt", "shared/**"], T003: ["shared/farewell.md", "impl/T003.txt"], T004: ["impl/T004.txt"] };
-const taskKey = (prompt.match(/# Task (T\d+)/) || prompt.match(/on task (T\d+)/) || [])[1];
+const KEY_RE = /# Task (T\d+|FIX-\d+\.\d+)/, RESUME_KEY_RE = /on task (T\d+|FIX-\d+\.\d+)/;
+const taskKey = (prompt.match(KEY_RE) || prompt.match(RESUME_KEY_RE) || [])[1];
 if (process.env.FAKE_ACTIVE_DIR && taskKey && !prompt.includes("You are the PLANNER")) {
   const dir = process.env.FAKE_ACTIVE_DIR, mine = path.join(dir, `active-${taskKey}`);
   fs.mkdirSync(dir, { recursive: true });
@@ -100,6 +104,15 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
     // PLAN_QUESTION in spec.md: one question about the spec as a whole (TASK-13, REQ-INTAKE-07).
     questions: prompt.includes("PLAN_QUESTION") ? [{ text: "Should greetings be capitalized throughout the spec?", options: ["Yes", "No"] }] : [],
   }, "Plan drafted.");
+} else if (prompt.includes("You are the PHASE VALIDATOR")) {
+  // TASK-15: the checkout is the base branch; a merged fix-up for phase 1 leaves impl/FIX-1.<round>.txt.
+  const phase1 = prompt.includes("(phase 1 of ");
+  const fixed = fs.existsSync("impl") && fs.readdirSync("impl").some((f) => /^FIX-1\.\d+\.txt$/.test(f));
+  const trapped = prompt.includes("PHASE_TRAP") && phase1 && !fixed;
+  tool("Bash", { command: "sh check.sh && ls impl" }, trapped ? "integration check failed: PHASE_TRAP" : "phase works as a whole");
+  finish(trapped
+    ? { verdict: "FAIL", reasons: ["integration check failed: PHASE_TRAP (the phase's files are not wired together)"], unmet: ["impl/ files of phase 1 work together"], suggestions: ["add an integration note in impl/"] }
+    : { verdict: "PASS", reasons: [], unmet: [], suggestions: [] }, "Phase validated.");
 } else if (prompt.includes("You are the VALIDATOR")) {
   const diffBad = prompt.includes("NEEDS_REVIEW");
   // REQ-VAL-05: report orch's out-of-scope list as findings; they never turn a PASS into a FAIL.
@@ -111,7 +124,7 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
     : { verdict: "PASS", criteria: [{ criterion: "contains OK", met: true, evidence: "grep OK" }], reasons: [], suggestions: [], findings }, "Validated.");
 } else {
   // worker
-  const key = (prompt.match(/# Task (T\d+)/) || prompt.match(/on task (T\d+)/))[1];
+  const key = (prompt.match(KEY_RE) || prompt.match(RESUME_KEY_RE))[1];
   const resumed = prompt.includes("being resumed");
   const retry = prompt.includes("Feedback");
   if (key === "T002" && !resumed) {

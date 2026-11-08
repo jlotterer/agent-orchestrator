@@ -1,5 +1,5 @@
 # TASK-15: Phase validation and fix-up tasks
-**Status:** todo · **Wave:** 10 · **Depends on:** TASK-14 · **Parallel:** No
+**Status:** done · **Wave:** 10 · **Depends on:** TASK-14 · **Parallel:** No
 
 ## Goal
 Validate each phase as a whole once its tasks are done. Run the phase test command and a phase validator agent on the base branch, create fix-up tasks automatically when it fails, and involve the owner after repeated failures.

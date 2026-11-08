@@ -90,6 +90,10 @@ export function startServer(orch: Orchestrator) {
   route("POST", "/api/tasks/:id/request-changes", async (_r, _s, p, b) => { await orch.requestChanges(p.id, String(b.feedback ?? "")); return { ok: true }; });
   route("POST", "/api/tasks/:id/edit", (_r, _s, p, b) => { orch.editTask(p.id, b); return { ok: true }; });
 
+  // ---- phase validation (§10.3): owner actions on a phase waiting in the inbox ----
+  route("POST", "/api/phases/:id/revalidate", (_r, _s, p) => { orch.revalidatePhase(Number(p.id)); return { ok: true }; });
+  route("POST", "/api/phases/:id/accept", (_r, _s, p) => { orch.acceptPhase(Number(p.id)); return { ok: true }; });
+
   // ---- questions & decisions (dashboard + agent CLI) ----
   route("POST", "/api/questions/:id/answer", async (_r, _s, p, b) => { await orch.answerQuestion(Number(p.id), String(b.answer)); return { ok: true }; });
   route("POST", "/api/ask", (_r, _s, _p, b) => orch.recordQuestion(String(b.taskId), String(b.text), Array.isArray(b.options) ? b.options.map(String) : []));

@@ -33,7 +33,7 @@ For a full example, see `examples/server.example.json` in the orch source.
 | `agents.roles.planner` | `{ "adapter", "model" }` | `claude`, default model | The default agent for planning. |
 | `agents.roles.worker` | `{ "adapter", "model" }` | `claude`, default model | The default agent for writing code. |
 | `agents.roles.validator` | `{ "adapter", "model" }` | `claude`, default model | The default agent for validation. |
-| `agents.roles.phaseValidator` | `{ "adapter", "model" }` | The validator's setting | **Planned.** The default agent for phase validation. |
+| `agents.roles.phaseValidator` | `{ "adapter", "model" }` | The validator's setting | The default agent for phase validation. |
 
 The adapters `claude` and `gemini` are defined by default. A role's `adapter` must name a defined adapter, or orch refuses to start. See [Choose agents and models](../how-to/configure-agents.md).
 

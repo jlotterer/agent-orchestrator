@@ -20,6 +20,9 @@ spec.md / plan.md / tasks.md  ──►  orch plan  ──►  [you approve]  �
                    ─► validation command (deterministic gate)
                    ─► validator agent (fresh context, PASS/FAIL with evidence)
                    ─► PR ─► merge (auto, or wait for you) ─► tick tasks.md ─► next
+          when a phase's tasks are all done:
+          base branch ─► phase test command ─► phase validator ─► PASS: next phase
+                                                               FAIL: fix-up task FIX-<n>.<round>
 ```
 
 ## Why it looks like this
@@ -121,13 +124,14 @@ that project.
 |---|---|
 | `baseBranch` | branch to branch from and merge into (`main`) |
 | `validation.command` | the deterministic gate run in every worktree before the validator (`npm test`, `pytest`, …) |
+| `validation.phase` | `{enabled, command, maxFixups}`: validate each phase on the base branch once its tasks are done (default on; `command` empty = `validation.command`; `maxFixups` 2). See [Phase validation](#phase-validation) |
 | `scheduler.maxParallel` | tasks of this project running at once. `1` = sequential. Raise it once you trust the dependency graph |
 | `scheduler.maxAttempts` | worker attempts before a task goes to your inbox (`2`) |
 | `git.pr` | `true` = push + `gh pr create` + `gh pr merge`; `false` = merge locally, no GitHub needed |
 | `git.mergePolicy` | default `auto` (merge when validated) or `manual` (wait for you). The planner marks risky tasks `manual` on its own |
 | `git.feedback` | PR mode only: wait for CI before auto-merging, and send CI failures and `/orch` review comments back to the worker. See [Merging](#merging) |
 | `git.copyFiles` / `git.setupCommand` | e.g. `[".env"]` and `npm ci` for each new worktree |
-| `roles.{planner,worker,validator}` | override which adapter and model a role uses in this project, e.g. `{"adapter": "gemini", "model": "pro"}`. The adapter must be defined in `server.json` |
+| `roles.{planner,worker,validator,phaseValidator}` | override which adapter and model a role uses in this project (`phaseValidator` defaults to the validator's), e.g. `{"adapter": "gemini", "model": "pro"}`. The adapter must be defined in `server.json` |
 
 A project file can't set server keys (`agents`, `host`, `port`, `publicUrl`, `auth`, `notify`,
 `dbPath`, `worktreeDir`, `repo`, `git.ghCommand`). orch refuses to plan or start a project whose
@@ -144,8 +148,8 @@ example: [orch.config.example.json](orch.config.example.json).
 | `auth.allowInsecure` | `true` lets orch listen on a non-local `host` without a token. Default `false` |
 | `notify.ntfyUrl` | `https://ntfy.sh/<your-topic>` for push notifications. Titles start with `[<project name>]` |
 | `publicUrl` | what the notification links to, e.g. `http://my-server:4800` |
-| `scheduler.maxAgents` | agent sessions running at once across all projects (workers, validators, planners). Default `2`; `1` = strictly one at a time |
-| `agents.roles.{planner,worker,validator}` | default adapter and model per role for every project |
+| `scheduler.maxAgents` | agent sessions running at once across all projects (workers, validators, planners, phase validators). Default `2`; `1` = strictly one at a time |
+| `agents.roles.{planner,worker,validator,phaseValidator}` | default adapter and model per role for every project (`phaseValidator` falls back to `validator`) |
 | `agents.adapters.claude.extraArgs` | defaults to `--permission-mode bypassPermissions`. Tighten with `--allowedTools` if you prefer |
 | `agents.adapters.gemini.extraArgs` | defaults to `--yolo --skip-trust` (both required for headless runs in a worktree) |
 | `retention.eventDays` | archive the agent event logs of runs finished more than this many days ago. Default `30`; `0` = keep forever. See [Event log retention](#event-log-retention) |
@@ -275,6 +279,8 @@ Any markdown file that follows the `- [ ] T001 …` convention works, Spec Kit o
 * **Validator**: the task, criteria, the worker's summary (as claims to check), the diff, and the
   changed files outside the task's owned files, which it reports as `findings` (never a FAIL by
   themselves). It runs the checks itself. Prompt: `prompts/validator.md`.
+* **Phase validator**: the phase's tasks with their criteria and workers' summaries, the spec excerpt and the
+  phase command's output, in a checkout of the base branch. Prompt: `prompts/phase-validator.md`.
 * **Planner**: all spec files plus the parsed task list. Prompt: `prompts/planner.md`.
 
 Override any prompt by copying it to `<repo>/.orch/prompts/<name>.md`.
@@ -286,6 +292,19 @@ With `scheduler.resumeOnRetry: true` (default) it resumes the same Claude sessio
 learned; set it to `false` for a clean start each time. Answering a question never consumes an
 attempt. "Re-run from scratch" in the dashboard resets attempts and starts fresh in the same
 worktree.
+
+### Phase validation
+
+When every task of a phase is done or skipped (at least one done), orch validates the phase as a whole
+on the base branch: a detached worktree at `origin/<base>` (or `<base>`), `git.setupCommand`, then
+`validation.phase.command` (else `validation.command`), then the phase validator agent. Phases are
+validated one at a time, in order, and each validation takes one of the `scheduler.maxAgents` slots.
+Tasks of later phases wait until the phase has passed. A PASS is a decision; a FAIL creates a fix-up
+task `FIX-<phase>.<round>` (description = the failure, acceptance = the unmet criteria plus "phase
+validation passes", merge auto) that every later unfinished task now depends on, also recorded as a
+decision. Fix-up tasks run like any task, are never ticked in `tasks.md`, and carry a **fix-up** badge.
+After `validation.phase.maxFixups` rounds (`0` = straight away) the phase goes to the inbox with
+**Re-run validation** and **Accept phase**. `validation.phase.enabled: false` turns it all off.
 
 ### Merging
 
@@ -425,6 +444,11 @@ at merge time, two parallel tasks conflicting on one file, skipping a failed dep
 question twice, and editing acceptance criteria before approval. Run a subset by letter:
 `node scripts/e2e-lifecycle.mjs b h`.
 
+`scripts/e2e-phase.mjs` checks phase validation: phase 1 fails (`PHASE_TRAP` in the spec), `FIX-1.1`
+appears with the failure while phase 2 waits, the fix-up merges, phase 1 passes on re-validation and
+phase 2 runs; `tasks.md` never gets a `FIX-` key. With `maxFixups: 0` the failure is a phase inbox
+item: Re-run validates again, Accept lets phase 2 proceed. Run one scenario with `node scripts/e2e-phase.mjs b`.
+
 `scripts/e2e-multi.mjs` runs one daemon over two registered repos with `scheduler.maxAgents: 1`: never
 more than one active task, the second project's task starting before the first project's third,
 refused plans and starts naming the unfinished run, worktrees under `ORCH_HOME`, and notification
@@ -452,7 +476,7 @@ A failed run keeps its throwaway repo and prints its path.
 file in `src/core/` imports `node:fs`, `node:child_process` or the database, or reads the clock.
 
 `test/fixtures/` holds the spec-first fixture tables for the risky logic (tasks.md parser, JSON
-extraction, readiness, task transitions, PR-poll decisions). Their expected outputs are owner-reviewed;
+extraction, readiness, task transitions, PR-poll decisions, file ownership, phase validation). Their expected outputs are owner-reviewed;
 see [test/fixtures/README.md](test/fixtures/README.md) for the formats and the `pending` marker.
 `test/unit/core.test.mjs` runs every case (`npm run test:unit`); cases marked `pending` are reported as
 skipped until the task that builds them removes the marker.
@@ -465,7 +489,7 @@ container. Copy the source in so the container's `npm ci` does not replace your 
 
 ```
 src/orchestrator.ts   per-project contexts; gathers facts, calls src/core, performs side effects: plan → approve → run → validate → merge
-src/core/             pure decisions: readiness (who starts), task transitions, PR-poll actions
+src/core/             pure decisions: readiness (who starts), task transitions, PR-poll actions, phase validation and fix-ups
 src/adapters/         one adapter per agent CLI (claude.ts, gemini.ts) + the shared process runner
 src/git.ts            worktrees, diffs, push, gh pr create/merge/view, CI logs, local merge
 src/prfeedback.ts     PR feedback loop helpers: check verdicts, review comments, worker feedback text
@@ -478,7 +502,7 @@ src/archive.ts        event retention: old runs' events to archive/<project>/<ru
 src/server.ts         REST + SSE, serves the dashboard; token gate, /api/health, /api/login
 src/auth.ts           token check (Bearer or cookie), login cookie, bind guard
 src/cli.ts            `orch` (human commands, the agent-facing decide/ask, the single-repo upgrade in `serve`)
-prompts/*.md          the three role prompts
+prompts/*.md          the role prompts (planner, worker, validator, phase validator)
 dashboard/index.html  the UI, no build step
 ```
 
