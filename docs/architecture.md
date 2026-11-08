@@ -53,8 +53,8 @@ src/
     graph.ts        cycle detection over depends_on                           [planned: TASK-13]
   prfeedback.ts     PURE: gh JSON → checks/feedback; worker feedback text (built, R1)
   speckit.ts        tasks.md parser (pure) + spec dir reader + tick writer
-  config.ts         server config + project config loading/validation/merging      [split: TASK-05]
-  paths.ts          ORCH_HOME layout                                                  [planned: TASK-05]
+  config.ts         server + project config loaders, forbidden keys, legacy adapter  (built: TASK-05; daemon wiring TASK-09)
+  paths.ts          ORCH_HOME layout                                                  (built: TASK-05)
   projects.ts       project registry (add/list/archive/resolve by cwd)                [planned: TASK-07]
   db.ts             better-sqlite3 store, schema + versioned migrations
   git.ts            Git class: worktrees, commits, diffs, merge, gh pr/run/api helpers
@@ -87,7 +87,7 @@ scripts/            e2e*.mjs scenarios, fake-agent.mjs, fake-gh.mjs, fake-app.mj
 Single-threaded JS: DB writes are synchronous (better-sqlite3), so no row-level races. Re-read the task after every `await` before acting (status may have changed).
 
 ## 5. Projects & Configuration
-**[planned: TASK-05, TASK-07, TASK-09]** Today one daemon serves one repo configured by `orch.config.json`.
+**[built: TASK-05 (loaders, paths); planned: TASK-07, TASK-09]** Today one daemon still serves one repo configured by a single legacy `orch.config.json` (`loadConfig()`). The two-level loaders below exist in `src/config.ts` and `src/paths.ts` and are unit-tested, but the daemon does not call them until TASK-09; `toLegacyConfig(server, project, repoPath)` maps the pair onto today's `Config` (worktrees under `worktrees/<project-id>/`, DB at `$ORCH_HOME/orch.db`) so that wiring needs no orchestrator change.
 
 ### 5.1 ORCH_HOME layout
 ```
@@ -104,7 +104,9 @@ $ORCH_HOME (default ~/.orch)
 
 **Rejected keys (error naming the key, project unusable until fixed):** `agents` (adapters/commands/env), `host`, `port`, `publicUrl`, `auth`, `notify`, `dbPath`, `worktreeDir`, `git.ghCommand`, `repo`. Reason: a repo must not change how agent CLIs launch or which credentials they get ([0013](decisions/0013-project-config-in-repo.md)). `roles.*.adapter` must name an adapter defined in `server.json`. Unknown keys → warning in the activity stream, ignored.
 
-**Precedence:** project file > `server.json` project defaults (`defaults.*`, same shape) > built-in defaults. The effective config is rebuilt when a run is created or started (REQ-PROJ-06), never mid-run.
+**Precedence:** project file > `server.json` project defaults (`defaults.*`, same shape) > built-in defaults. Roles start from `server.json` `agents.roles`; `roles.phaseValidator`, if set nowhere, copies the effective `validator`. The effective config is rebuilt when a run is created or started (REQ-PROJ-06), never mid-run.
+
+**Loader contract** (`src/config.ts`): `loadServerConfig(home)` reads `<home>/server.json` over the §19 server defaults (missing file = defaults); it throws if `agents.roles.*` names an undefined adapter or `defaults` holds a rejected key (named `defaults.<key>`). `loadProjectConfig(repoPath, server)` returns `{config, warnings, path}`: it re-reads the file on every call, throws on rejected keys (all named in one message) and on unknown role adapters, and drops unknown or non-object keys with a warning (unknown keys under `server.json` `defaults` are reported the same way). `validation.ui.env` is a free-form map. `writeStarterProjectConfig(repoPath, {baseBranch})` writes `{baseBranch, validation: {command: ""}}` only if no file exists. Examples: [orch.config.example.json](../orch.config.example.json) (project keys) and [examples/server.example.json](../examples/server.example.json).
 
 ### 5.3 Registry
 `projects` table (§20). `id` = slug of the repo directory name, `-2`, `-3`… on collision. `repo_path` unique (realpath). Adding: realpath → must contain `.git` (`git rev-parse --show-toplevel` equals path) → if archived row with same path exists, un-archive it → else insert → write starter `orch.config.json` if missing (keys: `baseBranch` detected from `git symbolic-ref refs/remotes/origin/HEAD` else current branch, `validation.command: ""`). Archive refuses if the project has an unfinished run. Missing repo on disk → project `error` field set at load; views show it; plan/start refused.
@@ -369,7 +371,7 @@ _(→ code: `src/costs.ts`, [planned: TASK-17])_
 | `git.copyFiles` / `git.setupCommand` / `git.tickTasksMd` | project | list / string / bool | [] / `""` / true | §9, §11 |
 | `git.feedback.enabled` / `waitForChecks` / `pollSeconds` / `maxRounds` / `checksTimeoutMinutes` / `noChecksGraceSeconds` / `trigger` / `ignoreAuthors` / `logChars` | project | — | true / true / 60 / 3 / 60 / 90 / `/orch` / [] / 6000 | §12 |
 | `handoff.specChars` / `historyChars` / `contextFiles` | project | int / int / list | 12000 / 6000 / `[plan.md, spec.md]` | §9 |
-| `roles.<role>` | project | `{adapter, model}` | server roles | §5.2 |
+| `roles.<role>` | project | `{adapter, model}` | server roles (`phaseValidator`: effective `validator`) | §5.2 |
 
 ## 20. Data Model & Persistence
 _(→ code: `src/db.ts`)_
@@ -406,7 +408,7 @@ _(→ code: `src/db.ts`)_
 
 ### 21.2 Testing architecture
 - **One command:** `npm test` = build → `test:unit` → `check` → `test:e2e`. CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm run typecheck`, `npm test` on ubuntu-latest with Node 22 and 24 ([0022](decisions/0022-node-22-floor.md)).
-- **Unit** (`test/unit/*.test.mjs`, `node --test`, against `dist/`): pure modules, driven by fixtures.
+- **Unit** (`test/unit/*.test.mjs`, `node --test`, against `dist/`): pure modules, driven by fixtures. `config.test.mjs` [TASK-05] covers the server/project loaders against temp dirs: precedence, every rejected key, unknown-key warnings, unknown role adapters, `ORCH_HOME` override, `toLegacyConfig`, and that both example files load without warnings.
 - **Fixtures** (`test/fixtures/`, spec-first, owner-reviewed, [TASK-01]):
   - `tasks-md/<case>.md` + `<case>.expected.json`: `[{key, phase, parallel, done, depends_on}]` (depends_on sorted).
   - `extract-json.json`: `[{name, input, expected}]` (`expected: null` when nothing parses).

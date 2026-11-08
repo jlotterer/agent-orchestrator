@@ -11,7 +11,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T004 [P] Regression e2e for built lifecycle behaviour. Brief: docs/tasks/TASK-04.md.
 
 ## Phase 3: Wave 3
-- [ ] T005 [P] Server/project config split and ORCH_HOME. Brief: docs/tasks/TASK-05.md.
+- [x] T005 [P] Server/project config split and ORCH_HOME. Brief: docs/tasks/TASK-05.md.
 - [ ] T006 [P] Diff review and send back to the worker. Brief: docs/tasks/TASK-06.md.
 
 ## Phase 4: Wave 4

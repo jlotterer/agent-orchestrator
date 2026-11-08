@@ -72,6 +72,17 @@ Edit `orch.config.json`:
 
 Add `.orch/` to `.gitignore`.
 
+> **Settings are splitting in two (multi-project support).** Server-wide settings (`host`, `port`,
+> `publicUrl`, `auth`, `notify`, `agents.*`, `git.ghCommand`, scheduler `tickSeconds`/`maxAgents`)
+> will move to `$ORCH_HOME/server.json` (default `~/.orch/server.json`), and each repo's
+> `orch.config.json` will hold project keys only (`baseBranch`, `validation`, `git`, `handoff`,
+> `scheduler.maxParallel`, `roles`, …). A project file that sets a server key such as `agents` is
+> rejected, so a cloned repo cannot change which agent binaries run or what credentials they get.
+> See [orch.config.example.json](orch.config.example.json) and
+> [examples/server.example.json](examples/server.example.json). The loaders exist today; the daemon
+> switches to them, and upgrades an existing single-file config automatically, in a later release.
+> Until then `orch serve` reads the single `orch.config.json` described above.
+
 Start the daemon:
 
 ```bash
@@ -283,6 +294,8 @@ src/adapters/         one adapter per agent CLI (claude.ts, gemini.ts) + the sha
 src/git.ts            worktrees, diffs, push, gh pr create/merge/view, CI logs, local merge
 src/prfeedback.ts     PR feedback loop helpers: check verdicts, review comments, worker feedback text
 src/speckit.ts        tasks.md parser and ticker
+src/config.ts         settings: today's single-file loader, plus server.json / per-project loaders
+src/paths.ts          ORCH_HOME layout (server.json, orch.db, worktrees/, archive/, run/)
 src/db.ts             SQLite: runs, tasks, events, decisions, questions
 src/server.ts         REST + SSE, serves the dashboard
 src/cli.ts            `orch` (human commands and the agent-facing decide/ask)
