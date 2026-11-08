@@ -53,8 +53,8 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-PROJ-02 | When a registered project has no project settings file, orch MUST create a starter settings file in the repo and say where it is. | new |
 | REQ-PROJ-03 | The owner MUST be able to see every registered project with its name, current run status, and number of open inbox items, and switch the dashboard between projects. | new |
 | REQ-PROJ-04 | The owner MUST be able to remove (archive) a project. Archiving MUST NOT delete the repository. The project's history MUST remain stored, and it MUST be possible to re-register the project later. Archiving a project with an active run MUST be refused. | new |
-| REQ-PROJ-05 | Per-project settings MUST be read from a file inside the project's repository. Server-wide settings MUST be kept separately and MUST NOT be overridable from a project file in ways that change how agent CLIs are launched or which credentials they get. | new |
-| REQ-PROJ-06 | Changes to a project's settings file MUST take effect no later than the next run start for that project, without restarting orch. | new |
+| REQ-PROJ-05 | Per-project settings MUST be read from a file inside the project's repository. Server-wide settings MUST be kept separately and MUST NOT be overridable from a project file in ways that change how agent CLIs are launched or which credentials they get. | built (loaders, TASK-05) / new (daemon uses them, TASK-09) |
+| REQ-PROJ-06 | Changes to a project's settings file MUST take effect no later than the next run start for that project, without restarting orch. | new (loader re-reads the file on every call, TASK-05; run-start wiring TASK-09) |
 | REQ-PROJ-07 | Each project MUST have at most one unfinished run (planning, awaiting approval, ready, running, or paused). Creating or starting another run in that project while one is unfinished MUST be refused with a message naming the unfinished run. | new |
 | REQ-PROJ-08 | Several projects MAY run at the same time. The total number of agent sessions running across all projects MUST NOT exceed a configurable global limit. | new |
 | REQ-PROJ-09 | When capacity is scarce, a project with ready tasks MUST NOT wait indefinitely while other projects keep starting tasks. | new |
@@ -342,7 +342,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-OPS-03 | A health check MUST be available without the token, reporting that orch is up and its version. `[ASSUMED]` | new |
 | REQ-OPS-04 | Agent event logs of runs that finished more than a configured number of days ago MUST be archived to compressed files on the server, then removed from the live store. Decisions, questions, task summaries and verdicts MUST be kept. | new |
 | REQ-OPS-05 | Stored data from earlier versions MUST be upgraded automatically on start, without data loss. | built (columns) |
-| REQ-OPS-06 | orch MUST run as a systemd service and in Docker, keeping all of its state in one data directory. | built (per repo) / new (one data dir for all projects) |
+| REQ-OPS-06 | orch MUST run as a systemd service and in Docker, keeping all of its state in one data directory. | built (per repo; ORCH_HOME layout in src/paths.ts, TASK-05) / new (daemon keeps all state there, TASK-09) |
 | REQ-OPS-07 | The access token and notification credentials MUST NOT be written to the store, the event log, or agent prompts. | new |
 
 **Edge cases:**

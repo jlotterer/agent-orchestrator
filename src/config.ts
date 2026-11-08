@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { orchHome, serverConfigPath, dbPath, worktreesDir, projectSlug } from "./paths.js";
 
 export interface RoleConfig {
   /** Key into agents.adapters. */
@@ -261,4 +262,324 @@ export function writeExampleConfig(dir: string): string {
   };
   fs.writeFileSync(p, JSON.stringify(example, null, 2) + "\n");
   return p;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Two-level configuration (architecture §5.1, §5.2, §19; decision 0013).
+// Server settings live in $ORCH_HOME/server.json; project settings in <repo>/orch.config.json.
+// Until TASK-09 wires projects into the daemon, toLegacyConfig() maps the pair onto `Config`.
+// ---------------------------------------------------------------------------------------------
+
+export interface AdapterConfig {
+  type: string;
+  command: string;
+  extraArgs: string[];
+  env: Record<string, string>;
+}
+
+export type ProjectRoleName = RoleName | "phaseValidator";
+
+export type FeedbackConfig = Config["git"]["feedback"];
+
+/** Settings a project may carry (and `server.json` may default under `defaults`). */
+export interface ProjectConfig {
+  /** Display name; defaults to the repo directory name. */
+  name: string;
+  baseBranch: string;
+  scheduler: {
+    maxParallel: number;
+    maxAttempts: number;
+    resumeOnRetry: boolean;
+  };
+  validation: {
+    command: string;
+    agent: boolean;
+    phase: { enabled: boolean; command: string; maxFixups: number };
+    ui: { startCommand: string; url: string; readyTimeoutSeconds: number; env: Record<string, string> };
+  };
+  git: {
+    pr: boolean;
+    mergePolicy: "auto" | "manual";
+    squash: boolean;
+    copyFiles: string[];
+    setupCommand: string;
+    tickTasksMd: boolean;
+    feedback: FeedbackConfig;
+  };
+  handoff: Config["handoff"];
+  /** Role → adapter + model. Adapters must be defined in server.json. */
+  roles: Record<ProjectRoleName, RoleConfig>;
+}
+
+export type DeepPartial<T> = { [K in keyof T]?: T[K] extends unknown[] ? T[K] : T[K] extends object ? DeepPartial<T[K]> : T[K] };
+
+export interface ServerConfig {
+  host: string;
+  port: number;
+  publicUrl: string;
+  auth: { token: string; allowInsecure: boolean };
+  notify: Config["notify"];
+  agents: {
+    timeoutMinutes: number;
+    adapters: Record<string, AdapterConfig>;
+    /** Default role mapping for every project. `phaseValidator` falls back to `validator`. */
+    roles: Record<RoleName, RoleConfig> & { phaseValidator?: RoleConfig };
+  };
+  scheduler: {
+    /** Max agent processes across all projects. */
+    maxAgents: number;
+    tickSeconds: number;
+  };
+  retention: { eventDays: number };
+  git: { ghCommand: string };
+  /** Project-key defaults applied under every project's own file (same shape as ProjectConfig). */
+  defaults: DeepPartial<ProjectConfig>;
+}
+
+export const SERVER_CONFIG_FILENAME = "server.json";
+
+export const DEFAULT_SERVER_CONFIG: ServerConfig = {
+  host: "127.0.0.1",
+  port: 4800,
+  publicUrl: "http://localhost:4800",
+  auth: { token: "", allowInsecure: false },
+  notify: { ntfyUrl: "", ntfyToken: "" },
+  agents: {
+    timeoutMinutes: DEFAULT_CONFIG.agents.timeoutMinutes,
+    adapters: DEFAULT_CONFIG.agents.adapters,
+    roles: DEFAULT_CONFIG.agents.roles,
+  },
+  scheduler: { maxAgents: 2, tickSeconds: 5 },
+  retention: { eventDays: 30 },
+  git: { ghCommand: "gh" },
+  defaults: {},
+};
+
+/** Built-in project defaults (§19). `name` and `roles` are filled per project at load time. */
+export const DEFAULT_PROJECT_CONFIG: Omit<ProjectConfig, "name" | "roles"> = {
+  baseBranch: "main",
+  scheduler: { maxParallel: 1, maxAttempts: 2, resumeOnRetry: true },
+  validation: {
+    command: "",
+    agent: true,
+    phase: { enabled: true, command: "", maxFixups: 2 },
+    ui: { startCommand: "", url: "http://127.0.0.1:{port}/", readyTimeoutSeconds: 120, env: {} },
+  },
+  git: {
+    pr: true,
+    mergePolicy: "auto",
+    squash: true,
+    copyFiles: [],
+    setupCommand: "",
+    tickTasksMd: true,
+    feedback: DEFAULT_CONFIG.git.feedback,
+  },
+  handoff: DEFAULT_CONFIG.handoff,
+};
+
+/**
+ * Keys a project file may not set (§5.2): they change how agent CLIs launch, which credentials
+ * they get, or where orch keeps its state. Any of them makes the project unusable until removed.
+ */
+export const FORBIDDEN_PROJECT_KEYS = [
+  "agents", "host", "port", "publicUrl", "auth", "notify", "dbPath", "worktreeDir", "repo", "git.ghCommand",
+] as const;
+
+/** Allowed project keys. `true` = leaf (any value); an object = nested keys; `"map"` = free-form keys. */
+type Schema = { [k: string]: true | "map" | Schema };
+const ROLE_SCHEMA: Schema = { adapter: true, model: true };
+const leaves = (o: object): Schema => Object.fromEntries(Object.keys(o).map((k) => [k, true]));
+const PROJECT_SCHEMA: Schema = {
+  name: true,
+  baseBranch: true,
+  scheduler: { maxParallel: true, maxAttempts: true, resumeOnRetry: true },
+  validation: {
+    command: true,
+    agent: true,
+    phase: { enabled: true, command: true, maxFixups: true },
+    ui: { startCommand: true, url: true, readyTimeoutSeconds: true, env: "map" },
+  },
+  git: {
+    pr: true, mergePolicy: true, squash: true, copyFiles: true, setupCommand: true, tickTasksMd: true,
+    feedback: leaves(DEFAULT_CONFIG.git.feedback),
+  },
+  handoff: leaves(DEFAULT_CONFIG.handoff),
+  roles: { planner: ROLE_SCHEMA, worker: ROLE_SCHEMA, validator: ROLE_SCHEMA, phaseValidator: ROLE_SCHEMA },
+};
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const clone = <T>(v: T): T => structuredClone(v);
+
+/** Dotted paths of the forbidden keys present in `raw`. */
+function forbiddenKeysIn(raw: Record<string, unknown>): string[] {
+  return FORBIDDEN_PROJECT_KEYS.filter((k) => {
+    const [head, tail] = k.split(".");
+    if (!(head in raw)) return false;
+    return tail === undefined || (isPlainObject(raw[head]) && tail in raw[head]);
+  });
+}
+
+/** Throws, naming every server-only key found in `raw`. `where` labels the source file. */
+function assertNoForbiddenKeys(raw: Record<string, unknown>, where: string, prefix = "") {
+  const bad = forbiddenKeysIn(raw);
+  if (bad.length === 0) return;
+  const keys = bad.map((k) => `'${prefix}${k}'`).join(", ");
+  const one = bad.length === 1;
+  throw new Error(
+    `${where}: ${keys} ${one ? "is a server setting and is" : "are server settings and are"} not allowed in project settings; ` +
+    `set ${one ? "it" : "them"} in ${SERVER_CONFIG_FILENAME} instead (decision 0013)`,
+  );
+}
+
+/** Copy of `raw` with only schema keys; every dropped key becomes a warning. */
+function pickKnown(raw: Record<string, unknown>, schema: Schema, prefix: string, warnings: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const key = prefix + k;
+    const s = schema[k];
+    if (s === undefined) warnings.push(`unknown key '${key}' ignored`);
+    else if (s === true) out[k] = v;
+    else if (!isPlainObject(v)) warnings.push(`key '${key}' must be an object; ignored`);
+    else out[k] = s === "map" ? v : pickKnown(v, s, key + ".", warnings);
+  }
+  return out;
+}
+
+function readJsonObject(p: string): Record<string, unknown> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (e) {
+    throw new Error(`${p}: ${(e as Error).message}`);
+  }
+  if (!isPlainObject(raw)) throw new Error(`${p}: expected a JSON object`);
+  return raw;
+}
+
+/**
+ * Load `<home>/server.json` over the built-in server defaults; a missing file yields the defaults.
+ * Throws if a role names an undefined adapter or `defaults` holds a server-only key.
+ */
+export function loadServerConfig(home: string = orchHome()): ServerConfig {
+  const p = serverConfigPath(home);
+  const raw = fs.existsSync(p) ? readJsonObject(p) : {};
+  if (raw.defaults !== undefined) {
+    if (!isPlainObject(raw.defaults)) throw new Error(`${p}: 'defaults' must be an object`);
+    assertNoForbiddenKeys(raw.defaults, p, "defaults.");
+  }
+  const cfg = clone(deepMerge(DEFAULT_SERVER_CONFIG, raw));
+  for (const [role, r] of Object.entries(cfg.agents.roles)) {
+    if (r && !cfg.agents.adapters[r.adapter]) throw new Error(`${p}: agents.roles.${role}.adapter '${r.adapter}' is not defined in agents.adapters`);
+  }
+  return cfg;
+}
+
+export interface LoadedProjectConfig {
+  config: ProjectConfig;
+  /** Unknown or malformed keys that were ignored (for the activity stream). */
+  warnings: string[];
+  /** The project settings file, or null if the repo has none. */
+  path: string | null;
+}
+
+/**
+ * Effective settings for the project at `repoPath` (§5.2). Precedence: the repo's orch.config.json
+ * > server.json `defaults` > built-in defaults; roles start from server.json `agents.roles`, and
+ * `phaseValidator` falls back to the effective `validator`. Throws on server-only keys (the message
+ * names each) and on a role whose adapter server.json does not define. Unknown keys are ignored and
+ * returned as warnings.
+ */
+export function loadProjectConfig(repoPath: string, server: ServerConfig): LoadedProjectConfig {
+  const repo = path.resolve(repoPath);
+  const file = path.join(repo, CONFIG_FILENAME);
+  const warnings: string[] = [];
+
+  const dw: string[] = [];
+  const defaults = pickKnown(clone(server.defaults) as Record<string, unknown>, PROJECT_SCHEMA, "", dw);
+  warnings.push(...dw.map((w) => `${SERVER_CONFIG_FILENAME} defaults: ${w}`));
+
+  const exists = fs.existsSync(file);
+  let own: Record<string, unknown> = {};
+  if (exists) {
+    const raw = readJsonObject(file);
+    assertNoForbiddenKeys(raw, file);
+    const pw: string[] = [];
+    own = pickKnown(raw, PROJECT_SCHEMA, "", pw);
+    warnings.push(...pw.map((w) => `${CONFIG_FILENAME}: ${w}`));
+  }
+
+  const { phaseValidator: serverPhase, ...serverRoles } = server.agents.roles;
+  const base = { ...clone(DEFAULT_PROJECT_CONFIG), name: path.basename(repo), roles: clone(serverRoles) as Partial<ProjectConfig["roles"]> };
+  if (serverPhase) base.roles.phaseValidator = clone(serverPhase);
+  const cfg = clone(deepMerge(deepMerge(base, defaults), own)) as ProjectConfig;
+  if (!cfg.roles.phaseValidator) cfg.roles.phaseValidator = { ...cfg.roles.validator };
+
+  for (const role of Object.keys(cfg.roles) as ProjectRoleName[]) {
+    const adapter = cfg.roles[role]?.adapter;
+    if (!adapter || !server.agents.adapters[adapter]) {
+      throw new Error(`${exists ? file : repo}: roles.${role}.adapter '${adapter}' is not defined in ${SERVER_CONFIG_FILENAME} agents.adapters`);
+    }
+  }
+  return { config: cfg, warnings, path: exists ? file : null };
+}
+
+/**
+ * Write a starter orch.config.json into `repoPath` if it has none (§5.3). An existing file is
+ * never touched; `created` says which happened.
+ */
+export function writeStarterProjectConfig(repoPath: string, opts: { baseBranch: string }): { path: string; created: boolean } {
+  const p = path.join(path.resolve(repoPath), CONFIG_FILENAME);
+  if (fs.existsSync(p)) return { path: p, created: false };
+  const starter = { baseBranch: opts.baseBranch, validation: { command: "" } };
+  fs.writeFileSync(p, JSON.stringify(starter, null, 2) + "\n", { flag: "wx" });
+  return { path: p, created: true };
+}
+
+/**
+ * Compatibility adapter until TASK-09: a server + project pair as today's single-repo `Config`, so
+ * orchestrator.ts runs unchanged. Worktrees and the DB live under ORCH_HOME (§5.1).
+ */
+export function toLegacyConfig(
+  server: ServerConfig,
+  project: ProjectConfig,
+  repoPath: string,
+  opts: { projectId?: string; home?: string } = {},
+): Config {
+  const repo = path.resolve(repoPath);
+  const home = opts.home ?? orchHome();
+  const id = opts.projectId ?? projectSlug(path.basename(repo));
+  const role = (r: RoleConfig): RoleConfig => ({ adapter: r.adapter, model: r.model });
+  return clone({
+    repo,
+    baseBranch: project.baseBranch,
+    worktreeDir: worktreesDir(id, home),
+    dbPath: dbPath(home),
+    host: server.host,
+    port: server.port,
+    publicUrl: server.publicUrl,
+    agents: {
+      timeoutMinutes: server.agents.timeoutMinutes,
+      adapters: server.agents.adapters,
+      roles: { planner: role(project.roles.planner), worker: role(project.roles.worker), validator: role(project.roles.validator) },
+    },
+    scheduler: {
+      maxParallel: project.scheduler.maxParallel,
+      tickSeconds: server.scheduler.tickSeconds,
+      maxAttempts: project.scheduler.maxAttempts,
+      resumeOnRetry: project.scheduler.resumeOnRetry,
+    },
+    validation: { command: project.validation.command, agent: project.validation.agent },
+    git: {
+      pr: project.git.pr,
+      mergePolicy: project.git.mergePolicy,
+      squash: project.git.squash,
+      copyFiles: project.git.copyFiles,
+      setupCommand: project.git.setupCommand,
+      tickTasksMd: project.git.tickTasksMd,
+      ghCommand: server.git.ghCommand,
+      feedback: project.git.feedback,
+    },
+    handoff: project.handoff,
+    notify: server.notify,
+  });
 }

@@ -1,57 +1,25 @@
 {
-  "repo": ".",
+  "name": "myapp",
   "baseBranch": "main",
-  "worktreeDir": "../orch-worktrees",
-  "dbPath": ".orch/orch.db",
-  "host": "0.0.0.0",
-  "port": 4800,
-  "publicUrl": "http://YOUR-SERVER:4800",
-  "agents": {
-    "timeoutMinutes": 90,
-    "adapters": {
-      "claude": {
-        "type": "claude",
-        "command": "claude",
-        "extraArgs": [
-          "--permission-mode",
-          "bypassPermissions"
-        ],
-        "env": {}
-      },
-      "gemini": {
-        "type": "gemini",
-        "command": "gemini",
-        "extraArgs": [
-          "--yolo",
-          "--skip-trust"
-        ],
-        "env": {}
-      }
-    },
-    "roles": {
-      "planner": {
-        "adapter": "claude",
-        "model": ""
-      },
-      "worker": {
-        "adapter": "claude",
-        "model": ""
-      },
-      "validator": {
-        "adapter": "gemini",
-        "model": "pro"
-      }
-    }
-  },
   "scheduler": {
     "maxParallel": 1,
-    "tickSeconds": 5,
     "maxAttempts": 2,
     "resumeOnRetry": true
   },
   "validation": {
     "command": "npm test",
-    "agent": true
+    "agent": true,
+    "phase": {
+      "enabled": true,
+      "command": "",
+      "maxFixups": 2
+    },
+    "ui": {
+      "startCommand": "",
+      "url": "http://127.0.0.1:{port}/",
+      "readyTimeoutSeconds": 120,
+      "env": {}
+    }
   },
   "git": {
     "pr": true,
@@ -60,7 +28,6 @@
     "copyFiles": [],
     "setupCommand": "",
     "tickTasksMd": true,
-    "ghCommand": "gh",
     "feedback": {
       "enabled": true,
       "waitForChecks": true,
@@ -81,8 +48,18 @@
       "spec.md"
     ]
   },
-  "notify": {
-    "ntfyUrl": "https://ntfy.sh/CHANGE-ME",
-    "ntfyToken": ""
+  "roles": {
+    "planner": {
+      "adapter": "claude",
+      "model": ""
+    },
+    "worker": {
+      "adapter": "claude",
+      "model": ""
+    },
+    "validator": {
+      "adapter": "gemini",
+      "model": "pro"
+    }
   }
 }

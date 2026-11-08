@@ -1,0 +1,68 @@
+{
+  "host": "127.0.0.1",
+  "port": 4800,
+  "publicUrl": "http://YOUR-SERVER:4800",
+  "auth": {
+    "token": "",
+    "allowInsecure": false
+  },
+  "notify": {
+    "ntfyUrl": "https://ntfy.sh/CHANGE-ME",
+    "ntfyToken": ""
+  },
+  "agents": {
+    "timeoutMinutes": 90,
+    "adapters": {
+      "claude": {
+        "type": "claude",
+        "command": "claude",
+        "extraArgs": [
+          "--permission-mode",
+          "bypassPermissions"
+        ],
+        "env": {}
+      },
+      "gemini": {
+        "type": "gemini",
+        "command": "gemini",
+        "extraArgs": [
+          "--yolo",
+          "--skip-trust"
+        ],
+        "env": {}
+      }
+    },
+    "roles": {
+      "planner": {
+        "adapter": "claude",
+        "model": ""
+      },
+      "worker": {
+        "adapter": "claude",
+        "model": ""
+      },
+      "validator": {
+        "adapter": "claude",
+        "model": ""
+      }
+    }
+  },
+  "scheduler": {
+    "maxAgents": 2,
+    "tickSeconds": 5
+  },
+  "retention": {
+    "eventDays": 30
+  },
+  "git": {
+    "ghCommand": "gh"
+  },
+  "defaults": {
+    "scheduler": {
+      "maxParallel": 1
+    },
+    "git": {
+      "mergePolicy": "auto"
+    }
+  }
+}

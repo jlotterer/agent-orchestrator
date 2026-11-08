@@ -1,5 +1,5 @@
 # TASK-05: Server/project config split and ORCH_HOME
-**Status:** todo · **Wave:** 3 · **Depends on:** TASK-03 · **Parallel:** Yes (with TASK-06)
+**Status:** done · **Wave:** 3 · **Depends on:** TASK-03 · **Parallel:** Yes (with TASK-06)
 
 ## Goal
 Introduce the two-level configuration (server settings in `ORCH_HOME`, project settings in each repo) and the `ORCH_HOME` path layout, while the daemon keeps running single-repo through a compatibility adapter until TASK-09.
