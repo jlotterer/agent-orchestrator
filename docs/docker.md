@@ -10,6 +10,7 @@ work/                       ← ORCH_HOME
 ├── server.json             ← server settings (written on the first start, see step 2)
 ├── orch.db                 ← state for every project
 ├── worktrees/<project>/    ← created by orch, one dir per active task
+├── archive/<project>/      ← event logs of old runs, gzip JSONL (retention.eventDays)
 └── repos/myapp/            ← a project (a clone), with its own orch.config.json
 ```
 

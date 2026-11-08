@@ -10,6 +10,7 @@
  *   orch status                       print the board
  *   orch answer <questionId> <text>   answer a question
  *   orch retry|skip|merge|stop-task <taskKey>   task actions
+ *   orch archive-events               archive old runs' event logs now (also runs at serve start and daily)
  *
  * Project commands act on `--project <id>`, else ORCH_PROJECT, else the project whose repo contains the
  * current directory, else the only project (§5.4). Exit codes: 0 ok, 1 error (`error: …` on stderr), 2 usage.
@@ -127,6 +128,7 @@ const HELP = `orch — orchestrator/worker/validator runner
   orch status                          show the board and inbox
   orch answer <qid> <text>             answer a question
   orch retry|skip|merge|stop-task <taskKey>   task actions
+  orch archive-events                  archive event logs of runs finished > retention.eventDays ago
   orch decide "<text>" --why "<r>"     (agents) record a decision
   orch ask "<q>" --options "A,B"       (agents) ask a human and stop
 
@@ -157,6 +159,10 @@ async function main() {
       const orch = new Orchestrator(server, store, { home });
       orch.recover();
       startServer(orch);
+      // Event retention (§17): at startup, then every 24 h.
+      const archive = () => void runArchive(store, server.retention.eventDays, home).catch((e) => console.error(`event archive: ${e?.message ?? e}`));
+      archive();
+      setInterval(archive, 24 * 60 * 60 * 1000).unref();
       const shutdown = () => { console.log("shutting down"); process.exit(0); };
       process.on("SIGINT", shutdown);
       process.on("SIGTERM", shutdown);
@@ -250,6 +256,22 @@ async function main() {
       console.log(`${cmd} ${t.key}: ok`);
       return;
     }
+    case "archive-events": {
+      // Works on the database directly, with or without a running daemon (SQLite WAL allows both).
+      const home = orchHome();
+      const { Store } = await import("./db.js");
+      const store = new Store(dbPath(home));
+      try {
+        const days = loadServerConfig(home).retention.eventDays; // a missing server.json = defaults
+        if (!(days > 0)) { console.log("retention.eventDays is 0: event archiving is off"); return; }
+        const r = await runArchive(store, days, home);
+        if (!r.archived.length && !r.errors.length) console.log(`no finished runs older than ${days} day(s) with live events`);
+        if (r.errors.length) process.exitCode = 1; // runArchive already printed each error
+      } finally {
+        store.db.close();
+      }
+      return;
+    }
     // ---- agent-facing ----
     case "decide": {
       const text = positional()[0];
@@ -277,6 +299,15 @@ async function main() {
 }
 
 function pad(s: string, n: number) { return s.padEnd(n); }
+
+/** One archive pass over `$ORCH_HOME/archive` (§17); prints what it did. */
+async function runArchive(store: Store, eventDays: number, home: string) {
+  const { archiveEligibleRuns } = await import("./archive.js");
+  const r = await archiveEligibleRuns(store, { now: new Date(), eventDays, archiveRoot: path.join(home, "archive") });
+  if (r.archived.length) console.log(`archived event logs of ${r.archived.length} run(s): ${r.archived.join(", ")}`);
+  for (const e of r.errors) console.error(e);
+  return r;
+}
 
 // ------------------------------------------------------------------ legacy upgrade (architecture §5.5)
 const isObj = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);

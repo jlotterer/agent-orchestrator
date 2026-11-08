@@ -5,6 +5,7 @@ import { URL } from "node:url";
 import type { Orchestrator } from "./orchestrator.js";
 import { PKG_ROOT } from "./prompts.js";
 import { isAuthorized, loginCookie, tokenMatches } from "./auth.js";
+import { archivedLogEvent } from "./archive.js";
 
 const VERSION: string = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")).version ?? "unknown"; } catch { return "unknown"; }
@@ -42,14 +43,25 @@ export function startServer(orch: Orchestrator) {
   // ---- read ----
   route("GET", "/api/state", (req) => orch.snapshot(query(req).get("project") ?? undefined));
   route("GET", "/api/runs/:id", (_r, _s, p) => orch.snapshot(undefined, p.id));
+  // An archived run's log is one synthetic info event naming the archive file (§17).
+  const archivedLog = (runId: string | undefined, taskId: string | null, afterId: number) => {
+    const run = runId ? orch.store.getRun(runId) : undefined;
+    if (!run?.archived_at) return null;
+    const ev = archivedLogEvent(path.join(orch.home, "archive"), run, taskId);
+    return ev.id > afterId ? [ev] : [];
+  };
   route("GET", "/api/tasks/:id/events", (req, _s, p) => {
     const u = new URL(req.url!, "http://x");
-    return orch.store.listEvents({ taskId: p.id, afterId: Number(u.searchParams.get("after") ?? 0) || undefined, limit: Number(u.searchParams.get("limit") ?? 400) });
+    const afterId = Number(u.searchParams.get("after") ?? 0) || 0;
+    return archivedLog(orch.store.getTask(p.id)?.run_id, p.id, afterId)
+      ?? orch.store.listEvents({ taskId: p.id, afterId: afterId || undefined, limit: Number(u.searchParams.get("limit") ?? 400) });
   });
   route("GET", "/api/tasks/:id/diff", (_r, _s, p) => orch.taskDiff(p.id));
   route("GET", "/api/runs/:id/events", (req, _s, p) => {
     const u = new URL(req.url!, "http://x");
-    return orch.store.listEvents({ runId: p.id, afterId: Number(u.searchParams.get("after") ?? 0) || undefined, limit: Number(u.searchParams.get("limit") ?? 200) });
+    const afterId = Number(u.searchParams.get("after") ?? 0) || 0;
+    return archivedLog(p.id, null, afterId)
+      ?? orch.store.listEvents({ runId: p.id, afterId: afterId || undefined, limit: Number(u.searchParams.get("limit") ?? 200) });
   });
 
   // ---- run control ----

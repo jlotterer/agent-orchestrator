@@ -340,7 +340,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-OPS-01 | When an access token is configured, every API request, live-update stream and dashboard action MUST require it. The CLI and agents MUST send it automatically, and the dashboard MUST ask for it once per browser. | built (TASK-08) |
 | REQ-OPS-02 | orch MUST refuse to start listening on a non-local network address without an access token, unless the owner explicitly opts out in server settings. `[ASSUMED]` | built (TASK-08) |
 | REQ-OPS-03 | A health check MUST be available without the token, reporting that orch is up and its version. `[ASSUMED]` | built (TASK-08) |
-| REQ-OPS-04 | Agent event logs of runs that finished more than a configured number of days ago MUST be archived to compressed files on the server, then removed from the live store. Decisions, questions, task summaries and verdicts MUST be kept. | new |
+| REQ-OPS-04 | Agent event logs of runs that finished more than a configured number of days ago MUST be archived to compressed files on the server, then removed from the live store. Decisions, questions, task summaries and verdicts MUST be kept. | built (TASK-12) |
 | REQ-OPS-05 | Stored data from earlier versions MUST be upgraded automatically on start, without data loss. | built (`user_version` migrations, TASK-07) |
 | REQ-OPS-06 | orch MUST run as a systemd service and in Docker, keeping all of its state in one data directory. | built (ORCH_HOME layout TASK-05; daemon keeps all state there TASK-09) |
 | REQ-OPS-07 | The access token and notification credentials MUST NOT be written to the store, the event log, or agent prompts. | built (TASK-08) |

@@ -1,5 +1,5 @@
 # TASK-12: Event archive and retention
-**Status:** todo · **Wave:** 7 · **Depends on:** TASK-07, TASK-09 · **Parallel:** Yes (with TASK-11)
+**Status:** done · **Wave:** 7 · **Depends on:** TASK-07, TASK-09 · **Parallel:** Yes (with TASK-11)
 
 ## Goal
 Keep the database bounded. Archive agent event logs of runs that finished long ago to compressed files, then delete them, without touching decisions, questions, task data or costs.

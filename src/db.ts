@@ -408,6 +408,37 @@ export class Store {
     return (this.db.prepare(sql).all(...params) as any[]).map(rowToEvent).reverse();
   }
 
+  // ---- event archive (§17) ----
+  /** Finished, unarchived runs that last changed before `beforeIso` and still have events, oldest first. */
+  listArchivableRuns(beforeIso: string): Run[] {
+    return this.db
+      .prepare(`SELECT * FROM runs WHERE status IN ('done','stopped','failed') AND archived_at IS NULL AND updated_at < ?
+                AND EXISTS (SELECT 1 FROM events WHERE events.run_id = runs.id) ORDER BY updated_at`)
+      .all(beforeIso) as Run[];
+  }
+  /**
+   * A run's events in id order, read in pages so the connection is free between pages: a caller may
+   * await (e.g. stream backpressure) while iterating without blocking other queries on this Store.
+   */
+  *iterateRunEvents(runId: string, pageSize = 500): Generator<Event> {
+    const stmt = this.db.prepare("SELECT * FROM events WHERE run_id = ? AND id > ? ORDER BY id LIMIT ?");
+    let after = 0;
+    for (;;) {
+      const rows = stmt.all(runId, after, pageSize) as any[];
+      for (const r of rows) yield rowToEvent(r);
+      if (rows.length < pageSize) return;
+      after = rows[rows.length - 1].id;
+    }
+  }
+  /** In one transaction: delete the run's events and set `archived_at`. Returns the number of events deleted. */
+  deleteRunEventsAndMarkArchived(runId: string, ts: string = now()): number {
+    return this.db.transaction(() => {
+      const deleted = this.db.prepare("DELETE FROM events WHERE run_id = ?").run(runId).changes;
+      this.db.prepare("UPDATE runs SET archived_at = ? WHERE id = ?").run(ts, runId);
+      return deleted;
+    })();
+  }
+
   // ---- decisions ----
   addDecision(runId: string, taskId: string | null, actor: string, text: string, rationale: string | null): Decision {
     const ts = now();
