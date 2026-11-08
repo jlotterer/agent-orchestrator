@@ -29,6 +29,13 @@ Each task is a self-contained brief for one agent session and one PR. Start with
 | [TASK-15](TASK-15.md) | 10 | Validation | phases.ts, phase validator prompt/role, detached base worktree, synthetic FIX tasks, inbox item | 14 | No |
 | [TASK-16](TASK-16.md) | 11 | Validation | appserver.ts lifecycle, validator-ui prompt, validate_mode, BLOCKED verdict, gate output to validator | 15 | No |
 | [TASK-17](TASK-17.md) | 12 | Ops | Persist cost/agent_ms per task and run; rollups per run/project; dashboard tiles | 16 | No |
+| [TASK-18](TASK-18.md) | 13 | Fixtures | Feature-folder fixtures (briefs, warnings, context order) and the brief contract in architecture §6; owner reviews | — | Yes |
+| [TASK-19](TASK-19.md) | 14 | Skill | `skills/orch-spec/`: project, feature, fold-back and adopt modes; `check-feature.mjs` | 18 | Yes |
+| [TASK-20](TASK-20.md) | 14 | Core | `src/core/brief.ts`: frontmatter and brief parsing, folder checks; `--dry-run` shows briefs and warnings | 18 | Yes |
+| [TASK-21](TASK-21.md) | 14 | Core | `src/core/context.ts`: spec context with per-part budgets, REQ-row extraction; new `handoff` settings | 18 | Yes |
+| [TASK-22](TASK-22.md) | 15 | Planning | Plan from briefs without an agent; `--review`; rules and contracts in worker, validator and phase prompts | 20, 21 | No |
+| [TASK-23](TASK-23.md) | 16 | HITL | End-of-run "Update project docs" inbox item, notification, ack, CLI | 22 | No |
+| [TASK-24](TASK-24.md) | 17 | Docs | User-guide pages for the spec workflow; README; status columns; close out the proposal | 23 | Yes |
 
 ## Waves at a glance
 ```
@@ -44,7 +51,14 @@ W9  14
 W10 15
 W11 16
 W12 17
+W13 18
+W14 19 20 21
+W15 22
+W16 23
+W17 24
 ```
+
+Waves 13–17 implement [decision 0023](../decisions/0023-orch-owns-spec-skill.md) (authored briefs and the `orch-spec` skill); the design is in [proposals/spec-workflow.md](../proposals/spec-workflow.md). TASK-18 needs the owner's review: give it merge policy `manual`.
 
 ## Requirement Coverage
 | Requirement | Covered by |
@@ -69,6 +83,11 @@ W12 17
 | REQ-INTAKE-08 | TASK-04 |
 | REQ-INTAKE-09 | TASK-04, TASK-14, TASK-16 |
 | REQ-INTAKE-10 | TASK-13 |
+| REQ-INTAKE-11 | TASK-18, TASK-20, TASK-22 |
+| REQ-INTAKE-12 | TASK-22 |
+| REQ-INTAKE-13 | TASK-18, TASK-20 |
+| REQ-INTAKE-14 | TASK-18, TASK-20, TASK-22 |
+| REQ-INTAKE-15 | TASK-20 |
 | REQ-SCHED-01 | TASK-01, TASK-03, TASK-09, TASK-13 |
 | REQ-SCHED-02 | TASK-14 |
 | REQ-SCHED-03 | TASK-04 |
@@ -85,6 +104,9 @@ W12 17
 | REQ-WORK-06 | TASK-04 |
 | REQ-WORK-07 | TASK-04 |
 | REQ-WORK-08 | TASK-04 |
+| REQ-WORK-09 | TASK-18, TASK-21, TASK-22 |
+| REQ-WORK-10 | TASK-18, TASK-21, TASK-22 |
+| REQ-WORK-11 | TASK-22 |
 | REQ-VAL-01 | TASK-04 |
 | REQ-VAL-02 | TASK-16 |
 | REQ-VAL-03 | TASK-04 |
@@ -94,6 +116,8 @@ W12 17
 | REQ-VAL-07 | TASK-15 |
 | REQ-VAL-08 | TASK-16 |
 | REQ-VAL-09 | TASK-16 |
+| REQ-VAL-10 | TASK-22 |
+| REQ-VAL-11 | TASK-22 |
 | REQ-HITL-01 | TASK-10, TASK-11, TASK-15 |
 | REQ-HITL-02 | TASK-09 |
 | REQ-HITL-03 | TASK-04 |
@@ -101,6 +125,7 @@ W12 17
 | REQ-HITL-05 | TASK-04 |
 | REQ-HITL-06 | TASK-04, TASK-14, TASK-15 |
 | REQ-HITL-07 | TASK-06 |
+| REQ-HITL-08 | TASK-23 |
 | REQ-GIT-01 | TASK-04 |
 | REQ-GIT-02 | TASK-04 |
 | REQ-GIT-03 | TASK-06 |
@@ -138,6 +163,10 @@ W12 17
 | REQ-NFR-03 | TASK-02 |
 | REQ-NFR-04 | TASK-02 |
 | REQ-NFR-05 | TASK-01, TASK-03 |
+| REQ-SPEC-01 | TASK-19 |
+| REQ-SPEC-02 | TASK-19 |
+| REQ-SPEC-03 | TASK-18, TASK-19, TASK-20 |
+| REQ-SPEC-04 | TASK-19 |
 | REQ-NFR-06 | TASK-10 |
 | REQ-NFR-07 | TASK-04 |
 | REQ-NFR-08 | TASK-08 |
