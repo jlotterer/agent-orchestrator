@@ -12,7 +12,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 
 ## Phase 3: Wave 3
 - [x] T005 [P] Server/project config split and ORCH_HOME. Brief: docs/tasks/TASK-05.md.
-- [ ] T006 [P] Diff review and send back to the worker. Brief: docs/tasks/TASK-06.md.
+- [x] T006 [P] Diff review and send back to the worker. Brief: docs/tasks/TASK-06.md.
 
 ## Phase 4: Wave 4
 - [ ] T007 [P] Project registry and versioned DB migrations. Brief: docs/tasks/TASK-07.md.

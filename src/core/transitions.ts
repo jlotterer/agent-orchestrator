@@ -44,6 +44,7 @@ export type TaskEvent =
   | { type: "daemon_restart" }
   | { type: "human_merge" }
   | { type: "human_mark_merged" }
+  | { type: "human_request_changes"; feedback: string }
   | { type: "pr_action"; action: PrActionName; kind?: FixKind; feedback?: string; reason?: string };
 
 export type Effect = "merge_local" | "push_and_pr" | "merge_pr" | "kill_agent" | "remove_worktree";
@@ -204,6 +205,21 @@ export function nextTaskState(task: TransitionTask, event: TaskEvent, cfg: Trans
     case "human_mark_merged": {
       const r = finish(task, []);
       return { ...r, decision: { actor: "human", text: `Marked ${task.key} as merged externally`, rationale: null } };
+    }
+
+    // T17: the owner sends the task back with written feedback. A fix round of kind `human`
+    // (§12.3): same budget reset as T18's fix_round, but the round cap does not apply.
+    case "human_request_changes": {
+      if (!WATCHED.has(task.status)) return reject(task, `task is ${task.status}, not awaiting review`);
+      const text = event.feedback.trim();
+      if (!text) return reject(task, "feedback is empty");
+      const round = task.fix_rounds + 1;
+      const where = task.pr_url ? `${task.key}'s PR` : task.key;
+      return {
+        status: "pending",
+        patch: { attempt: 0, fix_rounds: round, last_feedback: `## Feedback from the owner\n\n${text}`, ci_status: null },
+        decision: { actor: "human", text: `Sending owner feedback on ${where} back to the worker (round ${round})`, rationale: firstLine(text) },
+      };
     }
 
     // T18

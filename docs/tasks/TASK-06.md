@@ -1,5 +1,6 @@
 # TASK-06: Diff review and send back to the worker
-**Status:** todo · **Wave:** 3 · **Depends on:** TASK-03 · **Parallel:** Yes (with TASK-05)
+**Status:** done · **Wave:** 3 · **Depends on:** TASK-03 · **Parallel:** Yes (with TASK-05)
+> **As built:** T17 is `human_request_changes` in `src/core/transitions.ts`; the three fixture cases pass, a fourth (rejected when not awaiting review) was added, and `test/unit/core.test.mjs` now requires a T17 case. `startFixRound` takes kind `ci | review | human`; the remote sync runs only in PR mode with a PR. Empty feedback is rejected (400). The diff endpoint answers 404 with a reason (`NotFoundError`). The task drawer was split into stable regions (header, review, log) so SSE refreshes no longer wipe a Send back draft, open diff files, or the log. In `scripts/e2e.mjs` T004's final attempt count is now 1 (the owner round resets it), so its validator retry is asserted via the "Retrying T004" decision instead. Screenshots (dark/light) were taken from a Docker demo run; this repo merges task branches locally, so there is no PR to attach them to.
 
 ## Goal
 Let the owner review a task's code changes in the dashboard and send it back with written feedback. This is the missing review surface for local-merge mode, and a quicker path than GitHub in PR mode.

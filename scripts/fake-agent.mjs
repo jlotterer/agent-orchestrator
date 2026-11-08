@@ -10,6 +10,8 @@
  *                PR scenario (scripts/e2e-pr.mjs): a task whose description has CI_TRAP writes
  *                CIFAIL until it gets feedback (fake gh's CI fails on it); review feedback
  *                that mentions "the reviewer" makes the worker write "reviewed"
+ *                Owner feedback (scripts/e2e.mjs, TASK-06): a retry whose prompt says "trailing note"
+ *                writes "OK note"
  *   validator -> FAIL if the diff contains NEEDS_REVIEW, else PASS
  *
  * Lifecycle markers (scripts/e2e-lifecycle.mjs), matched anywhere in the prompt:
@@ -114,6 +116,7 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
     if (key === "T004" && !retry) content = "OK NEEDS_REVIEW";
     if (prompt.includes("CI_TRAP") && !retry) content = "OK CIFAIL";
     if (retry && prompt.includes("the reviewer")) content = "OK reviewed";
+    if (retry && prompt.includes("trailing note")) content = "OK note";
     if (key === "T002") {
       const ans = (prompt.match(/A: (\w+)/) || [])[1] || "unknown";
       content = `OK greeting=${ans}`;

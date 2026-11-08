@@ -8,11 +8,13 @@
 :root {
   --bg: #0f1115; --panel: #161a21; --panel2: #1c2129; --line: #262c36; --text: #e6e8ec; --muted: #8b93a1; --dim: #5d6572;
   --accent: #7aa2f7; --ok: #4fd18b; --warn: #f0b35b; --bad: #f36c6c; --info: #9d7cf5; --run: #4fc3f7;
+  --add-fg: #4fd18b; --del-fg: #f36c6c; --add-bg: rgba(79, 209, 139, .12); --del-bg: rgba(243, 108, 108, .12); --hunk-fg: #9d7cf5;
   --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
 }
 @media (prefers-color-scheme: light) {
-  :root { --bg: #f4f5f7; --panel: #ffffff; --panel2: #f0f2f5; --line: #dfe3e8; --text: #1b1f27; --muted: #5d6572; --dim: #8b93a1; }
+  :root { --bg: #f4f5f7; --panel: #ffffff; --panel2: #f0f2f5; --line: #dfe3e8; --text: #1b1f27; --muted: #5d6572; --dim: #8b93a1;
+    --add-fg: #1a7f37; --del-fg: #cf222e; --add-bg: #e6ffec; --del-bg: #ffebe9; --hunk-fg: #6f42c1; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); }
@@ -104,6 +106,25 @@ ul.acc { margin: 0; padding-left: 18px; } ul.acc li { margin: 2px 0; }
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 420px; max-width: 90vw; }
 dialog::backdrop { background: rgba(0,0,0,.5); }
 label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+/* review: diff viewer + send back (decision 0018) */
+.diffsum { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
+.n-add { color: var(--add-fg); font-family: var(--mono); font-size: 12px; } .n-del { color: var(--del-fg); font-family: var(--mono); font-size: 12px; }
+details.review > summary { cursor: pointer; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+details.dfile { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; background: var(--bg); }
+details.dfile > summary { cursor: pointer; display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; font-family: var(--mono); font-size: 12px; }
+details.dfile > summary::before { content: "\25B8"; color: var(--dim); } details.dfile[open] > summary::before { content: "\25BE"; }
+details.dfile > summary::-webkit-details-marker { display: none; } details.dfile > summary { list-style: none; }
+details.dfile > summary .p { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+details.dfile[open] > summary { border-bottom: 1px solid var(--line); }
+.fst { font-family: var(--mono); font-size: 11px; font-weight: 700; width: 12px; display: inline-block; }
+.fst.A { color: var(--add-fg); } .fst.D { color: var(--del-fg); } .fst.M { color: var(--accent); } .fst.T, .fst.U { color: var(--warn); }
+pre.patch { margin: 0; padding: 4px 0; font-family: var(--mono); font-size: 12px; line-height: 1.45; overflow: auto; max-height: 60vh; }
+pre.patch span { display: block; padding: 0 8px; white-space: pre; min-width: max-content; }
+pre.patch .a { background: var(--add-bg); color: var(--add-fg); } pre.patch .d { background: var(--del-bg); color: var(--del-fg); }
+pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-style: italic; }
+.note { color: var(--dim); font-size: 12px; padding: 6px 8px; }
+.trunc { background: color-mix(in srgb, var(--warn) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 6px; padding: 6px 8px; font-size: 12px; margin-bottom: 8px; }
+.sendback textarea { min-height: 72px; font-family: var(--sans); font-size: 13px; }
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line); padding: 8px 14px; border-radius: 8px; z-index: 20; }
 .toast.err { border-color: var(--bad); color: var(--bad); }
 </style>
@@ -174,6 +195,13 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px;
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button id="editCancel">Cancel</button><button id="editSave" class="primary">Save</button></div>
 </dialog>
 
+<dialog id="sendDlg">
+  <h3 style="margin:0 0 8px">Send <span id="sendKey" class="mono"></span> back to the worker</h3>
+  <label for="sendText">What should change? The worker gets this text as feedback.</label>
+  <textarea id="sendText" style="min-height:110px;font-family:var(--sans);font-size:13px" placeholder="e.g. rename the flag to --force"></textarea>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button id="sendCancel">Cancel</button><button id="sendGo" class="primary">Send back</button></div>
+</dialog>
+
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -182,6 +210,9 @@ const LANES = [["pending", "Pending"], ["running", "Running"], ["validating", "V
 const ciBadge = (s) => s ? `<span class="ci ${esc(s)}" title="PR checks">CI ${esc(s)}</span>` : "";
 let state = { run: null, tasks: [], decisions: [], questions: [], inbox: [], runs: [], config: {} };
 let selected = null, selectedRun = null, lastEventId = 0, activity = [];
+let detailFor = null, reviewKey = null;
+const diffs = {};   // task id -> { open, loading, data, error, files: Set<path> }
+const drafts = {};  // task id -> unsent Send back text
 
 async function api(method, p, body) {
   const r = await fetch(p, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -223,7 +254,7 @@ function renderInbox() {
     if (i.type === "approve_plan") return `<div class="card hot"><div class="t">Plan awaits your approval</div><div class="d">${esc(i.detail)}. Review the Plan tab, edit tasks if needed, then approve.</div><div class="actions"><button class="primary small" onclick="act(()=>api('POST','/api/runs/${i.run_id}/approve').then(refresh))">Approve plan</button></div></div>`;
     if (i.type === "question") return `<div class="card hot" data-q="${i.id}"><div class="t"><span class="mono">${esc(i.task_key || "")}</span> asks</div><div class="d">${esc(i.title)}</div><div class="actions">${(i.options || []).map(o => `<button class="small" onclick="answer(${i.id}, ${JSON.stringify(o).replace(/"/g, "&quot;")})">${esc(o)}</button>`).join("")}</div><div class="actions"><input placeholder="or type an answer…" style="flex:1" id="qa-${i.id}" onkeydown="if(event.key==='Enter')answer(${i.id}, this.value)"><button class="small" onclick="answer(${i.id}, document.getElementById('qa-${i.id}').value)">Send</button></div></div>`;
     if (i.type === "failed") return `<div class="card hot"><div class="t"><span class="pill s-failed">failed</span> ${esc(i.task_key)}</div><div class="d">${esc((i.detail || "").slice(0, 400))}</div><div class="actions"><button class="small" onclick="selectTask('${i.task_id}')">Inspect</button><button class="small good" onclick="taskAct('${i.task_id}','retry')">Retry</button><button class="small" onclick="taskAct('${i.task_id}','skip')">Skip</button></div></div>`;
-    if (i.type === "merge") return `<div class="card hot"><div class="t"><span class="pill s-pr_open">review</span> ${esc(i.task_key)} ${ciBadge(i.ci_status)}${i.fix_rounds ? ` <span class="ci">· ${i.fix_rounds} fix round${i.fix_rounds > 1 ? "s" : ""}</span>` : ""}</div><div class="d">${i.pr_url ? `<a href="${esc(i.pr_url)}" target="_blank">${esc(i.pr_url)}</a>` : esc(i.detail)}${i.feedback ? "\n" + esc(i.feedback.slice(0, 300)) : ""}</div><div class="actions"><button class="small" onclick="selectTask('${i.task_id}')">Inspect</button><button class="small good" onclick="taskAct('${i.task_id}','merge')">Merge now</button><button class="small" onclick="taskAct('${i.task_id}','mark-merged')">Merged elsewhere</button><button class="small" onclick="taskAct('${i.task_id}','retry')">Re-run</button></div></div>`;
+    if (i.type === "merge") return `<div class="card hot"><div class="t"><span class="pill s-pr_open">review</span> ${esc(i.task_key)} ${ciBadge(i.ci_status)}${i.fix_rounds ? ` <span class="ci">· ${i.fix_rounds} fix round${i.fix_rounds > 1 ? "s" : ""}</span>` : ""}</div><div class="d">${i.pr_url ? `<a href="${esc(i.pr_url)}" target="_blank">${esc(i.pr_url)}</a>` : esc(i.detail)}${i.feedback ? "\n" + esc(i.feedback.slice(0, 300)) : ""}</div><div class="actions"><button class="small" onclick="selectTask('${i.task_id}')">Inspect</button><button class="small good" onclick="taskAct('${i.task_id}','merge')">Merge now</button><button class="small" onclick="openSendBack('${i.task_id}')">Send back…</button><button class="small" onclick="taskAct('${i.task_id}','mark-merged')">Merged elsewhere</button><button class="small" onclick="taskAct('${i.task_id}','retry')">Re-run</button></div></div>`;
     return "";
   }).join("");
 }
@@ -290,10 +321,17 @@ async function selectTask(id) {
 }
 async function renderDetail(id, reloadLog) {
   const t = state.tasks.find(x => x.id === id);
-  if (!t) { $("#detailBody").innerHTML = `<div class="empty">Task gone.</div>`; return; }
+  if (!t) { detailFor = null; $("#detailBody").innerHTML = `<div class="empty">Task gone.</div>`; return; }
+  // Stable regions: the header refreshes on every change; the review area only when the task changes
+  // (keeps a half-typed Send back note and open diff files); the log only appends.
+  if (detailFor !== id || reloadLog) {
+    detailFor = id; reviewKey = null; lastEventId = 0;
+    $("#detailBody").className = ""; // drop the placeholder's dim `empty` style
+    $("#detailBody").innerHTML = `<div id="dHead"></div><div id="dReview"></div><div class="section"><h4>Log</h4><div id="log"></div></div>`;
+  }
   const busy = ["running", "validating"].includes(t.status);
   const canEdit = ["pending", "failed", "pr_open"].includes(t.status) && state.run && state.run.status !== "done";
-  $("#detailBody").innerHTML = `
+  $("#dHead").innerHTML = `
     <div style="display:flex;align-items:center;gap:8px"><span class="mono">${esc(t.key)}</span><span class="pill s-${t.status}">${t.status.replace("_", " ")}</span>${busy ? '<span class="spin"></span>' : ""}</div>
     <div style="font-weight:600;font-size:15px;margin:6px 0">${esc(t.title)}</div>
     <div style="color:var(--muted);font-size:13px;white-space:pre-wrap">${esc(t.description)}</div>
@@ -303,6 +341,7 @@ async function renderDetail(id, reloadLog) {
       <dt>Branch</dt><dd class="mono">${esc(t.branch || "—")}</dd>
       <dt>Attempts</dt><dd>${t.attempt}/${t.max_attempts}</dd>
       ${t.pr_url ? `<dt>PR checks</dt><dd>${ciBadge(t.ci_status) || "—"}${state.config.prFeedback ? ` · fix rounds ${t.fix_rounds}/${state.config.prFeedback.maxRounds}` : ""}</dd>` : ""}
+      ${!t.pr_url && t.fix_rounds ? `<dt>Sent back</dt><dd>${t.fix_rounds}×</dd>` : ""}
       <dt>Validate</dt><dd class="mono">${esc(t.validate_cmd || state.config.validationCommand || "—")}</dd>
     </dl>
     <div class="section"><h4>Acceptance criteria</h4>${t.acceptance.length ? `<ul class="acc">${t.acceptance.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : `<div class="empty">none</div>`}</div>
@@ -314,12 +353,83 @@ async function renderDetail(id, reloadLog) {
       ${["failed", "pr_open", "pr_checks", "done", "skipped"].includes(t.status) ? `<button class="small" onclick="taskAct('${t.id}','retry')">Re-run from scratch</button>` : ""}
       ${["pending", "failed", "needs_input"].includes(t.status) ? `<button class="small" onclick="taskAct('${t.id}','skip')">Skip</button>` : ""}
       ${["pr_open", "pr_checks"].includes(t.status) ? `<button class="small good" onclick="taskAct('${t.id}','merge')">Merge now</button><button class="small" onclick="taskAct('${t.id}','mark-merged')">Merged elsewhere</button>` : ""}
-    </div>
-    <div class="section"><h4>Log</h4><div id="log"></div></div>`;
-  if (reloadLog) { lastEventId = 0; $("#log").innerHTML = ""; }
+    </div>`;
+  renderReview(t);
   const evs = await api("GET", `/api/tasks/${id}/events?after=${lastEventId}&limit=400`);
   appendLog(evs);
 }
+
+// ---- review: Send back + Diff (REQ-UI-03, REQ-UI-04; decision 0018) ----
+const awaitingReview = (t) => ["pr_open", "pr_checks"].includes(t.status);
+function renderReview(t) {
+  const key = `${t.id}|${t.status}|${t.updated_at}`;
+  if (key === reviewKey) return;
+  const changed = reviewKey !== null; // same task, new state: the branch may have moved
+  reviewKey = key;
+  const d = diffs[t.id] || (diffs[t.id] = { open: false, loading: false, data: null, error: null, files: new Set() });
+  $("#dReview").innerHTML = `
+    ${awaitingReview(t) ? `<div class="section sendback"><h4>Send back to the worker</h4>
+      <textarea id="sbText" placeholder="What should change? e.g. rename the flag to --force" oninput="drafts['${t.id}']=this.value">${esc(drafts[t.id] || "")}</textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:6px"><button class="small primary" onclick="sendBack('${t.id}', document.getElementById('sbText').value)">Send back</button></div></div>` : ""}
+    <div class="section"><details class="review" id="diffDet" ${d.open ? "open" : ""} ontoggle="diffToggled('${t.id}', this.open)"><summary>Diff</summary><div id="diffBody">${diffBodyHtml(d)}</div></details></div>`;
+  if (d.open && (changed || !d.data)) loadDiff(t.id);
+}
+function diffToggled(id, open) {
+  const d = diffs[id]; if (!d) return;
+  d.open = open;
+  if (open && !d.data && !d.loading) loadDiff(id);
+}
+async function loadDiff(id) {
+  const d = diffs[id]; d.loading = true; d.error = null;
+  paintDiff(id);
+  try { d.data = await api("GET", `/api/tasks/${id}/diff`); }
+  catch (e) { d.data = null; d.error = e.message; }
+  d.loading = false;
+  paintDiff(id);
+}
+function paintDiff(id) { if (detailFor === id && $("#diffBody")) $("#diffBody").innerHTML = diffBodyHtml(diffs[id]); }
+function diffBodyHtml(d) {
+  if (d.loading && !d.data) return `<div class="note">Loading diff…</div>`;
+  if (d.error) return `<div class="note">${esc(d.error)}</div>`;
+  if (!d.data) return `<div class="note">Open to load the task's changes against its base.</div>`;
+  const { files, base, head, truncated } = d.data;
+  if (!files.length) return `<div class="note">No changes against <code>${esc(base)}</code>.</div>`;
+  const add = files.reduce((n, f) => n + f.additions, 0), del = files.reduce((n, f) => n + f.deletions, 0);
+  return `<div class="diffsum"><span>${files.length} file${files.length > 1 ? "s" : ""} changed</span><span class="n-add">+${add}</span><span class="n-del">−${del}</span><span class="mono">${esc(base)} … ${esc(head.slice(0, 10))}</span>${d.loading ? '<span class="spin"></span>' : ""}</div>
+    ${truncated ? `<div class="trunc">Diff truncated: ${files.filter(f => f.patch != null || f.binary).length} of ${files.length} files shown (${add + del} changed lines in total). Check out the branch to see everything.</div>` : ""}
+    ${files.map((f) => `<details class="dfile" ${d.files.has(f.path) ? "open" : ""} ontoggle="fileToggled(this)" data-path="${esc(f.path)}"><summary><span class="fst ${esc(f.status[0])}" title="${esc(statusName(f.status))}">${esc(f.status[0])}</span><span class="p">${esc(f.path)}</span>${f.binary ? `<span class="note" style="padding:0">binary</span>` : `<span class="n-add">+${f.additions}</span><span class="n-del">−${f.deletions}</span>`}</summary>${patchHtml(f)}</details>`).join("")}`;
+}
+function fileToggled(el) { const d = diffs[detailFor]; if (d) el.open ? d.files.add(el.dataset.path) : d.files.delete(el.dataset.path); }
+const statusName = (s) => ({ A: "added", D: "deleted", M: "modified", T: "type changed", U: "unmerged" }[s[0]] || s);
+function patchHtml(f) {
+  if (f.binary) return `<div class="note">Binary file; no diff shown.</div>`;
+  if (f.patch == null) return `<div class="note">Not shown: the diff size limit was reached.</div>`;
+  if (!f.patch) return `<div class="note">No textual changes.</div>`;
+  const lines = f.patch.replace(/\n$/, "").split("\n");
+  const cls = (l) => l[0] === "+" ? "a" : l[0] === "-" ? "d" : l[0] === "@" ? "h" : l[0] === "\\" ? "m" : "";
+  return `<pre class="patch">${lines.map(l => { const c = cls(l); return `<span${c ? ` class="${c}"` : ""}>${esc(l) || " "}</span>`; }).join("")}</pre>`;
+}
+async function sendBack(id, text) {
+  text = (text || "").trim();
+  if (!text) { toast("write what should change first", true); return; }
+  await act(async () => {
+    await api("POST", `/api/tasks/${id}/request-changes`, { feedback: text });
+    delete drafts[id];
+    toast("sent back to the worker"); await refresh();
+  });
+}
+function openSendBack(id) {
+  const t = state.tasks.find(x => x.id === id); if (!t) return;
+  $("#sendKey").textContent = t.key; $("#sendText").value = drafts[id] || ""; $("#sendDlg").dataset.id = id; $("#sendDlg").showModal(); $("#sendText").focus();
+}
+$("#sendText").oninput = (e) => { drafts[$("#sendDlg").dataset.id] = e.target.value; };
+$("#sendCancel").onclick = () => $("#sendDlg").close();
+$("#sendGo").onclick = async () => {
+  const id = $("#sendDlg").dataset.id, text = $("#sendText").value;
+  if (!text.trim()) { toast("write what should change first", true); return; }
+  $("#sendDlg").close(); await sendBack(id, text);
+};
+
 function appendLog(evs) {
   const log = $("#log"); if (!log) return;
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
@@ -353,7 +463,7 @@ $("#btnStart").onclick = () => act(async () => { await api("POST", `/api/runs/${
 $("#btnPause").onclick = () => act(async () => { await api("POST", `/api/runs/${state.run.id}/pause`); await refresh(); });
 $("#btnStop").onclick = () => act(async () => { if (!confirm("Stop the run and kill active agents? Worktrees are kept.")) return; await api("POST", `/api/runs/${state.run.id}/stop`); await refresh(); });
 $("#runSel").onchange = (e) => { selectedRun = e.target.value; selected = null; refresh(); };
-$("#closeDetail").onclick = () => { selected = null; $("#layout").classList.remove("has-detail"); renderBoard(); $("#detailBody").innerHTML = `<div class="empty">Select a task to see its plan, log, and actions.</div>`; };
+$("#closeDetail").onclick = () => { selected = null; detailFor = null; $("#layout").classList.remove("has-detail"); renderBoard(); $("#detailBody").innerHTML = `<div class="empty">Select a task to see its plan, log, and actions.</div>`; };
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b)); for (const t of ["board", "plan", "decisions", "activity"]) $(`#tab-${t}`).hidden = t !== b.dataset.tab; });
 
 // Live updates

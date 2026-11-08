@@ -179,7 +179,7 @@ Per tick: (1) resume `needs_input` tasks with no open questions; (2) PR polls (�
 - `recover()` on daemon start: active tasks → `pending` (worktree kept, activity event), `planning` runs → `plan_pending`, kill leftover UI-mode apps from `run/*.pid` [TASK-16].
 
 ## 8. Task State Machine
-_(→ code: `src/core/transitions.ts`; built in TASK-03, T17 [TASK-06] and T19 [TASK-16] not yet)_
+_(→ code: `src/core/transitions.ts`; built in TASK-03, T17 in TASK-06; T19 [TASK-16] not yet)_
 States: `pending, running, validating, needs_input, pr_checks, pr_open, failed, done, skipped`. Active = `running|validating`. Watched (PR polled) = `pr_checks|pr_open`.
 
 `nextTaskState(task, event, cfg) → { status, patch, decision?, notify?, effect?, rejected? }` where `effect` is the ordered list of side effects the shell must perform (`merge_local | push_and_pr | merge_pr | kill_agent | remove_worktree`; empty = none) and `rejected` marks an event not allowed from the current state (status unchanged). The patch holds only what the transition decides; values produced by an effect (`pr_url`, `pr_head`, `pr_pushed_at`, new branch/worktree) are written by the shell after the effect succeeds. If an effect fails (merge), the shell sends `merge_failed` (T9) instead, except for T15 (`human_merge`), where the error goes back to the owner and the task stays. The shell (`Orchestrator.fire`/`applyTransition`) runs merge effects (`merge_local`, `push_and_pr`, `merge_pr`) before the state change and the others (`kill_agent`, `remove_worktree`) after it, so a transition without merge effects is applied synchronously. Owner actions on a state that does not allow them are rejected with an error (e.g. stopping a task that is not active). Fixture semantics: [test/fixtures/README.md](../test/fixtures/README.md).
@@ -203,7 +203,7 @@ States: `pending, running, validating, needs_input, pr_checks, pr_open, failed, 
 | T14 | active | `human_stop` / `run_stop` / `daemon_restart` | — | pending | effect `kill_agent` (not on restart) |
 | T15 | pr_open/pr_checks | `human_merge` | — | done | effect `merge_pr`/`merge_local`; on error stay, surface error |
 | T16 | any | `human_mark_merged` | — | done | effect `remove_worktree` |
-| T17 | pr_open/pr_checks | `human_request_changes{feedback}` | — | pending | fix round kind `human` (§12.3); allowed even if `fix_rounds >= maxRounds` [TASK-06] |
+| T17 | pr_open/pr_checks | `human_request_changes{feedback}` | — | pending | fix round kind `human` (§12.3); allowed even if `fix_rounds >= maxRounds`; human decision "Sending owner feedback on <key>['s PR] back to the worker (round n)"; rejected with empty feedback |
 | T18 | pr_checks/pr_open | PR action (§12.2) | — | per action | — |
 | T19 | validating | `validator_blocked` (UI mode, no browser) | — | failed | no retry; notify [TASK-16] |
 
@@ -243,7 +243,7 @@ _(→ code: `src/git.ts`)_
 - **Local mode:** under the project merge lock: main checkout must be on `baseBranch` and clean (`status --porcelain --untracked-files=no`); `rebase <base>` in the worktree (abort on failure); `merge --squash` + commit (or `--ff-only`). Done → remove worktree + delete branch.
 - **PR mode:** `push -u --force-with-lease origin <branch>`; reuse an **open** PR for the branch (`gh pr view <branch> --json url,state`), else `gh pr create`; merge with `gh pr merge <branch> --squash|--merge --delete-branch`. Done → remove worktree, keep local branch deletion to gh.
 - **Tick:** after merge, under the merge lock, flip `- [ ] KEY` → `- [x] KEY` in `<spec_dir>/tasks.md` if inside the repo; commit it on base in local mode; leave uncommitted in PR mode.
-- **Diff for review** [planned: TASK-06]: `diffFiles(worktree)` → `git diff --numstat` + `--name-status` + per-file `git diff <base>...HEAD -- <file>`; binary files (`-\t-` in numstat) have no patch; total patch text capped at 200k chars (`truncated: true`). When the worktree is gone (done tasks), the diff is unavailable (404 with reason).
+- **Diff for review:** `diffFiles(worktree)` → `git diff --no-renames -z --numstat` + `--name-status` + per-file `git diff <base>...HEAD -- <file>` (`<base>` = `baseRef()`, so only the task's own commits); patch text starts at the first hunk; binary files (`-\t-` in numstat) have `patch: null`; total patch text capped at 200k chars (`truncated: true`; files past the cap keep their counts, `patch: null`). When the worktree is gone (done tasks, not started), `GET /api/tasks/:id/diff` answers 404 with the reason.
 
 ## 12. PR Feedback Loop
 _(→ code: decision in `src/core/prpoll.ts` (`decidePrAction`), applied as transition T18 in `src/core/transitions.ts`; I/O in `src/orchestrator.ts` pollPr/startFixRound and `src/git.ts`; helpers in `src/prfeedback.ts`)_
@@ -305,8 +305,8 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 | GET `/api/state`, GET `/api/runs/:id` | `?project=` | legacy snapshot (default project) | built |
 | POST `/api/runs/:id/{approve,start,pause,stop}` | — | `{ok}` | built |
 | POST `/api/tasks/:id/{retry,skip,stop,merge,mark-merged,edit}` | edit: patch | `{ok}` | built |
-| POST `/api/tasks/:id/request-changes` | `{feedback}` | `{ok}` | TASK-06 |
-| GET `/api/tasks/:id/diff` | — | `{base, head, files:[{path, status, additions, deletions, binary, patch}], truncated}` | TASK-06 |
+| POST `/api/tasks/:id/request-changes` | `{feedback}` (non-empty) | `{ok}`; 400 unless `pr_open\|pr_checks` | built (TASK-06) |
+| GET `/api/tasks/:id/diff` | — | `{base, head, files:[{path, status, additions, deletions, binary, patch}], truncated}`; 404 with reason when no worktree | built (TASK-06) |
 | GET `/api/tasks/:id/events`, `/api/runs/:id/events` | `?after&limit` | events | built |
 | POST `/api/questions/:id/answer` | `{answer}` | `{ok}` | built |
 | POST `/api/ask`, `/api/decide` | agent payloads | question / decision | built |
@@ -317,7 +317,7 @@ All JSON. Errors: `{error: string}` with 400 (bad request / invalid state), 401 
 `orch serve | project add <path> [--name n] | project list | project remove <id> | plan <specDir> [--no-llm] [--dry-run] | approve [runId] | run | pause | stop | status | answer <qid> <text> | retry|skip|merge|stop-task <key> | archive-events | decide | ask`. Global `--project <id>` (§5.4). Exit codes: 0 ok, 1 error (`error: <msg>` on stderr), 2 usage. Token from `ORCH_TOKEN` or `$ORCH_HOME/server.json` when readable. Base URL from `ORCH_URL` or server config host/port.
 
 ### 15.3 Dashboard
-Single `dashboard/index.html`. Regions: top bar (project switcher with status dot + inbox count, Add project, run selector, run controls, cost tile), Inbox (global, project tag), Board (lanes: Pending, Running, Validating, Needs input, Waiting on CI, Review / merge, Failed, Done), Plan (phases, criteria, deps incl. implicit overlap edges, policy, mode, owned files; edit dialog), Decisions, Activity, Task drawer (meta, criteria, summary, feedback, actions incl. Send back, Diff section lazy-loaded, live log). SSE reconnect: on error close, retry with backoff 1 s doubling to 30 s, on open do a full refresh [TASK-11]. On any 401 show a token prompt that POSTs `/api/login` [TASK-08].
+Single `dashboard/index.html`. Regions: top bar (project switcher with status dot + inbox count, Add project, run selector, run controls, cost tile), Inbox (global, project tag), Board (lanes: Pending, Running, Validating, Needs input, Waiting on CI, Review / merge, Failed, Done), Plan (phases, criteria, deps incl. implicit overlap edges, policy, mode, owned files; edit dialog), Decisions, Activity, Task drawer (meta, criteria, summary, feedback, actions; Send back textarea for `pr_open|pr_checks`; Diff section loaded on expand: file list with status and +/− counts, collapsible unified diff per file with added/removed lines coloured, binary note, truncation notice; live log). The drawer keeps stable regions so a refresh does not clear a draft or collapse open files. The inbox merge card has **Send back…** (dialog) [built: TASK-06]. SSE reconnect: on error close, retry with backoff 1 s doubling to 30 s, on open do a full refresh [TASK-11]. On any 401 show a token prompt that POSTs `/api/login` [TASK-08].
 
 ## 16. Authentication
 _(→ code: `src/auth.ts`, [planned: TASK-08])_

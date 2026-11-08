@@ -215,7 +215,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-HITL-04 | Agents MUST be able to record a decision with a rationale without pausing. | built |
 | REQ-HITL-05 | The decisions log MUST show every decision by planner, worker, validator, orchestrator and owner, in order, with actor, time, task (if any) and rationale. | built |
 | REQ-HITL-06 | Every choice orch makes on its own MUST be recorded as an orchestrator decision. That includes retrying, holding back a task for file overlap, starting a PR fix round, merging, creating a fix-up task, and falling back from the planner. | built (overlap, fix-up new) |
-| REQ-HITL-07 | The owner MUST be able to do the following to a task: retry from scratch, skip, stop, merge now, mark as merged elsewhere, and send it back with written feedback. Each action MUST be recorded as a human decision. | built (send back new) |
+| REQ-HITL-07 | The owner MUST be able to do the following to a task: retry from scratch, skip, stop, merge now, mark as merged elsewhere, and send it back with written feedback. Each action MUST be recorded as a human decision. | built |
 
 **Edge cases:**
 - Notifications are not configured → the inbox still works; nothing else changes.
@@ -310,8 +310,8 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | :--- | :--- | :--- |
 | REQ-UI-01 | The dashboard MUST show, for the selected project and run: a board of tasks by status, the plan (editable where allowed), the decisions log, the activity stream, and a task view with the live agent log. All of it updates live without reloading. | built |
 | REQ-UI-02 | After a lost connection, the dashboard MUST reconnect live updates automatically and refresh its state. | new |
-| REQ-UI-03 | The task view MUST show the task's code changes against its base: the list of changed files with added/removed line counts, and each file's diff, collapsible. | new |
-| REQ-UI-04 | For a task awaiting review, the owner MUST be able to send it back to the worker with written feedback from the task view (see REQ-HITL-07). | new |
+| REQ-UI-03 | The task view MUST show the task's code changes against its base: the list of changed files with added/removed line counts, and each file's diff, collapsible. | built |
+| REQ-UI-04 | For a task awaiting review, the owner MUST be able to send it back to the worker with written feedback from the task view (see REQ-HITL-07). | built |
 | REQ-UI-05 | The owner MUST be able to view past runs of a project. | built |
 | REQ-UI-06 | The dashboard MUST show cost and agent time per task, per run and per project where the agent CLI reports them, and "n/a" where it doesn't. | new |
 | REQ-UI-07 | The CLI MUST offer the owner's main actions: register, list and archive projects; plan (and preview); approve; run, pause, stop; status; answer; retry, skip, merge. Commands MUST act on the project given explicitly, else the project whose repo contains the current directory, else the only project. Otherwise they fail, listing the projects. | built (actions) / new (projects, scoping) |

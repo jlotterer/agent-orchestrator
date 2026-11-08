@@ -5,6 +5,10 @@ import { normalizeChecks, collectFeedback, tail, type Check, type PrStatus } fro
 
 export interface ShResult { code: number; stdout: string; stderr: string }
 
+/** One changed file of a task branch (§11 "Diff for review"). `patch` is null for binary files and past the size cap. */
+export interface DiffFile { path: string; status: string; additions: number; deletions: number; binary: boolean; patch: string | null }
+export interface DiffResult { base: string; head: string; files: DiffFile[]; truncated: boolean }
+
 export function sh(cmd: string, args: string[], cwd: string, opts: { env?: Record<string, string>; timeoutMs?: number } = {}): Promise<ShResult> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd, env: { ...process.env, ...(opts.env ?? {}) }, stdio: ["ignore", "pipe", "pipe"] });
@@ -92,6 +96,47 @@ export class Git {
     const full = (await git(["diff", `${base}...HEAD`], worktree)).stdout;
     const body = full.length > maxChars ? full.slice(0, maxChars) + `\n\n… diff truncated (${full.length} chars total)` : full;
     return `${stat}\n\n${body}`;
+  }
+
+  /**
+   * Structured diff of a task branch against its base, for the dashboard's review view (§11).
+   * Per-file patches come from `git diff <base>...HEAD -- <file>`; binary files have no patch.
+   * Patch text is capped at `maxChars` in total; files past the cap keep their counts but no patch.
+   */
+  async diffFiles(worktree: string, maxChars = 200_000): Promise<DiffResult> {
+    const base = await this.baseRef();
+    const range = `${base}...HEAD`;
+    const head = (await must(git(["rev-parse", "HEAD"], worktree), "git rev-parse")).trim();
+    // -z keeps paths with spaces/unicode intact; no rename detection so each entry is one path.
+    const numstat = await must(git(["diff", "--no-renames", "-z", "--numstat", range], worktree), "git diff --numstat");
+    const names = await must(git(["diff", "--no-renames", "-z", "--name-status", range], worktree), "git diff --name-status");
+
+    const status = new Map<string, string>();
+    const ns = names.split("\0");
+    for (let i = 0; i + 1 < ns.length; i += 2) if (ns[i]) status.set(ns[i + 1], ns[i]);
+
+    const files: DiffFile[] = [];
+    for (const rec of numstat.split("\0")) {
+      if (!rec) continue;
+      const [a, d, ...rest] = rec.split("\t");
+      const p = rest.join("\t");
+      const binary = a === "-" && d === "-";
+      files.push({ path: p, status: status.get(p) ?? "M", additions: binary ? 0 : Number(a) || 0, deletions: binary ? 0 : Number(d) || 0, binary, patch: null });
+    }
+
+    let used = 0, truncated = false;
+    for (const f of files) {
+      if (f.binary) continue;
+      if (used >= maxChars) { truncated = true; continue; }
+      const p = (await git(["diff", "--no-renames", range, "--", f.path], worktree)).stdout;
+      // Drop the header lines before the first hunk; the UI shows path/status itself.
+      const at = p.indexOf("\n@@");
+      let body = at >= 0 ? p.slice(at + 1) : "";
+      if (used + body.length > maxChars) { body = body.slice(0, maxChars - used); truncated = true; }
+      used += body.length;
+      f.patch = body;
+    }
+    return { base, head, files, truncated };
   }
 
   async commitsAhead(worktree: string): Promise<number> {
