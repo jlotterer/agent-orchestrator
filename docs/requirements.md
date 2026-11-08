@@ -86,12 +86,12 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-INTAKE-01 | orch MUST import tasks from a feature directory's `tasks.md`. Each line of the form `- [ ] T001 …` becomes a task. A `[P]` marker means "may run in parallel with siblings". `##` headings define phases. `- [x]` tasks are imported as already done. | built |
 | REQ-INTAKE-02 | orch MUST derive dependencies as follows: a task depends on every task in earlier phases; a task without `[P]` also depends on the previous task in its phase; text such as "depends on T003", "after T003" or "requires T003" adds an explicit dependency. | built |
 | REQ-INTAKE-03 | A feature directory without `tasks.md`, or whose `tasks.md` contains no tasks, MUST be rejected with a message saying which. | built |
-| REQ-INTAKE-04 | When planning is requested with the planner, a planner agent MUST propose, per task: acceptance criteria, dependencies, a merge policy (automatic or owner review), an optional task-specific test command, a validation mode (standard or UI), and the files or globs the task owns. Proposals referring to unknown tasks MUST be ignored. | built (criteria, deps, policy, command, files) / new (mode) |
+| REQ-INTAKE-04 | When planning is requested with the planner, a planner agent MUST propose, per task: acceptance criteria, dependencies, a merge policy (automatic or owner review), an optional task-specific test command, a validation mode (standard or UI), and the files or globs the task owns. Proposals referring to unknown tasks MUST be ignored. | built (mode: TASK-16) |
 | REQ-INTAKE-05 | The planner's decisions MUST be recorded in the decisions log with their rationale. | built |
 | REQ-INTAKE-06 | If the planner fails or returns nothing usable, the plan MUST fall back to the imported tasks unchanged, and that fallback MUST be recorded as a decision. | built |
 | REQ-INTAKE-07 | Questions the planner raises about the spec as a whole MUST appear in the inbox as plan questions, not attached to any single task. While a plan question is open, no task of that run may start. | built (TASK-13) |
 | REQ-INTAKE-08 | A plan MUST wait for the owner's approval before any task runs. | built |
-| REQ-INTAKE-09 | Before approval, and afterwards for tasks that have not started, the owner MUST be able to edit a task's acceptance criteria, dependencies, merge policy, test command, validation mode, owned files and attempt limit. Each edit MUST be recorded as a human decision. | built (except mode) |
+| REQ-INTAKE-09 | Before approval, and afterwards for tasks that have not started, the owner MUST be able to edit a task's acceptance criteria, dependencies, merge policy, test command, validation mode, owned files and attempt limit. Each edit MUST be recorded as a human decision. | built (mode: TASK-16) |
 | REQ-INTAKE-10 | The owner SHOULD be able to preview the imported tasks, phases and dependencies of a feature directory without creating a run or calling an agent. | built (TASK-13) |
 
 **Edge cases:**
@@ -177,14 +177,14 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
 | REQ-VAL-01 | Before any validator agent runs, the task's test command (task-specific, else the project's) MUST run in the task's working copy. A non-zero exit MUST fail the attempt, with the command's output as feedback. | built |
-| REQ-VAL-02 | When the validator agent is enabled, a validator agent MUST run in a fresh session. It receives the task, its criteria, the worker's summary (as claims to check), the diff, and the test-gate output. It MUST NOT receive the worker's reasoning or conversation. | built (gate output new) |
+| REQ-VAL-02 | When the validator agent is enabled, a validator agent MUST run in a fresh session. It receives the task, its criteria, the worker's summary (as claims to check), the diff, and the test-gate output. It MUST NOT receive the worker's reasoning or conversation. | built (gate output: TASK-16) |
 | REQ-VAL-03 | The validator's verdict MUST be PASS or FAIL, with evidence for each acceptance criterion. Anything other than PASS MUST fail the attempt, with the reasons and unmet criteria as feedback. | built |
 | REQ-VAL-04 | The validator MUST be able to run on a different agent CLI and model from the worker. | built |
 | REQ-VAL-05 | The validator MUST report edits outside the task's owned files as a finding in its verdict. Such edits MUST NOT by themselves cause a FAIL. | built |
 | REQ-VAL-06 | When every task in a phase is done or skipped, orch MUST validate the phase as a whole on the base branch: the project's phase test command, then a phase validator agent given the phase's tasks and the spec. The result MUST be recorded as a decision. | built (TASK-15) |
 | REQ-VAL-07 | When phase validation fails, orch MUST create a fix-up task describing the failure. Tasks of later phases MUST wait for it, and its creation MUST be recorded as a decision. After a configured number of failed fix-up rounds for a phase, the phase MUST go to the inbox instead. | built (TASK-15) |
-| REQ-VAL-08 | A task in UI validation mode MUST be validated against the running application: orch starts the app from the task's working copy using the project's start command; waits until it responds or a time limit passes; gives the validator the app's address; and stops the app afterwards, including when the task is stopped or orch shuts down. | new |
-| REQ-VAL-09 | If the app in UI mode does not become ready in time, the attempt MUST fail with the app's output as feedback. If the validator reports it cannot drive a browser, the task MUST go to the inbox as failed without further retries. | new |
+| REQ-VAL-08 | A task in UI validation mode MUST be validated against the running application: orch starts the app from the task's working copy using the project's start command; waits until it responds or a time limit passes; gives the validator the app's address; and stops the app afterwards, including when the task is stopped or orch shuts down. | built (TASK-16) |
+| REQ-VAL-09 | If the app in UI mode does not become ready in time, the attempt MUST fail with the app's output as feedback. If the validator reports it cannot drive a browser, the task MUST go to the inbox as failed without further retries. | built (TASK-16) |
 
 **Edge cases:**
 - No test command is configured → the gate is skipped; the validator still runs.

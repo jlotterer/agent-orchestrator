@@ -38,10 +38,10 @@ orch ignores unknown keys and shows a warning in the run's **Activity** tab.
 | `validation.phase.enabled` | boolean | `true` | Whether to validate each phase on the base branch. See [Validate whole phases](../how-to/validate-phases.md). |
 | `validation.phase.command` | string | `""` | The phase test command. Empty uses `validation.command`. |
 | `validation.phase.maxFixups` | integer | `2` | Fix-up tasks per phase before the phase goes to your inbox. |
-| `validation.ui.startCommand` | string | `""` | **Planned.** The command that starts your app for UI validation. See [Validate UI tasks in a browser](../how-to/validate-ui-tasks.md). |
-| `validation.ui.url` | string | `http://127.0.0.1:{port}/` | **Planned.** The app address given to the validator. `{port}` is replaced with the chosen port. |
-| `validation.ui.readyTimeoutSeconds` | integer | `120` | **Planned.** How long to wait for the app to answer. |
-| `validation.ui.env` | object | `{}` | **Planned.** Extra environment variables for the app. |
+| `validation.ui.startCommand` | string | `""` | The command that starts your app for UI validation. See [Validate UI tasks in a browser](../how-to/validate-ui-tasks.md). |
+| `validation.ui.url` | string | `http://127.0.0.1:{port}/` | The app address given to the validator. `{port}` is replaced with the chosen port. |
+| `validation.ui.readyTimeoutSeconds` | integer | `120` | How long to wait for the app to answer. |
+| `validation.ui.env` | object | `{}` | Extra environment variables for the app. |
 
 ## Git and merging (`git`)
 

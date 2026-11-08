@@ -239,6 +239,7 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
   <label>Depends on (comma-separated task keys)</label><input id="eDeps" style="width:100%" class="mono">
   <label>Merge policy</label><select id="eMerge"><option value="auto">auto — merge when validated</option><option value="manual">manual — wait for my review</option></select>
   <label>Validation command (blank = project default)</label><input id="eVal" style="width:100%" class="mono">
+  <label>Validation mode</label><select id="eMode"><option value="standard">standard — diff, tests and checks</option><option value="ui">ui — orch starts the app; the validator tests it in a browser</option></select>
   <label>Owned files (one path or glob per line; blank = unconstrained)</label><textarea id="eOwned" class="mono" placeholder="src/auth/**"></textarea>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button id="editCancel">Cancel</button><button id="editSave" class="primary">Save</button></div>
 </dialog>
@@ -507,6 +508,14 @@ function ownedOverlap(a, b) {
   return a.map(ownPrefix).some((x) => b.map(ownPrefix).some((y) => ownIsPrefix(x, y) || ownIsPrefix(y, x)));
 }
 /** Keys of the run's other tasks whose owned files overlap this one's: they never run together (REQ-SCHED-02). */
+/** UI validation mode in the Plan tab (and, with `warnOnly`, the task panel): the mode, and a warning when the project has no start command. */
+const modeLine = (t, warnOnly = false) => {
+  if (t.validate_mode !== "ui") return "";
+  const ui = state.config.uiValidation;
+  const warn = ui && !ui.startCommand ? `<span style="color:var(--warn)" title="Set validation.ui.startCommand in orch.config.json, or the task fails as blocked">⚠ no start command</span>` : "";
+  if (warnOnly) return warn ? ` · ${warn}` : "";
+  return `<div class="deps" title="orch starts the app; the validator tests it in a browser">🖥 UI validation${warn ? " · " + warn : ""}</div>`;
+};
 const overlapKeys = (t) => state.tasks.filter((o) => o.id !== t.id && ownedOverlap(t.files_owned || [], o.files_owned || [])).map((o) => o.key);
 
 function renderPlan() {
@@ -528,11 +537,11 @@ function renderPlan() {
     ? `<div id="approveError" style="color:var(--bad);border:1px solid var(--bad);border-radius:6px;padding:6px 10px;margin-bottom:10px">Approval refused: ${esc(approveError.message)}</div>` : "";
   const planQs = state.questions.filter(q => !q.task_id && !q.answer);
   const held = planQs.length ? `<div style="color:var(--warn);font-size:12px;margin-bottom:10px"><span class="pill s-plan_pending">Plan</span> ${planQs.length} open plan question${planQs.length > 1 ? "s" : ""} in the inbox; no task starts until answered.</div>` : "";
-  el.innerHTML = refused + held + `<div style="color:var(--muted);font-size:12px;margin-bottom:10px">Spec: <code>${esc(state.run.spec_dir)}</code>${editable ? " · click a task to edit acceptance criteria, dependencies, merge policy or owned files (pending tasks only)" : ""}</div>` +
+  el.innerHTML = refused + held + `<div style="color:var(--muted);font-size:12px;margin-bottom:10px">Spec: <code>${esc(state.run.spec_dir)}</code>${editable ? " · click a task to edit acceptance criteria, dependencies, merge policy, validation mode or owned files (pending tasks only)" : ""}</div>` +
     phases.map(p => `<div class="plan-phase"><h3><span>${esc(p.name)}</span>${phaseBadge(p)}</h3>${p.tasks.map(t => `<div class="plan-row" onclick="selectTask('${t.id}')">
       <div><div class="mono">${esc(t.key)}</div><span class="pill s-${t.status}">${t.status.replace("_", " ")}</span>${t.synthetic ? '<div><span class="pill fixup" title="Created by orch after a failed phase validation; never ticked in tasks.md">fix-up</span></div>' : ""}</div>
       <div><div>${esc(t.title)}</div>${t.acceptance.length ? `<ul>${t.acceptance.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : `<div class="empty" style="padding:2px 0">no acceptance criteria (validator will use the description)</div>`}</div>
-      <div><div class="deps">${t.depends_on.length ? "after " + t.depends_on.join(", ") : "no deps"}</div><div class="deps">${t.merge_policy}${t.validate_cmd ? " · " + esc(t.validate_cmd) : ""}</div>${(t.files_owned || []).length ? `<div class="deps mono" title="Owned files">owns ${t.files_owned.map(esc).join(", ")}</div>` : ""}${overlapKeys(t).length ? `<div class="deps" style="color:var(--warn)" title="Owned files overlap: these tasks never run at the same time">⇄ not with ${overlapKeys(t).join(", ")}</div>` : ""}</div>
+      <div><div class="deps">${t.depends_on.length ? "after " + t.depends_on.join(", ") : "no deps"}</div><div class="deps">${t.merge_policy}${t.validate_cmd ? " · " + esc(t.validate_cmd) : ""}</div>${modeLine(t)}${(t.files_owned || []).length ? `<div class="deps mono" title="Owned files">owns ${t.files_owned.map(esc).join(", ")}</div>` : ""}${overlapKeys(t).length ? `<div class="deps" style="color:var(--warn)" title="Owned files overlap: these tasks never run at the same time">⇄ not with ${overlapKeys(t).join(", ")}</div>` : ""}</div>
     </div>`).join("")}</div>`).join("");
 }
 
@@ -588,6 +597,7 @@ async function renderDetail(id, reloadLog) {
       ${t.pr_url ? `<dt>PR checks</dt><dd>${ciBadge(t.ci_status) || "—"}${state.config.prFeedback ? ` · fix rounds ${t.fix_rounds}/${state.config.prFeedback.maxRounds}` : ""}</dd>` : ""}
       ${!t.pr_url && t.fix_rounds ? `<dt>Sent back</dt><dd>${t.fix_rounds}×</dd>` : ""}
       <dt>Validate</dt><dd class="mono">${esc(t.validate_cmd || state.config.validationCommand || "—")}</dd>
+      <dt>Mode</dt><dd>${t.validate_mode === "ui" ? "ui (validated in a browser against the running app)" : "standard"}${modeLine(t, true)}</dd>
       <dt>Owns</dt><dd class="mono">${(t.files_owned || []).map(esc).join(", ") || "— (unconstrained)"}${overlapKeys(t).length ? ` <span style="color:var(--warn)">· not with ${overlapKeys(t).join(", ")}</span>` : ""}</dd>
     </dl>
     <div class="section"><h4>Acceptance criteria</h4>${t.acceptance.length ? `<ul class="acc">${t.acceptance.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : `<div class="empty">none</div>`}</div>
@@ -696,13 +706,13 @@ function renderFindings(d) {
 }
 function openEdit(id) {
   const t = state.tasks.find(x => x.id === id); if (!t) return;
-  $("#editKey").textContent = t.key; $("#eTitle").value = t.title; $("#eAcc").value = t.acceptance.join("\n"); $("#eDeps").value = t.depends_on.join(", "); $("#eMerge").value = t.merge_policy; $("#eVal").value = t.validate_cmd || ""; $("#eOwned").value = (t.files_owned || []).join("\n");
+  $("#editKey").textContent = t.key; $("#eTitle").value = t.title; $("#eAcc").value = t.acceptance.join("\n"); $("#eDeps").value = t.depends_on.join(", "); $("#eMerge").value = t.merge_policy; $("#eVal").value = t.validate_cmd || ""; $("#eMode").value = t.validate_mode || "standard"; $("#eOwned").value = (t.files_owned || []).join("\n");
   $("#editDlg").dataset.id = id; $("#editDlg").showModal();
 }
 $("#editCancel").onclick = () => $("#editDlg").close();
 $("#editSave").onclick = () => act(async () => {
   const id = $("#editDlg").dataset.id;
-  await api("POST", `/api/tasks/${id}/edit`, { title: $("#eTitle").value.trim(), acceptance: $("#eAcc").value.split("\n").map(s => s.trim()).filter(Boolean), depends_on: $("#eDeps").value.split(",").map(s => s.trim()).filter(Boolean), merge_policy: $("#eMerge").value, validate_cmd: $("#eVal").value.trim() || null, files_owned: $("#eOwned").value.split("\n").map(s => s.trim()).filter(Boolean) });
+  await api("POST", `/api/tasks/${id}/edit`, { title: $("#eTitle").value.trim(), acceptance: $("#eAcc").value.split("\n").map(s => s.trim()).filter(Boolean), depends_on: $("#eDeps").value.split(",").map(s => s.trim()).filter(Boolean), merge_policy: $("#eMerge").value, validate_cmd: $("#eVal").value.trim() || null, validate_mode: $("#eMode").value, files_owned: $("#eOwned").value.split("\n").map(s => s.trim()).filter(Boolean) });
   $("#editDlg").close(); toast("saved"); await refresh();
 });
 

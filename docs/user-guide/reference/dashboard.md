@@ -47,7 +47,7 @@ Select a card to open it in the **Task** panel. For details on each status, see 
 
 The **Plan** tab lists the tasks by phase. Each row shows the task key and status, the title and acceptance criteria, its dependencies, and its merge policy and test command. Select a row to open the task and edit it. See [Review and approve a plan](../how-to/review-a-plan.md).
 
-The **Plan** tab also shows each task's owned files and, under **not with**, the tasks that own some of the same files and so never run beside it. Each phase heading shows the phase's validation status and fix-up rounds, and fix-up tasks carry a **fix-up** badge. **Planned:** each task's validation mode.
+The **Plan** tab also shows each task's owned files and, under **not with**, the tasks that own some of the same files and so never run beside it. Each phase heading shows the phase's validation status and fix-up rounds, and fix-up tasks carry a **fix-up** badge. Tasks in UI validation mode show **🖥 UI validation**, and **⚠ no start command** if the project has no `validation.ui.startCommand`. The **Task** panel shows the mode under **Mode**.
 
 ## Decisions tab
 
@@ -89,7 +89,7 @@ The actions depend on the task's status:
 | Dialog | Opened by | Fields |
 | :--- | :--- | :--- |
 | **New plan from a Spec Kit feature** | **New plan** | **Spec directory**, the planner checkbox, **Draft plan** |
-| **Edit task** | **Edit** | **Title**, **Acceptance criteria (one per line)**, **Depends on (comma-separated task keys)**, **Merge policy**, **Validation command (blank = project default)**, **Owned files (one path or glob per line; blank = unconstrained)**, and (**Planned**) validation mode |
+| **Edit task** | **Edit** | **Title**, **Acceptance criteria (one per line)**, **Depends on (comma-separated task keys)**, **Merge policy**, **Validation command (blank = project default)**, **Validation mode**, **Owned files (one path or glob per line; blank = unconstrained)** |
 | **Send** *task* **back to the worker** | **Send back** on an inbox card | A text box for your feedback |
 | **Sign in to orch** | Any request when an access token is set and the browser has none | **Access token**, **Sign in** |
 

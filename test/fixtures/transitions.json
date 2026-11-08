@@ -1917,7 +1917,6 @@
   {
     "name": "T19: UI validator has no browser: fail without retry",
     "row": "T19",
-    "pending": "TASK-16",
     "task": {
       "key": "T003",
       "status": "validating",
@@ -1949,6 +1948,39 @@
         "last_feedback": "UI validation blocked: no browser tool available"
       },
       "notify": true
+    }
+  },
+  {
+    "name": "T19: blocked is rejected for a task that is not validating",
+    "row": "T19",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "auto",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "validator_blocked",
+      "reason": "no browser tool available"
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "running",
+      "rejected": true
     }
   },
   {

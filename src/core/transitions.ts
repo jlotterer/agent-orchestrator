@@ -45,7 +45,8 @@ export type TaskEvent =
   | { type: "human_merge" }
   | { type: "human_mark_merged" }
   | { type: "human_request_changes"; feedback: string }
-  | { type: "pr_action"; action: PrActionName; kind?: FixKind; feedback?: string; reason?: string };
+  | { type: "pr_action"; action: PrActionName; kind?: FixKind; feedback?: string; reason?: string }
+  | { type: "validator_blocked"; reason: string };
 
 export type Effect = "merge_local" | "push_and_pr" | "merge_pr" | "kill_agent" | "remove_worktree";
 
@@ -220,6 +221,14 @@ export function nextTaskState(task: TransitionTask, event: TaskEvent, cfg: Trans
         patch: { attempt: 0, fix_rounds: round, last_feedback: `## Feedback from the owner\n\n${text}`, ci_status: null },
         decision: { actor: "human", text: `Sending owner feedback on ${where} back to the worker (round ${round})`, rationale: firstLine(text) },
       };
+    }
+
+    // T19: UI validation cannot run (the validator has no browser tool, or no start command is set).
+    // Retrying would block the same way, so the task fails at once and goes to the inbox.
+    case "validator_blocked": {
+      if (task.status !== "validating") return reject(task, `task is ${task.status}, not validating`);
+      const feedback = `UI validation blocked: ${event.reason}`;
+      return { status: "failed", patch: { last_feedback: feedback }, notify: { title: `${task.key} failed: UI validation blocked`, body: event.reason, priority: "high", tags: ["x"] } };
     }
 
     // T18

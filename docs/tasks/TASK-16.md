@@ -1,5 +1,5 @@
 # TASK-16: UI validation mode and gate output for validators
-**Status:** todo · **Wave:** 11 · **Depends on:** TASK-15 · **Parallel:** No
+**Status:** done (manual check open: see below) · **Wave:** 11 · **Depends on:** TASK-15 · **Parallel:** No
 
 ## Goal
 Let UI tasks be validated against the running app: orch starts the app, the validator drives it with its browser tooling, and orch always cleans up. Also give every validator the test-gate output.
@@ -50,6 +50,6 @@ orch-owned browser automation (rejected in decision 0016).
 - e2e: a fake validator returning `BLOCKED` → the task fails immediately (attempt 1), and the inbox shows it.
 - e2e: kill the daemon during UI validation and restart → the leftover app process is killed.
 - Unit/e2e: the validator prompt contains the gate output.
-- **Manual:** one real UI task with Claude Code plus a browser MCP; attach the verdict.
+- **Manual:** one real UI task with Claude Code plus a browser MCP; attach the verdict. **Open:** not run yet. The build host could not run the daemon (better-sqlite3 crashes on the Windows host), and the Docker container has no signed-in Claude Code. Run it once with Playwright MCP (README "UI validation mode") and attach the verdict event to the PR or this brief.
 - `npm test` passes.
 - `npm run typecheck` passes and docs touched by this change (README, architecture, decisions) are updated in the same PR, including this brief's status line.

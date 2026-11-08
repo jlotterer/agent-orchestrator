@@ -164,7 +164,14 @@ async function main() {
       const archive = () => void runArchive(store, server.retention.eventDays, home).catch((e) => console.error(`event archive: ${e?.message ?? e}`));
       archive();
       setInterval(archive, 24 * 60 * 60 * 1000).unref();
-      const shutdown = () => { console.log("shutting down"); process.exit(0); };
+      // Stop UI-mode apps under test before exiting (REQ-VAL-08); a second signal exits at once.
+      let closing = false;
+      const shutdown = () => {
+        if (closing) process.exit(0);
+        closing = true;
+        console.log("shutting down");
+        void orch.shutdown().finally(() => process.exit(0));
+      };
       process.on("SIGINT", shutdown);
       process.on("SIGTERM", shutdown);
       return;

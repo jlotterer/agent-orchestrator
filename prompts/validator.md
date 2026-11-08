@@ -15,6 +15,9 @@ You are the VALIDATOR in an orchestrated coding run. You did NOT write this code
 ## Changed files outside the owned files (computed by the orchestrator)
 {{out_of_scope}}
 
+## Test gate output
+{{gate_output}}
+
 ## Diff against {{base_branch}}
 ```diff
 {{diff}}
