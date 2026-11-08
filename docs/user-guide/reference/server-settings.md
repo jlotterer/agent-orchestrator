@@ -48,7 +48,7 @@ The adapters `claude` and `gemini` are defined by default. A role's `adapter` mu
 
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `retention.eventDays` | integer | `30` | **Planned.** Days after a run finishes before its agent logs are archived. `0` never archives. See [Archive old activity logs](../how-to/archive-event-logs.md). |
+| `retention.eventDays` | integer | `30` | Days after a run finishes before its agent logs are archived. `0` never archives. See [Archive old activity logs](../how-to/archive-event-logs.md). |
 
 ## GitHub
 
@@ -77,7 +77,7 @@ These environment variables affect orch and the `orch` command.
 | `ORCH_HOME` | Server and command | The data directory. Default: `~/.orch`. |
 | `ORCH_TOKEN` | Server and command | The access token. Overrides `auth.token`. |
 | `ORCH_URL` | Command | The server address, for example `http://my-server:4800`. Default: `http://127.0.0.1:<port>`. |
-| `ORCH_PROJECT` | Command | **Planned.** The project commands act on, unless `--project` is given. |
+| `ORCH_PROJECT` | Command | The project commands act on, unless `--project` is given. |
 | `ORCH_CONFIG` | Server | Only for upgrading a single-repo installation: the old settings file. |
 
 orch sets these for agents inside a task. You don't set them yourself:

@@ -1,8 +1,5 @@
 # Archive old activity logs
 
-> [!NOTE]
-> **Planned.** Log archiving isn't in the current release. This page describes how it will work.
-
 Agent logs are the largest part of orch's database. To keep the database small over months of use, orch moves the detailed logs of old runs into compressed files, and then removes them from the database. Decisions, questions, task summaries, validator verdicts and costs stay in the database.
 
 ## How archiving works
@@ -25,6 +22,8 @@ After archiving, the log views for that run show "Log archived to `<path>`" inst
   ```bash
   orch archive-events
   ```
+
+  It works whether or not orch is running. orch prints "archived event logs of `<n>` run(s): `<run-ids>`", or "no finished runs older than `<days>` day(s) with live events" when there's nothing to archive. Each archived run also gets a decision that names its archive file.
 
 ## Change how long logs stay in the database
 

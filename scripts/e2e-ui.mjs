@@ -5,7 +5,8 @@
  * (scripts/fake-agent.mjs). Every scenario ends by checking that no fake-app process is left (kill -0 on the
  * pids the app recorded) and that no app pidfile is left in $ORCH_HOME/run.
  *   (a) a UI task passes only on HTTP 200 from the app; a standard task gets no app; both validator prompts
- *       contain the gate output; the planner's validate_mode is applied and the owner can edit it
+ *       contain the gate output; the planner's validate_mode is applied and the owner can edit it; the app is
+ *       stopped as soon as its validator returns, before the PASS merges the task (so before the run is done)
  *   (b) NEVER_READY with a 3 s readiness timeout: the attempt fails with the app's output in the feedback
  *   (c) the validator returns BLOCKED: the task fails on attempt 1 (no retry) and is in the inbox
  *   (d) kill -9 the daemon during UI validation, restart: the leftover app is killed, the task reruns
@@ -115,6 +116,8 @@ const scenarios = {
 
     s = await h.wait((s) => s.run.status === "done" || s.inbox.some((i) => i.type === "failed"), "run done", 90_000);
     assert(s.run.status === "done", `run done: ${JSON.stringify(s.inbox)}`);
+    // The app goes with its validator, before the verdict is acted on: by the time the run is done it is gone.
+    assert(h.appPids().length && !h.appPids().some(alive), `app still running when the run finished: ${h.appPids()}`);
     const evs = await h.events(run.id);
     const t1 = task(s, "T001"), t5 = task(s, "T005");
     const v1 = evs.find((e) => e.task_id === t1.id && e.kind === "verdict");
@@ -122,7 +125,11 @@ const scenarios = {
     assert(/^http:\/\/127\.0\.0\.1:\d+\/$/.test(v1.data.app_url), `verdict records the app url: ${v1.data.app_url}`);
     assert(v1.data.findings.some((f) => f === `app answered 200 at ${v1.data.app_url}`), `the validator got 200 from the app: ${v1.data.findings}`);
     assert(evs.some((e) => e.task_id === t1.id && /^app ready at /.test(e.data.message ?? "")), "app ready event");
-    assert(evs.some((e) => e.task_id === t1.id && /^app stopped /.test(e.data.message ?? "")), "app stopped event");
+    const stopped = evs.filter((e) => e.task_id === t1.id && /^app stopped /.test(e.data.message ?? ""));
+    assert(stopped.length === 1, `one app stopped event: ${stopped.length}`);
+    const doneEv = evs.find((e) => e.task_id === t1.id && e.kind === "state" && e.data.message === "done");
+    const ready = evs.find((e) => e.task_id === t1.id && /^app ready at /.test(e.data.message ?? ""));
+    assert(doneEv && stopped[0].id > ready.id && stopped[0].id < doneEv.id, `app stopped after the validator and before the merge: ready ${ready.id}, stopped ${stopped[0].id}, done ${doneEv?.id}`);
     assert(!evs.some((e) => e.task_id === t5.id && /^starting app/.test(e.data.message ?? "")), "no app for the standard task");
     assert(h.appPids().length === 1, `one app was started: ${h.appPids()}`);
 

@@ -39,14 +39,12 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 
 ## Projects
 
-**Planned.**
-
 | Method and path | Body or query | Returns |
 | :--- | :--- | :--- |
 | `GET /api/projects` | `?archived=1` to include archived projects | A list of `{id, name, repo, archived, error, run, inboxCount}` |
 | `POST /api/projects` | `{path, name?}` | The project, with `configCreated` set to the starter settings path if one was created |
 | `DELETE /api/projects/:id` | None | `{ok}`. Archives the project. |
-| `GET /api/projects/:id/state` | `?run=<run-id>` | A snapshot of the project and run: tasks, decisions, questions, phases, inbox, runs and settings |
+| `GET /api/projects/:id/state` | `?run=<run-id>` | The state of the project and run: tasks, decisions, questions, phases, inbox, runs, settings, and `totals` with the cost and agent time of the run and the project (`{costUsd, agentMs}`; `costUsd` is `null` when no agent reported a cost) |
 | `POST /api/projects/:id/plan` | `{specDir, llm, dryRun?}` | The new run. With `dryRun`, the parsed tasks instead. |
 | `GET /api/inbox` | None | Inbox items from every project, each with `project_id` and `project_name` |
 
@@ -54,8 +52,8 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 
 | Method and path | Body or query | Returns |
 | :--- | :--- | :--- |
-| `GET /api/state` | `?project=<project-id>` | A snapshot of the project's current or newest run. Without `project`, uses the first project by name. |
-| `GET /api/runs/:id` | None | A snapshot of that run |
+| `GET /api/state` | `?project=<project-id>` | The state of the project's current or newest run. Without `project`, uses the first project by name. |
+| `GET /api/runs/:id` | None | The state of that run |
 | `POST /api/plan` | `{specDir, llm, project?}` | The new run. Without `project`, orch uses the project whose repo contains `specDir`. |
 | `POST /api/runs/:id/approve` | None | `{ok}` |
 | `POST /api/runs/:id/start` | None | `{ok}` |
@@ -77,7 +75,7 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 | `GET /api/tasks/:id/diff` | None | `{base, head, files, truncated}`, where each file has `path`, `status`, `additions`, `deletions`, `binary` and `patch`. `404` with the reason when the task has no working copy. |
 | `GET /api/tasks/:id/events` | `?after=<event-id>&limit=<n>` | The task's log entries |
 
-Task IDs in these paths are the internal IDs in snapshots, not task keys such as `T003`.
+Task IDs in these paths are the `id` values that the state endpoints return, not task keys such as `T003`.
 
 ## Questions and decisions
 

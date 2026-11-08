@@ -113,7 +113,7 @@ A *decision* is a recorded choice with who made it, when, which task it applies 
 | Server settings | `~/.orch/server.json` |
 | Runs, tasks, decisions, questions and logs for every project | `~/.orch/orch.db` |
 | Working copies of active tasks | `~/.orch/worktrees/<project>/` |
-| Archived agent logs (**Planned**) | `~/.orch/archive/<project>/` |
+| Archived agent logs | `~/.orch/archive/<project>/` |
 | Project settings | `<repo>/orch.config.json` |
 | Task ticks | `tasks.md` on the base branch of the repo |
 

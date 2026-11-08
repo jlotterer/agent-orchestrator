@@ -50,11 +50,11 @@ Find your symptom or error message, then follow the fix. Error messages from the
 
 ### "which project? Run inside a project's repo or pass --project <id> (or set ORCH_PROJECT)"
 
-**Planned.** **Cause:** Several projects are registered, and the command can't tell which one you mean.
+**Cause:** Several projects are registered, and the command can't tell which one you mean.
 
 **Fix:** Run it inside the project's repo, add `--project <project-id>`, or set `ORCH_PROJECT`.
 
-### "task `<key>` not found"
+### "task `<key>` not found in `<project-id>` …"
 
 **Cause:** The key isn't in the project's current run, or the command picked another project.
 
