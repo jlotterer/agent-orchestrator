@@ -45,10 +45,10 @@ The validator also catches a bad merge, because it runs the tests on the combine
 
 ### Owned files
 
-**Planned.** Each task can list the files or folders it owns, such as `src/auth/**` or `src/auth/login.ts`. The planner proposes them, and you can edit them in the plan.
+Each task can list the files or folders it owns, such as `src/auth/**` or `src/auth/login.ts`. The planner proposes them, and you can edit them in the plan: select the task, select **Edit**, and enter one path or pattern per line in **Owned files**.
 
-orch never runs two tasks of the same project at the same time when their owned files overlap, even if both are ready. When it holds a task back for this reason, it records a decision that names both tasks. The **Plan** tab shows the resulting order.
+orch never runs two tasks of the same project at the same time when their owned files overlap, even if both are ready. When it holds a task back for this reason, it records an orchestrator decision such as "Holding T003 until T002 finishes: their owned files overlap", once per pair of tasks. In the **Plan** tab, each task shows the files it owns and, under **not with**, the tasks it never runs beside. A task that resumes after you answer its question waits the same way.
 
 orch compares the fixed part of each path, up to the first wildcard. `src/auth/**` and `src/auth/login.ts` overlap, while `src/auth/**` and `src/billing/**` don't. This is cautious on purpose: it can hold back two tasks that wouldn't have collided, but it never runs two that would. A task without owned files isn't restricted.
 
-The validator also reports any changes a task made outside its owned files, as a finding in its verdict. Such changes don't fail the task by themselves.
+orch also lists the files a task changed outside its owned files and gives that list to the validator, which reports them as findings in its verdict. Such changes don't fail the task by themselves. You see them under **Validator findings** in the task panel and in the task's log. A folder without a wildcard, such as `src/core`, owns everything under it.

@@ -6,6 +6,8 @@
  * manual merge, and checks that everything lands on main.
  * TASK-13: `orch plan --dry-run` creates nothing; the planner's plan question (PLAN_QUESTION in spec.md)
  * has no task and holds every start until answered; approval refuses a dependency cycle.
+ * TASK-14: the planner gives T002 and T003 overlapping files_owned; they never run at the same time and an
+ * orchestrator decision names both. T001's out-of-scope edit (notes/T001.md) is a finding, and T001 still passes.
  *   node scripts/e2e.mjs
  */
 import fs from "node:fs";
@@ -15,7 +17,7 @@ import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, sl
 
 const PORT = 4811;
 const CHECK_SH = "#!/bin/sh\nfor f in impl/*.txt; do [ -f \"$f\" ] || continue; grep -q OK \"$f\" || { echo \"$f is not OK\"; exit 1; }; done\necho checks passed\n";
-const { repo, home, sh } = makeRepo({
+const { repo, home, sh, tmp } = makeRepo({
   prefix: "orch-e2e-",
   files: {
     "README.md": "# demo\n",
@@ -34,13 +36,14 @@ const { repo, home, sh } = makeRepo({
 `,
   },
 });
+const ACTIVE_DIR = path.join(tmp, "active"); // fake agents record which tasks overlap in time (TASK-14)
 writeConfig(repo, {
   repo: ".", baseBranch: "main", worktreeDir: "../wt", dbPath: ".orch/orch.db", port: PORT, publicUrl: `http://localhost:${PORT}`,
   agents: {
     timeoutMinutes: 2,
     adapters: {
-      claude: { type: "claude", command: FAKE_AGENT, extraArgs: [], env: {} },
-      gemini: { type: "gemini", command: FAKE_AGENT, extraArgs: ["--yolo", "--skip-trust"], env: { FAKE_FLAVOR: "gemini" } },
+      claude: { type: "claude", command: FAKE_AGENT, extraArgs: [], env: { FAKE_ACTIVE_DIR: ACTIVE_DIR } },
+      gemini: { type: "gemini", command: FAKE_AGENT, extraArgs: ["--yolo", "--skip-trust"], env: { FAKE_FLAVOR: "gemini", FAKE_ACTIVE_DIR: ACTIVE_DIR } },
     },
     // Workers on one adapter, validation on another: the mixed setup this test exists to exercise.
     roles: { planner: { adapter: "claude", model: "" }, worker: { adapter: "claude", model: "" }, validator: { adapter: "gemini", model: "pro" } },
@@ -87,6 +90,21 @@ try {
   const planQ = s.inbox.find((i) => i.type === "question");
   if (!planQ || planQ.task_id || planQ.task_key || !planQ.plan) throw new Error("expected a plan question with no task: " + JSON.stringify(s.inbox));
   if (s.questions.some((q) => q.task_id)) throw new Error("plan question was attached to a task");
+
+  // TASK-14 (REQ-INTAKE-04): the planner's files_owned is applied.
+  const owned = Object.fromEntries(s.tasks.map((t) => [t.key, t.files_owned]));
+  if (JSON.stringify(owned.T002) !== JSON.stringify(["impl/T002.txt", "shared/**"]) || !owned.T003.includes("shared/farewell.md")) {
+    throw new Error("planner files_owned not applied: " + JSON.stringify(owned));
+  }
+  // TASK-14 (REQ-INTAKE-09): the edit API accepts files_owned (trimmed, deduplicated) and rejects a non-array.
+  const t004id = s.tasks.find((t) => t.key === "T004").id;
+  await api("POST", `/api/tasks/${t004id}/edit`, { files_owned: [" impl/T004.txt ", "impl/T004.txt", ""] });
+  if (JSON.stringify((await api("GET", "/api/state")).tasks.find((t) => t.key === "T004").files_owned) !== JSON.stringify(["impl/T004.txt"])) {
+    throw new Error("files_owned edit not applied");
+  }
+  const badOwned = await raw("POST", `/api/tasks/${t004id}/edit`, { files_owned: "impl/**" });
+  if (badOwned.status !== 400) throw new Error("a non-array files_owned should be 400: " + JSON.stringify(badOwned));
+  if (!(await api("GET", "/api/state")).decisions.some((d) => d.actor === "human" && d.text === "Edited task T004: files_owned")) throw new Error("files_owned edit not recorded as a human decision");
 
   // TASK-13 (§6.3): approval refuses a dependency cycle and names its keys. T004 already depends on T001.
   const t001 = s.tasks.find((t) => t.key === "T001");
@@ -163,6 +181,18 @@ try {
     if (!decisions.some((d) => d.startsWith(must))) throw new Error(`missing decision: ${must}\n${decisions.join("\n")}`);
   }
   const evs = await api("GET", `/api/runs/${run.id}/events?limit=1000`);
+
+  // TASK-14 (REQ-SCHED-02, REQ-HITL-06): T002 and T003 own overlapping files, so they never ran together.
+  const concurrent = fs.existsSync(path.join(ACTIVE_DIR, "concurrent.log")) ? fs.readFileSync(path.join(ACTIVE_DIR, "concurrent.log"), "utf8") : "";
+  if (/T002 with T003|T003 with T002/.test(concurrent)) throw new Error("T002 and T003 ran at the same time:\n" + concurrent);
+  const hold = s.decisions.find((d) => d.actor === "orchestrator" && d.text.startsWith("Holding") && d.text.includes("T002") && d.text.includes("T003"));
+  if (!hold) throw new Error(`no orchestrator decision naming T002 and T003:\n${decisions.join("\n")}`);
+  console.log("overlap hold:", hold.text);
+  // TASK-14 (REQ-VAL-05): T001's edit outside its owned files is a finding, and the verdict stays PASS.
+  const t001v = evs.filter((e) => e.kind === "verdict" && e.task_id === t001.id).at(-1);
+  if (!t001v || t001v.data.verdict !== "PASS" || JSON.stringify(t001v.data.out_of_scope) !== JSON.stringify(["notes/T001.md"]) || !t001v.data.findings.some((f) => f.includes("notes/T001.md"))) {
+    throw new Error("T001 verdict should PASS with notes/T001.md out of scope: " + JSON.stringify(t001v?.data));
+  }
   const vStart = evs.filter((e) => e.kind === "state" && /validator started \(gemini:pro\)/.test(e.data.message));
   if (vStart.length < 4) throw new Error("validator did not run on the gemini adapter: " + vStart.length);
   const vInit = evs.filter((e) => e.kind === "info" && e.data.role === "validator" && e.data.model === "fake-gemini");

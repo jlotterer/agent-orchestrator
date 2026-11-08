@@ -1,5 +1,5 @@
 # TASK-14: File ownership: safe parallelism
-**Status:** todo · **Wave:** 9 · **Depends on:** TASK-13 · **Parallel:** No
+**Status:** done · **Wave:** 9 · **Depends on:** TASK-13 · **Parallel:** No
 
 ## Goal
 Prevent parallel tasks from editing the same files. The planner declares owned files per task, the scheduler never runs overlapping tasks together and logs why, and the validator reports out-of-scope edits without failing on them.
@@ -48,5 +48,6 @@ Exact glob intersection (rejected in decision 0017).
 - The e2e assertions above pass.
 - Unit: `outOfScope(["src/a.ts","README.md"], ["src/**"])` returns `["README.md"]`.
 - **Manual:** one real run with Claude Code where the planner emits `files_owned`; attach the plan screenshot.
+  _Open: not done in the TASK-14 session (no real agent run there); the owner does it on the next real run._
 - `npm test` passes.
 - `npm run typecheck` passes and docs touched by this change (README, architecture, decisions) are updated in the same PR, including this brief's status line.

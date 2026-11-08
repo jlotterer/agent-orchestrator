@@ -72,7 +72,7 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 | `POST /api/tasks/:id/stop` | None | `{ok}` |
 | `POST /api/tasks/:id/merge` | None | `{ok}` |
 | `POST /api/tasks/:id/mark-merged` | None | `{ok}` |
-| `POST /api/tasks/:id/edit` | Any of `title`, `description`, `acceptance`, `depends_on`, `merge_policy`, `validate_cmd`, `max_attempts`. **Planned:** `validate_mode`, `files_owned`. | `{ok}` |
+| `POST /api/tasks/:id/edit` | Any of `title`, `description`, `acceptance`, `depends_on`, `merge_policy`, `validate_cmd`, `max_attempts`, `files_owned` (an array of paths or globs; any other type is `400`). **Planned:** `validate_mode`. | `{ok}` |
 | `POST /api/tasks/:id/request-changes` | `{feedback}`, not empty | `{ok}`. Only for tasks waiting for review or CI. |
 | `GET /api/tasks/:id/diff` | None | `{base, head, files, truncated}`, where each file has `path`, `status`, `additions`, `deletions`, `binary` and `patch`. `404` with the reason when the task has no working copy. |
 | `GET /api/tasks/:id/events` | `?after=<event-id>&limit=<n>` | The task's log entries |

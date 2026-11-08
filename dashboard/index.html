@@ -235,6 +235,7 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
   <label>Depends on (comma-separated task keys)</label><input id="eDeps" style="width:100%" class="mono">
   <label>Merge policy</label><select id="eMerge"><option value="auto">auto — merge when validated</option><option value="manual">manual — wait for my review</option></select>
   <label>Validation command (blank = project default)</label><input id="eVal" style="width:100%" class="mono">
+  <label>Owned files (one path or glob per line; blank = unconstrained)</label><textarea id="eOwned" class="mono" placeholder="src/auth/**"></textarea>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button id="editCancel">Cancel</button><button id="editSave" class="primary">Save</button></div>
 </dialog>
 
@@ -488,6 +489,17 @@ function taskCard(t) {
   </div>`;
 }
 
+// File ownership (architecture §7.2): the static-prefix rule of src/core/ownership.ts, for the plan view.
+const ownSegs = (p) => p.replace(/\\/g, "/").split("/").filter((x) => x && x !== ".");
+const ownPrefix = (p) => { const s = ownSegs(p), i = s.findIndex((x) => /[*?[{]/.test(x)); return i < 0 ? s : s.slice(0, i); };
+const ownIsPrefix = (a, b) => a.length <= b.length && a.every((x, i) => x === b[i]);
+function ownedOverlap(a, b) {
+  if (!a.length || !b.length) return false;
+  return a.map(ownPrefix).some((x) => b.map(ownPrefix).some((y) => ownIsPrefix(x, y) || ownIsPrefix(y, x)));
+}
+/** Keys of the run's other tasks whose owned files overlap this one's: they never run together (REQ-SCHED-02). */
+const overlapKeys = (t) => state.tasks.filter((o) => o.id !== t.id && ownedOverlap(t.files_owned || [], o.files_owned || [])).map((o) => o.key);
+
 function renderPlan() {
   const el = $("#tab-plan");
   if (!state.run) { el.innerHTML = `<div class="empty">No plan yet.</div>`; return; }
@@ -498,11 +510,11 @@ function renderPlan() {
     ? `<div id="approveError" style="color:var(--bad);border:1px solid var(--bad);border-radius:6px;padding:6px 10px;margin-bottom:10px">Approval refused: ${esc(approveError.message)}</div>` : "";
   const planQs = state.questions.filter(q => !q.task_id && !q.answer);
   const held = planQs.length ? `<div style="color:var(--warn);font-size:12px;margin-bottom:10px"><span class="pill s-plan_pending">Plan</span> ${planQs.length} open plan question${planQs.length > 1 ? "s" : ""} in the inbox; no task starts until answered.</div>` : "";
-  el.innerHTML = refused + held + `<div style="color:var(--muted);font-size:12px;margin-bottom:10px">Spec: <code>${esc(state.run.spec_dir)}</code>${editable ? " · click a task to edit acceptance criteria, dependencies or merge policy (pending tasks only)" : ""}</div>` +
+  el.innerHTML = refused + held + `<div style="color:var(--muted);font-size:12px;margin-bottom:10px">Spec: <code>${esc(state.run.spec_dir)}</code>${editable ? " · click a task to edit acceptance criteria, dependencies, merge policy or owned files (pending tasks only)" : ""}</div>` +
     phases.map(p => `<div class="plan-phase"><h3>${esc(p.name)}</h3>${p.tasks.map(t => `<div class="plan-row" onclick="selectTask('${t.id}')">
       <div><div class="mono">${esc(t.key)}</div><span class="pill s-${t.status}">${t.status.replace("_", " ")}</span></div>
       <div><div>${esc(t.title)}</div>${t.acceptance.length ? `<ul>${t.acceptance.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : `<div class="empty" style="padding:2px 0">no acceptance criteria (validator will use the description)</div>`}</div>
-      <div><div class="deps">${t.depends_on.length ? "after " + t.depends_on.join(", ") : "no deps"}</div><div class="deps">${t.merge_policy}${t.validate_cmd ? " · " + esc(t.validate_cmd) : ""}</div></div>
+      <div><div class="deps">${t.depends_on.length ? "after " + t.depends_on.join(", ") : "no deps"}</div><div class="deps">${t.merge_policy}${t.validate_cmd ? " · " + esc(t.validate_cmd) : ""}</div>${(t.files_owned || []).length ? `<div class="deps mono" title="Owned files">owns ${t.files_owned.map(esc).join(", ")}</div>` : ""}${overlapKeys(t).length ? `<div class="deps" style="color:var(--warn)" title="Owned files overlap: these tasks never run at the same time">⇄ not with ${overlapKeys(t).join(", ")}</div>` : ""}</div>
     </div>`).join("")}</div>`).join("");
 }
 
@@ -520,7 +532,7 @@ function evLine(ev, withTask) {
     case "text": body = esc(d.text); break;
     case "tool": body = `▸ ${esc(d.name)} ${esc(JSON.stringify(d.input || {})).slice(0, 300)}${d.exit !== undefined ? ` → exit ${d.exit}` : ""}${d.output ? `<span class="out">${esc(d.output)}</span>` : ""}`; break;
     case "agent": body = d.kind === "tool_result" ? `<span class="out">${d.is_error ? "✖ " : "✔ "}${esc(d.output)}</span>` : esc(JSON.stringify(d)); break;
-    case "verdict": body = `VERDICT ${esc(d.verdict)}${(d.reasons || []).length ? "\n" + d.reasons.map(r => "  · " + esc(r)).join("\n") : ""}`; break;
+    case "verdict": body = `VERDICT ${esc(d.verdict)}${(d.reasons || []).length ? "\n" + d.reasons.map(r => "  · " + esc(r)).join("\n") : ""}${(d.out_of_scope || []).length ? "\n  out of scope: " + d.out_of_scope.map(esc).join(", ") : ""}${(d.findings || []).length ? "\n" + d.findings.map(f => "  ⚑ " + esc(f)).join("\n") : ""}`; break;
     case "decision": body = `decision [${esc(d.actor)}]: ${esc(d.text)}${d.rationale ? " — " + esc(d.rationale) : ""}`; break;
     case "question": body = `question #${d.id}: ${esc(d.text)}${(d.options || []).length ? " [" + d.options.map(esc).join(" / ") + "]" : ""}`; break;
     case "info": body = esc(d.message || [d.subtype, d.model, d.cost_usd != null ? `$${d.cost_usd.toFixed(3)}` : "", d.num_turns ? `${d.num_turns} turns` : ""].filter(Boolean).join(" · ")); break;
@@ -542,7 +554,7 @@ async function renderDetail(id, reloadLog) {
   if (detailFor !== id || reloadLog) {
     detailFor = id; reviewKey = null; lastEventId = 0;
     $("#detailBody").className = ""; // drop the placeholder's dim `empty` style
-    $("#detailBody").innerHTML = `<div id="dHead"></div><div id="dReview"></div><div class="section"><h4>Log</h4><div id="log"></div></div>`;
+    $("#detailBody").innerHTML = `<div id="dHead"></div><div id="dFindings"></div><div id="dReview"></div><div class="section"><h4>Log</h4><div id="log"></div></div>`;
   }
   const busy = ["running", "validating"].includes(t.status);
   const canEdit = ["pending", "failed", "pr_open"].includes(t.status) && state.run && state.run.status !== "done";
@@ -558,6 +570,7 @@ async function renderDetail(id, reloadLog) {
       ${t.pr_url ? `<dt>PR checks</dt><dd>${ciBadge(t.ci_status) || "—"}${state.config.prFeedback ? ` · fix rounds ${t.fix_rounds}/${state.config.prFeedback.maxRounds}` : ""}</dd>` : ""}
       ${!t.pr_url && t.fix_rounds ? `<dt>Sent back</dt><dd>${t.fix_rounds}×</dd>` : ""}
       <dt>Validate</dt><dd class="mono">${esc(t.validate_cmd || state.config.validationCommand || "—")}</dd>
+      <dt>Owns</dt><dd class="mono">${(t.files_owned || []).map(esc).join(", ") || "— (unconstrained)"}${overlapKeys(t).length ? ` <span style="color:var(--warn)">· not with ${overlapKeys(t).join(", ")}</span>` : ""}</dd>
     </dl>
     <div class="section"><h4>Acceptance criteria</h4>${t.acceptance.length ? `<ul class="acc">${t.acceptance.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : `<div class="empty">none</div>`}</div>
     ${t.summary ? `<div class="section"><h4>Worker summary</h4><div style="font-size:13px;white-space:pre-wrap">${esc(t.summary)}</div>${t.files.length ? `<div class="mono" style="color:var(--dim);margin-top:4px">${t.files.map(esc).join(", ")}</div>` : ""}</div>` : ""}
@@ -649,19 +662,29 @@ $("#sendGo").onclick = async () => {
 function appendLog(evs) {
   const log = $("#log"); if (!log) return;
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-  for (const ev of evs) { if (ev.id <= lastEventId) continue; log.insertAdjacentHTML("beforeend", evLine(ev, false)); lastEventId = ev.id; }
+  for (const ev of evs) {
+    if (ev.id <= lastEventId) continue;
+    log.insertAdjacentHTML("beforeend", evLine(ev, false)); lastEventId = ev.id;
+    if (ev.kind === "verdict") renderFindings(ev.data || {});
+  }
   if (atBottom) log.scrollTop = log.scrollHeight;
 }
 
+/** The latest verdict's scope findings (REQ-VAL-05): reported, never a FAIL by themselves. */
+function renderFindings(d) {
+  const el = $("#dFindings"); if (!el) return;
+  const oos = d.out_of_scope || [], fs = d.findings || [];
+  el.innerHTML = oos.length || fs.length ? `<div class="section"><h4>Validator findings</h4>${oos.length ? `<div style="font-size:12px;color:var(--warn)">Changed outside owned files: <span class="mono">${oos.map(esc).join(", ")}</span></div>` : ""}${fs.length ? `<ul class="acc">${fs.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}</div>` : "";
+}
 function openEdit(id) {
   const t = state.tasks.find(x => x.id === id); if (!t) return;
-  $("#editKey").textContent = t.key; $("#eTitle").value = t.title; $("#eAcc").value = t.acceptance.join("\n"); $("#eDeps").value = t.depends_on.join(", "); $("#eMerge").value = t.merge_policy; $("#eVal").value = t.validate_cmd || "";
+  $("#editKey").textContent = t.key; $("#eTitle").value = t.title; $("#eAcc").value = t.acceptance.join("\n"); $("#eDeps").value = t.depends_on.join(", "); $("#eMerge").value = t.merge_policy; $("#eVal").value = t.validate_cmd || ""; $("#eOwned").value = (t.files_owned || []).join("\n");
   $("#editDlg").dataset.id = id; $("#editDlg").showModal();
 }
 $("#editCancel").onclick = () => $("#editDlg").close();
 $("#editSave").onclick = () => act(async () => {
   const id = $("#editDlg").dataset.id;
-  await api("POST", `/api/tasks/${id}/edit`, { title: $("#eTitle").value.trim(), acceptance: $("#eAcc").value.split("\n").map(s => s.trim()).filter(Boolean), depends_on: $("#eDeps").value.split(",").map(s => s.trim()).filter(Boolean), merge_policy: $("#eMerge").value, validate_cmd: $("#eVal").value.trim() || null });
+  await api("POST", `/api/tasks/${id}/edit`, { title: $("#eTitle").value.trim(), acceptance: $("#eAcc").value.split("\n").map(s => s.trim()).filter(Boolean), depends_on: $("#eDeps").value.split(",").map(s => s.trim()).filter(Boolean), merge_policy: $("#eMerge").value, validate_cmd: $("#eVal").value.trim() || null, files_owned: $("#eOwned").value.split("\n").map(s => s.trim()).filter(Boolean) });
   $("#editDlg").close(); toast("saved"); await refresh();
 });
 

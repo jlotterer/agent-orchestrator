@@ -13,6 +13,7 @@ import { extractJson } from "../../dist/adapters/runner.js";
 import { selectReady } from "../../dist/core/readiness.js";
 import { nextTaskState } from "../../dist/core/transitions.js";
 import { decidePrAction } from "../../dist/core/prpoll.js";
+import { ownedOverlap, outOfScope } from "../../dist/core/ownership.js";
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures");
 const load = (f) => JSON.parse(fs.readFileSync(path.join(FIXTURES, f), "utf8"));
@@ -100,5 +101,22 @@ describe("pr-poll fixtures (decidePrAction)", () => {
   test("every step of architecture §12.2 has a case", () => {
     const steps = new Set(cases.filter((c) => !c.pending).map((c) => c.step));
     for (let s = 1; s <= 7; s++) assert.ok(steps.has(s), `step ${s}`);
+  });
+});
+
+describe("ownership fixtures (ownedOverlap, outOfScope)", () => {
+  const { overlap, outOfScope: scope } = load("ownership.json");
+  uniqueNames(overlap, "ownership.json overlap");
+  uniqueNames(scope, "ownership.json outOfScope");
+  test("there are at least 10 overlap cases", () => assert.ok(overlap.length >= 10));
+  for (const c of overlap) {
+    test(`overlap: ${c.name}`, opts(c), () => {
+      assert.equal(ownedOverlap(c.a, c.b), c.expected);
+      assert.equal(ownedOverlap(c.b, c.a), c.expected, "symmetric");
+    });
+  }
+  for (const c of scope) test(`outOfScope: ${c.name}`, opts(c), () => assert.deepStrictEqual(outOfScope(c.files, c.owned), c.expected));
+  test('outOfScope(["src/a.ts","README.md"], ["src/**"]) returns ["README.md"]', () => {
+    assert.deepStrictEqual(outOfScope(["src/a.ts", "README.md"], ["src/**"]), ["README.md"]);
   });
 });

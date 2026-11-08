@@ -86,12 +86,12 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-INTAKE-01 | orch MUST import tasks from a feature directory's `tasks.md`. Each line of the form `- [ ] T001 …` becomes a task. A `[P]` marker means "may run in parallel with siblings". `##` headings define phases. `- [x]` tasks are imported as already done. | built |
 | REQ-INTAKE-02 | orch MUST derive dependencies as follows: a task depends on every task in earlier phases; a task without `[P]` also depends on the previous task in its phase; text such as "depends on T003", "after T003" or "requires T003" adds an explicit dependency. | built |
 | REQ-INTAKE-03 | A feature directory without `tasks.md`, or whose `tasks.md` contains no tasks, MUST be rejected with a message saying which. | built |
-| REQ-INTAKE-04 | When planning is requested with the planner, a planner agent MUST propose, per task: acceptance criteria, dependencies, a merge policy (automatic or owner review), an optional task-specific test command, a validation mode (standard or UI), and the files or globs the task owns. Proposals referring to unknown tasks MUST be ignored. | built (criteria, deps, policy, command) / new (mode, files) |
+| REQ-INTAKE-04 | When planning is requested with the planner, a planner agent MUST propose, per task: acceptance criteria, dependencies, a merge policy (automatic or owner review), an optional task-specific test command, a validation mode (standard or UI), and the files or globs the task owns. Proposals referring to unknown tasks MUST be ignored. | built (criteria, deps, policy, command, files) / new (mode) |
 | REQ-INTAKE-05 | The planner's decisions MUST be recorded in the decisions log with their rationale. | built |
 | REQ-INTAKE-06 | If the planner fails or returns nothing usable, the plan MUST fall back to the imported tasks unchanged, and that fallback MUST be recorded as a decision. | built |
 | REQ-INTAKE-07 | Questions the planner raises about the spec as a whole MUST appear in the inbox as plan questions, not attached to any single task. While a plan question is open, no task of that run may start. | built (TASK-13) |
 | REQ-INTAKE-08 | A plan MUST wait for the owner's approval before any task runs. | built |
-| REQ-INTAKE-09 | Before approval, and afterwards for tasks that have not started, the owner MUST be able to edit a task's acceptance criteria, dependencies, merge policy, test command, validation mode, owned files and attempt limit. Each edit MUST be recorded as a human decision. | built (except mode, files) |
+| REQ-INTAKE-09 | Before approval, and afterwards for tasks that have not started, the owner MUST be able to edit a task's acceptance criteria, dependencies, merge policy, test command, validation mode, owned files and attempt limit. Each edit MUST be recorded as a human decision. | built (except mode) |
 | REQ-INTAKE-10 | The owner SHOULD be able to preview the imported tasks, phases and dependencies of a feature directory without creating a run or calling an agent. | built (TASK-13) |
 
 **Edge cases:**
@@ -119,7 +119,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
 | REQ-SCHED-01 | A task MUST start only when all of these hold: its dependencies are done or skipped; it has no open questions; no plan question is open; its project's parallel limit has room; the global agent limit has room. | built (global limit TASK-09; plan questions TASK-13) |
-| REQ-SCHED-02 | Two tasks whose owned files overlap MUST NOT run at the same time, even if both are ready. When orch holds one back for this reason, it MUST record a decision naming both tasks and show the implicit ordering in the plan view. | new |
+| REQ-SCHED-02 | Two tasks whose owned files overlap MUST NOT run at the same time, even if both are ready. When orch holds one back for this reason, it MUST record a decision naming both tasks and show the implicit ordering in the plan view. | built |
 | REQ-SCHED-03 | Pausing a run MUST let running agent sessions finish and start nothing new until resumed. | built |
 | REQ-SCHED-04 | Stopping a run MUST end its running agent sessions and return their tasks to pending, keeping their working copies and commits. | built |
 | REQ-SCHED-05 | When orch restarts, tasks that were mid-attempt MUST return to pending with their working copies kept, and runs that were planning MUST become awaiting approval. No completed work may be lost. | built |
@@ -180,7 +180,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-VAL-02 | When the validator agent is enabled, a validator agent MUST run in a fresh session. It receives the task, its criteria, the worker's summary (as claims to check), the diff, and the test-gate output. It MUST NOT receive the worker's reasoning or conversation. | built (gate output new) |
 | REQ-VAL-03 | The validator's verdict MUST be PASS or FAIL, with evidence for each acceptance criterion. Anything other than PASS MUST fail the attempt, with the reasons and unmet criteria as feedback. | built |
 | REQ-VAL-04 | The validator MUST be able to run on a different agent CLI and model from the worker. | built |
-| REQ-VAL-05 | The validator MUST report edits outside the task's owned files as a finding in its verdict. Such edits MUST NOT by themselves cause a FAIL. | new |
+| REQ-VAL-05 | The validator MUST report edits outside the task's owned files as a finding in its verdict. Such edits MUST NOT by themselves cause a FAIL. | built |
 | REQ-VAL-06 | When every task in a phase is done or skipped, orch MUST validate the phase as a whole on the base branch: the project's phase test command, then a phase validator agent given the phase's tasks and the spec. The result MUST be recorded as a decision. | new |
 | REQ-VAL-07 | When phase validation fails, orch MUST create a fix-up task describing the failure. Tasks of later phases MUST wait for it, and its creation MUST be recorded as a decision. After a configured number of failed fix-up rounds for a phase, the phase MUST go to the inbox instead. | new |
 | REQ-VAL-08 | A task in UI validation mode MUST be validated against the running application: orch starts the app from the task's working copy using the project's start command; waits until it responds or a time limit passes; gives the validator the app's address; and stops the app afterwards, including when the task is stopped or orch shuts down. | new |
@@ -214,7 +214,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-HITL-03 | A worker MUST be able to ask the owner a question, optionally with answer options. Only that task pauses, the owner is notified, and after the answer the worker continues in its own session. Answering MUST NOT consume an attempt. | built |
 | REQ-HITL-04 | Agents MUST be able to record a decision with a rationale without pausing. | built |
 | REQ-HITL-05 | The decisions log MUST show every decision by planner, worker, validator, orchestrator and owner, in order, with actor, time, task (if any) and rationale. | built |
-| REQ-HITL-06 | Every choice orch makes on its own MUST be recorded as an orchestrator decision. That includes retrying, holding back a task for file overlap, starting a PR fix round, merging, creating a fix-up task, and falling back from the planner. | built (overlap, fix-up new) |
+| REQ-HITL-06 | Every choice orch makes on its own MUST be recorded as an orchestrator decision. That includes retrying, holding back a task for file overlap, starting a PR fix round, merging, creating a fix-up task, and falling back from the planner. | built (fix-up new) |
 | REQ-HITL-07 | The owner MUST be able to do the following to a task: retry from scratch, skip, stop, merge now, mark as merged elsewhere, and send it back with written feedback. Each action MUST be recorded as a human decision. | built |
 
 **Edge cases:**

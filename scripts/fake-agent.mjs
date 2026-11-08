@@ -23,6 +23,13 @@
  *   NO_COMMIT     (task, worker)     -> reports done without changing anything
  *   CONFLICT_FILE (task, worker)     -> also writes shared.txt with task-specific content
  *
+ * File ownership (scripts/e2e.mjs, TASK-14): the planner gives T002 and T003 overlapping `files_owned`
+ * (both own shared/**) and T001 owns only impl/T001.txt (only when FAKE_ACTIVE_DIR is set, so the other
+ * suites keep unconstrained tasks); the T001 worker then also writes
+ * notes/T001.md (out of scope). The validator copies orch's out-of-scope list into `findings` and still passes.
+ * FAKE_ACTIVE_DIR=<dir> (env): each worker/validator keeps <dir>/active-<KEY> while it runs and appends
+ * "<KEY> with <OTHER>" to <dir>/concurrent.log for every other task active when it starts.
+ *
  * FAKE_PROMPT_LOG=<file> (env, scripts/e2e-auth.mjs) appends every prompt received to <file>, so a
  * test can check what reached an agent.
  */
@@ -67,6 +74,18 @@ if (gemini) emit({ type: "init", timestamp: new Date().toISOString(), session_id
 else emit({ type: "system", subtype: "init", model: "fake", session_id: sessionId });
 await new Promise((r) => setTimeout(r, 200));
 
+const OWNED = { T001: ["impl/T001.txt"], T002: ["impl/T002.txt", "shared/**"], T003: ["shared/farewell.md", "impl/T003.txt"], T004: ["impl/T004.txt"] };
+const taskKey = (prompt.match(/# Task (T\d+)/) || prompt.match(/on task (T\d+)/) || [])[1];
+if (process.env.FAKE_ACTIVE_DIR && taskKey && !prompt.includes("You are the PLANNER")) {
+  const dir = process.env.FAKE_ACTIVE_DIR, mine = path.join(dir, `active-${taskKey}`);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const f of fs.readdirSync(dir)) {
+    if (f.startsWith("active-") && f !== `active-${taskKey}`) fs.appendFileSync(path.join(dir, "concurrent.log"), `${taskKey} with ${f.slice(7)}\n`);
+  }
+  fs.writeFileSync(mine, String(process.pid));
+  process.on("exit", () => { try { fs.unlinkSync(mine); } catch {} });
+}
+
 if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
   say("Something went wrong.");
   console.error("fake planner: PLANNER_FAIL marker; giving up");
@@ -76,17 +95,20 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
   const tasks = JSON.parse(m[1]);
   say("Reading the spec and tasks.");
   finish({
-    tasks: tasks.map((t) => ({ key: t.key, acceptance: [`impl/${t.key}.txt exists and contains OK`], depends_on: t.depends_on, merge_policy: t.key === "T004" || /(manual)/.test(t.title) ? "manual" : "auto", validate_cmd: null })),
+    tasks: tasks.map((t) => ({ key: t.key, acceptance: [`impl/${t.key}.txt exists and contains OK`], depends_on: t.depends_on, merge_policy: t.key === "T004" || /(manual)/.test(t.title) ? "manual" : "auto", validate_cmd: null, files_owned: process.env.FAKE_ACTIVE_DIR ? OWNED[t.key] ?? [] : [] })),
     decisions: [{ text: "Marked T004 manual merge", rationale: "it touches the public API" }],
     // PLAN_QUESTION in spec.md: one question about the spec as a whole (TASK-13, REQ-INTAKE-07).
     questions: prompt.includes("PLAN_QUESTION") ? [{ text: "Should greetings be capitalized throughout the spec?", options: ["Yes", "No"] }] : [],
   }, "Plan drafted.");
 } else if (prompt.includes("You are the VALIDATOR")) {
   const diffBad = prompt.includes("NEEDS_REVIEW");
+  // REQ-VAL-05: report orch's out-of-scope list as findings; they never turn a PASS into a FAIL.
+  const scopeSection = (prompt.split("## Changed files outside the owned files")[1] || "").split("\n## ")[0];
+  const findings = scopeSection.split("\n").filter((l) => l.startsWith("- ")).map((l) => `out of scope: ${l.slice(2).trim()}`);
   tool("Bash", { command: "sh check.sh" }, diffBad ? "found NEEDS_REVIEW marker" : "all good");
   finish(diffBad
     ? { verdict: "FAIL", criteria: [{ criterion: "contains OK", met: false, evidence: "file contains NEEDS_REVIEW" }], reasons: ["impl file still contains a NEEDS_REVIEW marker"], suggestions: [] }
-    : { verdict: "PASS", criteria: [{ criterion: "contains OK", met: true, evidence: "grep OK" }], reasons: [], suggestions: [] }, "Validated.");
+    : { verdict: "PASS", criteria: [{ criterion: "contains OK", met: true, evidence: "grep OK" }], reasons: [], suggestions: [], findings }, "Validated.");
 } else {
   // worker
   const key = (prompt.match(/# Task (T\d+)/) || prompt.match(/on task (T\d+)/))[1];
@@ -129,6 +151,7 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
     }
     fs.writeFileSync(`impl/${key}.txt`, content + "\n");
     if (prompt.includes("CONFLICT_FILE")) fs.writeFileSync("shared.txt", `written by ${key}\n`);
+    if (key === "T001" && process.env.FAKE_ACTIVE_DIR) { fs.mkdirSync("notes", { recursive: true }); fs.writeFileSync("notes/T001.md", "out of scope\n"); }
     tool("Write", { file_path: `impl/${key}.txt`, content }, "written");
     if (!retry) orch(`decide "Used a plain text file for ${key}" --why "the spec does not require a format"`);
     execSync(`git add -A && git -c user.name=fake -c user.email=f@x commit -q -m "${key}: implement"`, { stdio: "ignore" });

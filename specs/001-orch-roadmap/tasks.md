@@ -32,7 +32,7 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [x] T013 Plan questions, plan preview and cycle check. Brief: docs/tasks/TASK-13.md.
 
 ## Phase 9: Wave 9
-- [ ] T014 File ownership: safe parallelism. Brief: docs/tasks/TASK-14.md.
+- [x] T014 File ownership: safe parallelism. Brief: docs/tasks/TASK-14.md.
 
 ## Phase 10: Wave 10
 - [ ] T015 Phase validation and fix-up tasks. Brief: docs/tasks/TASK-15.md.

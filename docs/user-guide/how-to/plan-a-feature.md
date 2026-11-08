@@ -47,7 +47,7 @@ The planner reads every file in the feature folder and the imported task list. F
 - A merge policy: `manual` for tasks a person should review, such as authentication, data migrations, billing, deleting data, public API changes, or anything irreversible; `auto` otherwise.
 - A task-specific test command, when the task needs a narrower or different check.
 - A validation mode, `standard` or `ui` (**Planned**).
-- The files the task owns (**Planned**).
+- The files the task owns.
 
 It records each choice in the **Decisions** tab with its reasoning. If something in the spec is ambiguous enough to matter, it asks you instead of guessing.
 
