@@ -2,13 +2,14 @@
 
 An orchestrator / worker / validator runner for Claude Code, with a live dashboard.
 
-You write a spec with GitHub Spec Kit. `orch` turns its `tasks.md` into a plan, runs each task
+You write a spec with GitHub Spec Kit, or any tool that produces a `tasks.md` task list. `orch` turns `tasks.md` into a plan, runs each task
 in its own git worktree with a **fresh-context worker**, checks the result with an **independent
 validator**, opens the PR, merges it, and moves on. Every decision an agent makes is logged.
 Anything that needs *you* lands in an inbox and pings your phone.
 
 **User manual:** [docs/user-guide/](docs/user-guide/index.md) covers installation, concepts, how-to guides and
-reference for every feature, including planned ones.
+reference for every shipped feature. [Feature status](docs/user-guide/feature-status.md) lists what's coming next,
+including the `orch-spec` skill and authored task briefs ([decision 0023](docs/decisions/0023-orch-owns-spec-skill.md)).
 
 ```
 spec.md / plan.md / tasks.md  ──►  orch plan  ──►  [you approve]  ──►  orch run

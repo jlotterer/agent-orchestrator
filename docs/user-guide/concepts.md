@@ -20,7 +20,7 @@ Server-wide settings, such as the network address, the access token and which ag
 
 ## Features, runs and plans
 
-You describe a feature with [Spec Kit](https://github.com/github/spec-kit), which produces a folder such as `specs/003-checkout/` with `spec.md`, `plan.md` and `tasks.md`.
+You describe a feature in a *feature folder*, such as `specs/003-checkout/`. The folder must contain a `tasks.md` task list. [Spec Kit](https://github.com/github/spec-kit) produces this layout, with `spec.md` and `plan.md` beside the task list, and agents read those files too. Any tool that writes the same task list format works.
 
 A *run* is one execution of one feature's task list in one project. When you plan a feature, orch creates a run and imports the tasks into it. The run then moves through these statuses:
 
@@ -65,7 +65,7 @@ orch launches an AI coding agent program, such as Claude Code or Gemini CLI, for
 
 You choose the agent program and model for each role. For example, you can use Claude Code for workers and Gemini CLI for validators, so the checker shares fewer blind spots with the author. See [Choose agents and models](how-to/configure-agents.md).
 
-Every agent session starts with a fresh context. Instead of one long conversation, each worker gets a *hand-off brief*: the task and its criteria, an excerpt of the spec and plan, summaries of earlier tasks, the decisions so far, your earlier answers, and feedback from any failed attempt.
+Every agent session starts with a fresh context. Instead of one long conversation, each worker gets a *hand-off brief*. It holds the task and its criteria, an excerpt of the spec and plan, summaries of earlier tasks, the decisions so far, your earlier answers, and feedback from any failed attempt.
 
 ## Attempts, the test gate and validation
 

@@ -1,13 +1,13 @@
 # Install orch
 
-Install orch on the always-on machine where your agents will work. That's usually a Linux server, but WSL2 on Windows and Docker also work. To run orch in a container instead, see [Run in Docker](how-to/run-in-docker.md).
+Install orch on the always-on machine where your agents work. That's usually a Linux server, but WSL2 on Windows and Docker also work. To run orch in a container instead, see [Run in Docker](how-to/run-in-docker.md).
 
 ## Prerequisites
 
 - Linux, or WSL2 on Windows. orch doesn't run natively on Windows.
 - Node.js 22 or later.
 - git.
-- [Claude Code](https://docs.claude.com/en/docs/claude-code), installed and signed in as the user that will run orch. A Claude subscription sign-in works. You don't need an API key.
+- [Claude Code](https://docs.claude.com/en/docs/claude-code), installed and signed in as the user that runs orch. A Claude subscription sign-in works. You don't need an API key.
 - The GitHub CLI, `gh`, signed in, if you want orch to open pull requests. You don't need it for local merge mode.
 - Optional: Gemini CLI, if you want to use it for some roles. See [Choose agents and models](how-to/configure-agents.md).
 
@@ -110,8 +110,8 @@ $ORCH_HOME/
 ├── server.json            server settings
 ├── orch.db                every project's runs, tasks, decisions and questions
 ├── worktrees/<project>/   one working copy per active task
-├── archive/<project>/     archived agent logs (planned)
-└── run/                   process files for apps under test (planned)
+├── archive/<project>/     archived agent logs
+└── run/                   process files for apps under test
 ```
 
 ## Upgrade orch

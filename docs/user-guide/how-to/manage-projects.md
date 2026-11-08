@@ -95,7 +95,7 @@ Commands such as `orch status`, `orch plan` and `orch run` act on one project. o
 1. The `--project <project-id>` flag.
 2. The `ORCH_PROJECT` environment variable.
 3. The project whose repo contains your current folder. For `orch plan`, orch checks the spec folder first.
-4. The only project, when just one is registered.
+4. The only project, when only one is registered.
 
 If none of these applies, the command stops with exit code `2` and lists your projects. `orch answer` doesn't need a project, because question numbers are unique across projects.
 

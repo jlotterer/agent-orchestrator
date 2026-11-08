@@ -42,3 +42,20 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 
 ## Phase 12: Wave 12
 - [x] T017 Cost and agent-time rollup. Brief: docs/tasks/TASK-17.md.
+
+## Phase 13: Wave 13
+- [ ] T018 Feature-folder fixtures and the brief contract. Brief: docs/tasks/TASK-18.md. Owner review required before merge.
+
+## Phase 14: Wave 14
+- [ ] T019 [P] The orch-spec skill. Brief: docs/tasks/TASK-19.md.
+- [ ] T020 [P] Read authored briefs and check the feature folder. Brief: docs/tasks/TASK-20.md.
+- [ ] T021 [P] Context assembly with per-part budgets. Brief: docs/tasks/TASK-21.md.
+
+## Phase 15: Wave 15
+- [ ] T022 Plan from briefs; rules and contracts for every agent. Brief: docs/tasks/TASK-22.md.
+
+## Phase 16: Wave 16
+- [ ] T023 "Update project docs" inbox item at the end of a run. Brief: docs/tasks/TASK-23.md.
+
+## Phase 17: Wave 17
+- [ ] T024 Document the spec workflow. Brief: docs/tasks/TASK-24.md.

@@ -44,7 +44,7 @@ Commands that act on a project (`status`, `plan`, `approve`, `run`, `pause`, `st
 1. `--project <project-id>`
 2. The `ORCH_PROJECT` environment variable
 3. The project whose repo contains the current folder. For `orch plan`, the spec folder is checked first.
-4. The only project, when just one is registered
+4. The only project, when only one is registered
 
 If none applies, the command stops with exit code `2`, "which project? Run inside a project's repo or pass --project <id> (or set ORCH_PROJECT)", and a list of projects. With no project registered, the message is "no projects registered. Add one with: orch project add <path>". A `--project` or `ORCH_PROJECT` value that matches no project fails with "no project '`<id>`'".
 

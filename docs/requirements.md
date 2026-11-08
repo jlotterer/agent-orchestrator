@@ -93,6 +93,11 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-INTAKE-08 | A plan MUST wait for the owner's approval before any task runs. | built |
 | REQ-INTAKE-09 | Before approval, and afterwards for tasks that have not started, the owner MUST be able to edit a task's acceptance criteria, dependencies, merge policy, test command, validation mode, owned files and attempt limit. Each edit MUST be recorded as a human decision. | built (mode: TASK-16) |
 | REQ-INTAKE-10 | The owner SHOULD be able to preview the imported tasks, phases and dependencies of a feature directory without creating a run or calling an agent. | built (TASK-13) |
+| REQ-INTAKE-11 | When a feature directory has `tasks/<key>.md` for a task, orch MUST read it as the task's brief: its frontmatter sets the task's dependencies, parallel flag, merge policy, validation mode and validation command; its target-files section sets owned files; its acceptance-criteria section sets the criteria. Frontmatter takes precedence over `tasks.md` marks, and a conflict is recorded as a decision. A brief whose `orch` format version is missing or unsupported MUST be an import error naming the file. | new (TASK-20, TASK-22) |
+| REQ-INTAKE-12 | When every task has a brief with acceptance criteria, `orch plan` MUST build the plan from the briefs without calling an agent. When some tasks lack a brief, the planner MUST run for those tasks only. With `--review`, the planner MUST review the whole plan: it MAY add criteria, correct dependencies and raise questions, each recorded as a decision with a reason, and MUST NOT remove or rewrite criteria from a brief. | new (TASK-22) |
+| REQ-INTAKE-13 | Import MUST refuse a feature directory whose `spec.md` or briefs contain an unresolved marker (`[NEEDS CLARIFICATION`, `TBD`, `TODO`), naming the file and line, unless the owner passes an override flag. | new (TASK-20) |
+| REQ-INTAKE-14 | Import MUST warn when two parallel tasks name the same target file, when a brief exceeds the configured size, and when a task appears to add only tests. Warnings appear in the preview and are recorded as decisions at plan time. | new (TASK-20, TASK-22) |
+| REQ-INTAKE-15 | The import preview (REQ-INTAKE-10) MUST show, per task, whether a brief was found and which fields came from it, plus the warnings of REQ-INTAKE-14. | new (TASK-20) |
 
 **Edge cases:**
 - `tasks.md` uses `*` bullets, indentation, or 2–4 digit IDs → still imported.
@@ -100,6 +105,10 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - A task depends on itself → that dependency is dropped.
 - A dependency cycle (introduced by the planner or an edit) → `[ASSUMED]` the plan cannot be approved, and the cycle is named.
 - Every task is already ticked → the run is created with all tasks done and finishes immediately when started.
+- A brief exists but has no acceptance-criteria section → the planner writes criteria for that task only; a decision records it.
+- A brief names a contract that doesn't resolve to a `spec.md` section or a file → an import warning naming the brief and the contract.
+- `tasks.md` says `[P]` but the brief says `parallel: false` → the brief wins; a decision records the conflict.
+- The feature directory is a plain Spec Kit folder (no `tasks/`) → behaviour as before briefs, plus the context ordering of REQ-WORK-10.
 
 **Acceptance criteria:**
 - `REQ-INTAKE-01`: Given a `tasks.md` with phases "Setup" (T001) and "Core" (T002 [P], T003 [P], T004) and T005 ticked, When imported, Then five tasks exist, with T002/T003 parallel, T004 not parallel, T005 done, and each task's phase set.
@@ -112,6 +121,11 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - `REQ-INTAKE-08`: Given a plan awaiting approval, When the owner tries to start it, Then it is refused until approved.
 - `REQ-INTAKE-09`: Given a plan awaiting approval, When the owner changes T002's acceptance criteria, Then the plan shows the new criteria and the decisions log has a human decision naming T002.
 - `REQ-INTAKE-10`: Given a feature directory, When the owner requests a preview, Then the tasks, phases and dependencies are printed and no run exists afterwards.
+- `REQ-INTAKE-11`: Given a folder with T001 (brief: no dependencies, auto, standard, target file `src/a.ts`) and T002 (brief: depends on T001, manual, ui), When planned, Then the plan has exactly those values, T002's criteria equal the brief's list, and no agent was called. Given a brief with `orch: 2`, Then planning fails naming the file.
+- `REQ-INTAKE-12`: Given the same folder plus T003 without a brief, When planned, Then the planner is called once and only T003's criteria come from it. Given `--review` and a planner that returns rewritten criteria for T001, Then T001 keeps the brief's criteria plus any additions, and a decision records the additions.
+- `REQ-INTAKE-13`: Given a brief containing `TBD`, When planning, Then the command fails naming `tasks/T001.md` and the line; with `--allow-open` it proceeds and a decision records the override.
+- `REQ-INTAKE-14`: Given T001 `[P]` and T002 `[P]` both listing `src/a.ts`, When previewed, Then the preview warns naming both tasks and the file. Given a 20,000-character brief and a limit of 8,000, Then the preview warns naming the brief and its size.
+- `REQ-INTAKE-15`: Given a folder where T001 has a brief and T002 does not, When previewed, Then the preview shows T001 with its brief fields and T002 as "no brief".
 
 ### 5.3 Scheduling & Run Control (SCHED)
 **User intent:** As the owner, I want tasks to run in a safe order and as parallel as is safe, and I want to pause or stop at any time so that I stay in control without babysitting.
@@ -155,11 +169,16 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-WORK-06 | The worker's final summary, touched files and decisions MUST be recorded, so later tasks' briefs can use them. If the worker gives no summary, the task still proceeds and later briefs say no summary was given. | built |
 | REQ-WORK-07 | An agent session that exceeds the configured time limit MUST be ended and counted as a failed attempt. | built |
 | REQ-WORK-08 | The project's configured files (e.g. `.env`) MUST be copied into each new working copy, and its setup command run there. A failing setup command MUST fail the attempt with its output as feedback. | built |
+| REQ-WORK-09 | When a task has a brief, the worker's context MUST contain, in this order and each within its own size budget: the brief in full; the requirement rows and acceptance criteria for every REQ ID the brief cites, taken from the project's requirements file (`handoff.requirementsFile`, default `docs/requirements.md`); the contracts the brief names; the project rules files; then the hand-off of REQ-WORK-02. Any cut MUST be marked in the context and recorded as a decision. A cited REQ ID that is not found MUST be noted in the context, not treated as an error. | new (TASK-21, TASK-22) |
+| REQ-WORK-10 | Without a brief, the spec excerpt of REQ-WORK-02 MUST include `spec.md` before `plan.md`, then other design files (`data-model.md`, `contracts/*`), each file within its own size budget rather than one shared budget. | new (TASK-21, TASK-22) |
+| REQ-WORK-11 | The project rules files (`handoff.projectFiles`, default `AGENTS.md`) MUST be passed to the planner, workers, task validators and phase validators when present. Their absence is not an error. | new (TASK-22) |
 
 **Edge cases:**
 - The agent CLI can't be found → the attempt fails with "failed to start '<command>'".
 - The agent is rate-limited by its vendor → a failed attempt, retried; then the inbox.
 - The brief exceeds limits → it is truncated with a visible "truncated" marker, not dropped.
+- The requirements file is missing or has no row for a cited ID → the context says "REQ-X-NN: not found in <file>"; the task still runs.
+- A named contract is a `spec.md` section and a file with the same name exists → the section is used and a warning names both.
 
 **Acceptance criteria:**
 - `REQ-WORK-01`: Given two tasks running in parallel, Then each has its own directory and branch, and neither sees the other's uncommitted changes.
@@ -170,6 +189,9 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - `REQ-WORK-06`: Given a worker summary for T001, Then the task view shows it and T002's brief includes it.
 - `REQ-WORK-07`: Given a 1-minute limit and an agent that runs for 2 minutes, Then it is ended and the attempt is failed with a timeout message.
 - `REQ-WORK-08`: Given a setup command that exits 1, Then the attempt fails and the feedback contains the command's output.
+- `REQ-WORK-09`: Given a brief citing REQ-AUTH-03 and naming contract `SessionStore`, When T003 starts, Then its prompt contains the brief, the REQ-AUTH-03 row and criteria from the requirements file, the `SessionStore` section, the rules file, and the hand-off, in that order. Given a 20,000-character brief and `briefChars: 8000`, Then the prompt contains a truncation marker and a decision names the task and the cut size.
+- `REQ-WORK-10`: Given a 15,000-character `plan.md` and a 3,000-character `spec.md` with `specChars: 12000` and no briefs, Then the worker's prompt contains all of `spec.md`.
+- `REQ-WORK-11`: Given `AGENTS.md` in the repo, Then the planner, worker, validator and phase-validator prompts each contain its text. Given no such file, Then planning and running succeed without it.
 
 ### 5.5 Validation (VAL)
 **User intent:** As the owner, I want every change checked by something other than the agent that wrote it so that "done" means verified, not claimed.
@@ -185,9 +207,12 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-VAL-07 | When phase validation fails, orch MUST create a fix-up task describing the failure. Tasks of later phases MUST wait for it, and its creation MUST be recorded as a decision. After a configured number of failed fix-up rounds for a phase, the phase MUST go to the inbox instead. | built (TASK-15) |
 | REQ-VAL-08 | A task in UI validation mode MUST be validated against the running application: orch starts the app from the task's working copy using the project's start command; waits until it responds or a time limit passes; gives the validator the app's address; and stops the app afterwards, including when the task is stopped or orch shuts down. | built (TASK-16) |
 | REQ-VAL-09 | If the app in UI mode does not become ready in time, the attempt MUST fail with the app's output as feedback. If the validator reports it cannot drive a browser, the task MUST go to the inbox as failed without further retries. | built (TASK-16) |
+| REQ-VAL-10 | The task validator MUST receive the same brief, requirement rows, contracts and project rules as the worker, and never the worker's transcript. | new (TASK-22) |
+| REQ-VAL-11 | The validator MUST reject a change that breaks a project rule or a named contract, quoting the rule or contract in its verdict; that verdict MUST be recorded as the attempt's feedback. | new (TASK-22) |
 
 **Edge cases:**
 - No test command is configured → the gate is skipped; the validator still runs.
+- The task has no brief → the validator receives the spec excerpt of REQ-WORK-10 and the rules file instead.
 - The validator agent is disabled → the gate alone decides.
 - The validator returns no verdict → treated as FAIL, with its text as feedback.
 - Phase validation is disabled in project settings → phases complete without it.
@@ -203,6 +228,8 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - `REQ-VAL-07`: Given phase validation of "Core" fails, Then a fix-up task appears in the plan with the failure as its description, and tasks of the next phase do not start until it is done.
 - `REQ-VAL-08`: Given a UI-mode task and a start command, Then while the validator runs the app answers at the address given to the validator, and after the verdict no app process remains.
 - `REQ-VAL-09`: Given a start command that never answers, Then after the readiness time limit the attempt fails with the app's output in the feedback.
+- `REQ-VAL-10`: Given T003 under validation, Then the validator prompt contains the brief, the REQ rows, the contract and the rules file, and does not contain the worker's log.
+- `REQ-VAL-11`: Given a rule "no new dependencies" and a diff adding one, Then the verdict is a rejection quoting the rule and the attempt's feedback contains it.
 
 ### 5.6 Human-in-the-Loop (HITL)
 **User intent:** As the owner, I want to be told exactly when I'm needed, and to see every decision the system made, so that I can walk away and still stay in control.
@@ -216,9 +243,11 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-HITL-05 | The decisions log MUST show every decision by planner, worker, validator, orchestrator and owner, in order, with actor, time, task (if any) and rationale. | built |
 | REQ-HITL-06 | Every choice orch makes on its own MUST be recorded as an orchestrator decision. That includes retrying, holding back a task for file overlap, starting a PR fix round, merging, creating a fix-up task, and falling back from the planner. | built (fix-up creation: TASK-15) |
 | REQ-HITL-07 | The owner MUST be able to do the following to a task: retry from scratch, skip, stop, merge now, mark as merged elsewhere, and send it back with written feedback. Each action MUST be recorded as a human decision. | built |
+| REQ-HITL-08 | When a run completes, orch MUST create an inbox item "Update project docs" listing the REQ IDs cited by merged tasks, the decisions recorded during the run, the plan edits the owner made in the dashboard (REQ-INTAKE-09), and the contracts named by merged tasks, and MUST send a notification. The item closes when the owner acknowledges it. | new (TASK-23) |
 
 **Edge cases:**
 - Notifications are not configured → the inbox still works; nothing else changes.
+- A run completes with no merged tasks (all skipped) → no "Update project docs" item is created.
 - The notification service is unreachable → logged; orch continues.
 - A question is answered twice → the second answer is refused.
 
@@ -230,6 +259,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - `REQ-HITL-05`: Given a completed run, Then the decisions log lists entries from planner, worker, validator, orchestrator and human in chronological order.
 - `REQ-HITL-06`: Given a retry after a validator rejection, Then an orchestrator decision "Retrying <task> (attempt 2/2)" exists.
 - `REQ-HITL-07`: Given a task awaiting review, When the owner sends it back with "rename the flag to --force", Then the worker resumes with that text as feedback, and a human decision records it.
+- `REQ-HITL-08`: Given a run whose merged tasks cite REQ-A-01 and REQ-B-02, recorded two worker decisions, and had T002's merge policy edited to `manual` in the dashboard, When the run completes, Then the inbox has one item listing both IDs, both decisions and the T002 edit, and a notification was sent. When the owner acknowledges it, Then it leaves the inbox.
 
 ### 5.7 Git & Merge (GIT)
 **User intent:** As the owner, I want one branch and one PR per task, merged the way I would merge them, so that history stays clean and parallel work doesn't collide.
@@ -359,6 +389,26 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - `REQ-OPS-06`: Given the Docker setup, When the container is rebuilt, Then all projects, runs and logins survive.
 - `REQ-OPS-07`: Given a configured token and ntfy token, Then neither string appears in the database file or any agent prompt.
 
+### 5.12 Spec Skill (SPEC)
+**User intent:** As the owner, I want one guided process that writes specs orch can run at full fidelity, so that I never hand-tune files to fit orch. Design: [decision 0023](decisions/0023-orch-owns-spec-skill.md), [proposal](proposals/spec-workflow.md).
+
+| ID | Requirement | Status |
+| :--- | :--- | :--- |
+| REQ-SPEC-01 | The repository MUST ship a skill (`skills/orch-spec/`) with three modes: project (writes the project record: rules file, requirements with REQ IDs, architecture, decision records, roadmap), feature (writes a feature folder conforming to the brief contract in architecture §6, with the current `orch` brief version), and fold-back (updates the project record and briefs from a completed run's inbox item). | new (TASK-19) |
+| REQ-SPEC-02 | In feature mode the skill MUST apply orch's execution rules: tests in the same task as their code and no task that ends with failing tests; fixtures-first tasks ship skipped tests; parallel tasks share no target files; briefs within `handoff.briefChars`; every MUST requirement the feature covers appears in a brief; no unresolved markers. | new (TASK-19) |
+| REQ-SPEC-03 | The skill MUST include a check script that verifies a feature folder against the brief contract (frontmatter fields, links, sizes, markers, coverage, parallel overlap), and `orch plan --dry-run` MUST accept any folder the check script passes without warnings. | new (TASK-19, TASK-20) |
+| REQ-SPEC-04 | An adopt mode MUST turn an existing Spec Kit feature folder into briefs without changing `tasks.md` task keys or tick state. | new (TASK-19) |
+
+**Edge cases:**
+- The project already has `CLAUDE.md` → the skill merges the doc map into it and never overwrites it.
+- Feature mode is run before project mode → the skill says the project record is missing and offers to run project mode first.
+- A feature covers a REQ that is already `built` → the skill asks whether the feature changes it (new decision record) or extends it (new REQ ID).
+
+**Acceptance criteria:**
+- `REQ-SPEC-03`: Given the fixture folder `test/fixtures/spec-dir/full/`, Then the check script passes and `orch plan --dry-run` shows no warnings. Given `test/fixtures/spec-dir/bad/`, Then both report the same four problems (marker, parallel overlap, oversized brief, test-only task).
+- `REQ-SPEC-04`: Given a Spec Kit folder with T001–T004 and T001 ticked, When adopted, Then `tasks.md` has the same four keys, T001 still ticked, and `tasks/T00N.md` exists for each.
+- `REQ-SPEC-01`, `REQ-SPEC-02`: manual. One real run per mode, recorded in the PR of TASK-19.
+
 ## 6. Non-Functional Requirements
 | ID | Category | Requirement | How Verified |
 | :--- | :--- | :--- | :--- |
@@ -393,6 +443,8 @@ Design-level assumptions are tracked in [architecture.md](architecture.md#22-des
 | Project | A registered git repository that orch manages, with its own settings file. |
 | Run | One execution of one feature's plan in one project. |
 | Task | One `tasks.md` item, or a fix-up task orch created. One branch, one working copy, one PR. |
+| Brief (authored) | `tasks/<key>.md` in a feature directory: frontmatter with the task's plan fields, then goal, acceptance criteria, target files, contracts and notes. Written by the `orch-spec` skill; read by orch (REQ-INTAKE-11). Distinct from the hand-off brief orch assembles for a worker. |
+| Project rules | The vendor-neutral rules file (`AGENTS.md` by default) passed to every agent (REQ-WORK-11). |
 | Attempt | One worker session plus its validation for a task. Limited by the attempt limit. |
 | Fix round | A worker attempt triggered by PR feedback (CI, review, owner) after validation passed. Limited separately. |
 | Test gate | The deterministic test command run before the validator agent. |
