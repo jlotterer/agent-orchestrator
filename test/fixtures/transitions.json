@@ -1429,7 +1429,6 @@
   {
     "name": "T17: owner requests changes on a PR: fix round of kind human",
     "row": "T17",
-    "pending": "TASK-06",
     "task": {
       "key": "T003",
       "status": "pr_open",
@@ -1469,7 +1468,6 @@
   {
     "name": "T17: owner feedback ignores the fix-round cap",
     "row": "T17",
-    "pending": "TASK-06",
     "task": {
       "key": "T003",
       "status": "pr_checks",
@@ -1509,7 +1507,6 @@
   {
     "name": "T17: owner feedback in local mode (no PR)",
     "row": "T17",
-    "pending": "TASK-06",
     "task": {
       "key": "T003",
       "status": "pr_open",
@@ -1544,6 +1541,39 @@
         "ci_status": null
       },
       "decisionPrefix": "Sending owner feedback on T003"
+    }
+  },
+  {
+    "name": "T17: request changes is rejected for a task not awaiting review",
+    "row": "T17",
+    "task": {
+      "key": "T003",
+      "status": "running",
+      "attempt": 1,
+      "max_attempts": 3,
+      "fix_rounds": 0,
+      "merge_policy": "manual",
+      "branch": "orch/t003-build-it",
+      "worktree": "/wt/run-1-t003",
+      "pr_url": null,
+      "pr_head": null,
+      "last_feedback": null
+    },
+    "event": {
+      "type": "human_request_changes",
+      "feedback": "Split the function."
+    },
+    "config": {
+      "pr": false,
+      "feedback": {
+        "enabled": true,
+        "waitForChecks": true,
+        "maxRounds": 3
+      }
+    },
+    "expected": {
+      "status": "running",
+      "rejected": true
     }
   },
   {

@@ -2,7 +2,8 @@
 /**
  * End-to-end test: builds a throwaway git repo with a Spec Kit feature dir,
  * starts the daemon with the fake agent, plans, approves, runs, answers the
- * question, approves the manual merge, and checks that everything lands on main.
+ * question, reviews T004's diff and sends it back with feedback (TASK-06), approves the
+ * manual merge, and checks that everything lands on main.
  *   node scripts/e2e.mjs
  */
 import fs from "node:fs";
@@ -47,6 +48,11 @@ writeConfig(repo, {
 });
 
 const api = apiFor(PORT);
+/** Raw request: { status, body } without throwing, for error-path assertions. */
+const raw = async (method, p, body) => {
+  const r = await fetch(`http://127.0.0.1:${PORT}${p}`, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  return { status: r.status, body: await r.json().catch(() => ({})) };
+};
 let ok = false;
 try {
   await startDaemon({ cwd: repo, port: PORT });
@@ -65,12 +71,29 @@ try {
   await api("POST", `/api/runs/${run.id}/start`);
 
   const seen = new Set();
+  let sentBack = false;
+  /** TASK-06: review T004's diff, then send it back with feedback instead of merging it. */
+  const reviewAndSendBack = async (i) => {
+    const d = await api("GET", `/api/tasks/${i.task_id}/diff`);
+    const f = d.files.find((x) => x.path === "impl/T004.txt");
+    if (!f || f.additions < 1 || f.binary || !/^\+OK/m.test(f.patch ?? "")) throw new Error("T004 diff missing impl/T004.txt with additions:\n" + JSON.stringify(d, null, 2));
+    if (d.files.some((x) => x.path.startsWith("impl/") && x.path !== "impl/T004.txt")) throw new Error("T004 diff includes other tasks' files: " + d.files.map((x) => x.path));
+    if (!d.base || !d.head || d.truncated !== false) throw new Error("diff shape: " + JSON.stringify({ base: d.base, head: d.head, truncated: d.truncated }));
+    const empty = await raw("POST", `/api/tasks/${i.task_id}/request-changes`, { feedback: "  " });
+    if (empty.status !== 400) throw new Error("empty feedback should be rejected: " + JSON.stringify(empty));
+    console.log("sending back:", i.task_key);
+    await api("POST", `/api/tasks/${i.task_id}/request-changes`, { feedback: "add a trailing note" });
+    const after = await api("GET", "/api/state");
+    if (after.inbox.some((x) => x.type === "merge" && x.task_id === i.task_id)) throw new Error("T004 still in the inbox after Send back");
+    sentBack = true;
+  };
   await waitFor(async () => {
     s = await api("GET", "/api/state");
     for (const i of s.inbox) {
       const k = `${i.type}:${i.id ?? i.task_id}`;
       if (seen.has(k)) continue;
       if (i.type === "question") { seen.add(k); console.log("answering:", i.title); await api("POST", `/api/questions/${i.id}/answer`, { answer: "French" }); }
+      if (i.type === "merge" && i.task_key === "T004" && !sentBack) { await reviewAndSendBack(i); continue; }
       if (i.type === "merge") { seen.add(k); console.log("merging:", i.task_key); await api("POST", `/api/tasks/${i.task_id}/merge`); }
       if (i.type === "failed") throw new Error(`task failed: ${i.title}\n${i.detail}`);
     }
@@ -81,14 +104,20 @@ try {
   if (s.run.status !== "done") throw new Error("run did not finish");
   const t003 = s.tasks.find((t) => t.key === "T003"), t004b = s.tasks.find((t) => t.key === "T004");
   if (t003.attempt !== 2) throw new Error("T003 should have needed 2 attempts (gate)");
-  if (t004b.attempt !== 2) throw new Error("T004 should have needed 2 attempts (validator)");
+  if (!sentBack) throw new Error("T004 was never sent back");
+  if (t004b.fix_rounds !== 1) throw new Error("T004 should have had 1 owner feedback round, got " + t004b.fix_rounds);
+  if (!sh("cat impl/T004.txt").includes("note")) throw new Error("owner feedback did not reach the worker (impl/T004.txt has no note)");
+  const gone = await raw("GET", `/api/tasks/${t003.id}/diff`);
+  if (gone.status !== 404 || !/worktree/.test(gone.body.error ?? "")) throw new Error("diff of a merged task should be 404 with a reason: " + JSON.stringify(gone));
+  const late = await raw("POST", `/api/tasks/${t003.id}/request-changes`, { feedback: "too late" });
+  if (late.status !== 400) throw new Error("request-changes on a done task should be rejected: " + JSON.stringify(late));
   const files = sh("ls impl").trim().split("\n");
   if (files.length !== 4) throw new Error("expected 4 impl files on main, got " + files);
   if (!sh("cat impl/T002.txt").includes("greeting=French")) throw new Error("answer did not reach the worker");
   const tasksMd = fs.readFileSync(path.join(repo, "specs/001-demo/tasks.md"), "utf8");
   if ((tasksMd.match(/\[x\]/g) || []).length !== 4) throw new Error("tasks.md not ticked");
   const decisions = s.decisions.map((d) => `${d.actor}:${d.text}`);
-  for (const must of ["planner:Marked T004", "worker:Used a plain text file for T001", "human:Answered", "human:Approved merge of T004", "validator:T004 passed validation", "orchestrator:Retrying T003"]) {
+  for (const must of ["planner:Marked T004", "worker:Used a plain text file for T001", "human:Answered", "human:Approved merge of T004", "validator:T004 passed validation", "orchestrator:Retrying T003", "orchestrator:Retrying T004", "human:Sending owner feedback on T004"]) {
     if (!decisions.some((d) => d.startsWith(must))) throw new Error(`missing decision: ${must}\n${decisions.join("\n")}`);
   }
   const evs = await api("GET", `/api/runs/${run.id}/events?limit=1000`);

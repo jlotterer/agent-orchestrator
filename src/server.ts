@@ -22,6 +22,7 @@ export function startServer(orch: Orchestrator) {
     const u = new URL(req.url!, "http://x");
     return orch.store.listEvents({ taskId: p.id, afterId: Number(u.searchParams.get("after") ?? 0) || undefined, limit: Number(u.searchParams.get("limit") ?? 400) });
   });
+  route("GET", "/api/tasks/:id/diff", (_r, _s, p) => orch.taskDiff(p.id));
   route("GET", "/api/runs/:id/events", (req, _s, p) => {
     const u = new URL(req.url!, "http://x");
     return orch.store.listEvents({ runId: p.id, afterId: Number(u.searchParams.get("after") ?? 0) || undefined, limit: Number(u.searchParams.get("limit") ?? 200) });
@@ -43,6 +44,7 @@ export function startServer(orch: Orchestrator) {
   route("POST", "/api/tasks/:id/stop", (_r, _s, p) => { orch.stopTask(p.id); return { ok: true }; });
   route("POST", "/api/tasks/:id/merge", async (_r, _s, p) => { await orch.mergeTask(p.id); return { ok: true }; });
   route("POST", "/api/tasks/:id/mark-merged", async (_r, _s, p) => { await orch.markMerged(p.id); return { ok: true }; });
+  route("POST", "/api/tasks/:id/request-changes", async (_r, _s, p, b) => { await orch.requestChanges(p.id, String(b.feedback ?? "")); return { ok: true }; });
   route("POST", "/api/tasks/:id/edit", (_r, _s, p, b) => { orch.editTask(p.id, b); return { ok: true }; });
 
   // ---- questions & decisions (dashboard + agent CLI) ----
@@ -94,7 +96,7 @@ export function startServer(orch: Orchestrator) {
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "not found" }));
     } catch (e: any) {
-      res.writeHead(400, { "content-type": "application/json" });
+      res.writeHead(e?.status === 404 ? 404 : 400, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: e?.message ?? String(e) }));
     }
   });

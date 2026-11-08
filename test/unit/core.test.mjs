@@ -78,7 +78,7 @@ describe("transitions fixtures (nextTaskState)", () => {
   }
   test("every non-pending row of architecture §8 has a case", () => {
     const rows = new Set(cases.filter((c) => !c.pending).map((c) => c.row));
-    for (const r of ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T8a", "T9", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T18"]) assert.ok(rows.has(r), r);
+    for (const r of ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T8a", "T9", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18"]) assert.ok(rows.has(r), r);
   });
 });
 

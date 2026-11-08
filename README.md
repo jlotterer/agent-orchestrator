@@ -109,11 +109,17 @@ sudo systemctl enable --now orch
 4. **Start**. Watch the **Board** or walk away. Your phone buzzes when:
    * a worker asks a question → answer with one tap or a sentence
    * a task fails after its retries → inspect the log, retry or skip
-   * a manual-merge task is validated → review the PR, **Merge now** (or comment `/orch …` on the PR to send it back)
+   * a manual-merge task is validated → open it, read its **Diff** in the task view (or the PR), then
+     **Merge now**, or **Send back** with a note on what to change (in PR mode, a `/orch …` comment
+     on the PR works too)
    * a PR's CI keeps failing, or its checks hang → look at the PR
    * the run finishes
 5. **Decisions** tab is the audit trail: every planner, worker, validator and human decision with
    its rationale, in order. **Activity** is the run-level event stream.
+
+Sending a task back starts a fix round with your text under "Feedback from the owner": the worker
+resumes its session, then the gate and validator run again and the task returns to your inbox (it is
+not capped by `maxRounds`). It is recorded as a human decision.
 
 CLI equivalents: `orch status`, `orch approve`, `orch run|pause|stop`, `orch answer <id> <text>`,
 `orch retry|skip|merge T003`.
@@ -160,6 +166,9 @@ worktree.
   GitHub and click **Merged elsewhere**, or **Re-run**.
 * `git.pr: false`: rebases the task branch and squash-merges into `baseBranch` locally. Needs
   `baseBranch` checked out and clean in the repo. Good for a server that is the only writer.
+  Manual-merge tasks wait in the inbox; review them with the **Diff** section of the task view
+  (changed files with +/− counts, a collapsible diff per file) and **Merge now** or **Send back**.
+  The diff is available while the task has a worktree, so not after it is merged.
 
 #### The PR feedback loop (`git.feedback`, PR mode)
 
@@ -252,7 +261,8 @@ Node 22 and 24 for every push to `main` and every pull request.
 `scripts/e2e.mjs` runs the whole loop against a fake agent (`scripts/fake-agent.mjs`) in a throwaway
 repo, with workers on the Claude adapter and the validator on the Gemini adapter: planning,
 approval, two parallel workers, a question answered mid-task with session resume, a gate failure
-retried, a validator rejection retried, a manual-merge approval, and tasks.md ticked on main.
+retried, a validator rejection retried, the review diff of a manual-merge task, sending it back
+with owner feedback that reaches the worker, the merge approval, and tasks.md ticked on main.
 
 `scripts/e2e-pr.mjs` runs PR mode against a fake `gh` (`scripts/fake-gh.mjs`) and a local bare
 `origin`: a CI failure fed back and fixed before auto-merge, a `/orch` review comment fixed before a

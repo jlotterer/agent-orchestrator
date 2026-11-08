@@ -23,6 +23,10 @@ const WATCHED: TaskStatus[] = ["pr_checks", "pr_open"];
 /** Effects that can fail and must succeed before the transition is applied (§8: failure → T9). */
 const MERGE_EFFECTS: Effect[] = ["merge_local", "push_and_pr", "merge_pr"];
 const nowIso = () => new Date().toISOString();
+type FixRoundKind = "ci" | "review" | "human";
+
+/** An error the HTTP layer answers with 404 (e.g. a diff whose worktree is gone). */
+export class NotFoundError extends Error { readonly status = 404; }
 
 interface ApplyOptions {
   /** Merge-effect failure: send `merge_failed` (T9, default) or throw to the caller (T15: stay, surface the error). */
@@ -646,24 +650,39 @@ export class Orchestrator extends EventEmitter {
     }
   }
 
-  /** Send PR feedback (CI failure or review) back to the worker: same path as a validation retry, own budget. */
-  private async startFixRound(run: Run, task: Task, kind: "ci" | "review", feedback: string, why: string) {
+  /**
+   * Send feedback back to the worker (§12.3): same path as a validation retry, own budget.
+   * Kinds ci/review come from the PR poll (T18, capped at maxRounds); kind human is the owner's
+   * "Send back" (T17, no cap). Before the round, commits pushed to the PR branch are pulled in;
+   * in local mode (no PR) that step is skipped.
+   */
+  private async startFixRound(run: Run, task: Task, kind: FixRoundKind, feedback: string, why: string) {
     const fb = this.cfg.git.feedback;
+    const human = kind === "human";
     const round = task.fix_rounds + 1;
-    const event: TaskEvent = { type: "pr_action", action: "fix_round", kind, feedback, reason: why };
-    // When T18 would start the round (within the cap), first bring in commits pushed to the PR branch (§12.3).
-    if (this.transition(task.id, event).result.status === "pending" && task.worktree && fs.existsSync(task.worktree)) {
+    const event: TaskEvent = human
+      ? { type: "human_request_changes", feedback }
+      : { type: "pr_action", action: "fix_round", kind, feedback, reason: why };
+    const decided = this.transition(task.id, event).result;
+    if (human && decided.rejected) throw new Error(decided.reason ?? `cannot send ${task.key} back`);
+    // When the transition would start the round, first bring in commits pushed to the PR branch.
+    if (decided.status === "pending" && this.cfg.git.pr && task.pr_url && task.worktree && fs.existsSync(task.worktree)) {
       const sync = await this.git.syncFromRemote(task.worktree, task.branch!);
       if (sync === "fast-forwarded") this.log(run, task, "git", { message: "pulled new commits from the PR branch before the fix round" });
       if (sync === "diverged") {
         // Our next push would overwrite someone else's commits. Not our call.
-        await this.fire(run, task.id, { type: "pr_action", action: "inbox", feedback: `The PR branch has commits that conflict with the local branch; resolve before orch continues.\n\n${feedback}` });
+        const conflict = "The PR branch has commits that conflict with the local branch; resolve before orch continues.";
+        await this.fire(run, task.id, { type: "pr_action", action: "inbox", feedback: `${conflict}\n\n${feedback}` });
+        if (human) throw new Error(conflict);
         return;
       }
     }
-    const r = await this.fire(run, task.id, event);
+    const r = human
+      ? await this.applyTransition(run, this.store.getTask(task.id)!, decided)
+      : await this.fire(run, task.id, event);
     if (r.rejected || r.status !== "pending") return;
-    this.log(run, task, "state", { message: `PR fix round ${round}/${fb.maxRounds}: ${why}`, feedback: clip(feedback, 2000) });
+    const label = human ? `Owner feedback round ${round}` : `PR fix round ${round}/${fb.maxRounds}`;
+    this.log(run, task, "state", { message: `${label}: ${why}`, feedback: clip(r.patch?.last_feedback ?? feedback, 2000) });
     if (this.deadlineGuard(run)) setTimeout(() => void this.tick(), 50);
   }
 
@@ -741,6 +760,31 @@ export class Orchestrator extends EventEmitter {
   async markMerged(taskId: string) {
     await this.human(taskId, { type: "human_mark_merged" });
   }
+  /**
+   * T17: the owner sends a task awaiting review (pr_open/pr_checks) back to the worker with written
+   * feedback. Fix round of kind human: the round cap does not apply; recorded as a human decision.
+   */
+  async requestChanges(taskId: string, feedback: string) {
+    const task = this.store.getTask(taskId);
+    if (!task) throw new Error("task not found");
+    const text = String(feedback ?? "").trim();
+    if (!text) throw new Error("feedback is required");
+    await this.startFixRound(this.store.getRun(task.run_id)!, task, "human", text, clip(text.split("\n")[0], 200));
+  }
+
+  /** The task's changes against its base for the review view (§11). Throws NotFound when there is no worktree. */
+  async taskDiff(taskId: string) {
+    const task = this.store.getTask(taskId);
+    if (!task) throw new NotFoundError("task not found");
+    if (!task.worktree || !fs.existsSync(task.worktree)) {
+      const why = task.status === "done" ? "the task is merged and its worktree was removed"
+        : task.status === "pending" && task.attempt === 0 ? "the task has not started yet"
+        : "the task has no worktree";
+      throw new NotFoundError(`diff unavailable: ${why}`);
+    }
+    return this.git.diffFiles(task.worktree);
+  }
+
   /** T14: only active tasks can be stopped. */
   stopTask(taskId: string) {
     void this.human(taskId, { type: "human_stop" }).catch((e) => console.error("[stop]", e));

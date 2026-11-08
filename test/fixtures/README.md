@@ -86,7 +86,7 @@ Row mapping (architecture §8):
 | T14 | human stop; run stop; daemon restart; stop rejected when not active | |
 | T15 | PR merge; local merge; merge from pr_checks; rejected from pending | |
 | T16 | mark merged from pr_open; from failed without worktree | |
-| T17 | request changes; ignores the round cap; local mode | TASK-06 |
+| T17 | request changes; ignores the round cap; local mode; rejected when not awaiting review | |
 | T18 | mark_done; mark_failed; fix_round ci; fix_round review; fix_round over the cap → inbox; inbox; repeated inbox is a no-op; wait; merge | |
 | T19 | UI validator blocked | TASK-16 |
 
@@ -131,6 +131,6 @@ Cases whose expected output differs from what the code did when the fixtures wer
 | `transitions.json` | T14: stop is rejected for a task that is not active | Today `stopTask` resets any task to `pending`, so "stop" on a `pr_open` task silently drops it out of the inbox. §8 only allows stopping active tasks. |
 | `readiness.json` | global `maxAgents` and `busyAgents` cases | New inputs. Until TASK-09, the orchestrator passes one project with `maxAgents = maxParallel` and `busyAgents = 0`, so single-project behaviour is unchanged. |
 | `readiness.json` | fairness cases (`pending: TASK-09`), plan question (`pending: TASK-13`), ownership overlap (`pending: TASK-14`) | New behaviour built by those tasks. |
-| `transitions.json` | T17 (`pending: TASK-06`), T19 (`pending: TASK-16`), fix-up tasks (`pending: TASK-15`) | New behaviour built by those tasks. |
+| `transitions.json` | T17 (built by TASK-06; passes), T19 (`pending: TASK-16`), fix-up tasks (`pending: TASK-15`) | New behaviour built by those tasks. |
 
 Everything else (all 15 `tasks-md` cases, the other 13 `extract-json` cases, all 36 `pr-poll` cases and the non-pending transitions) matches the code's behaviour when the fixtures were written. The `tasks-md`, `extract-json` and `pr-poll` cases were checked mechanically against `parseTasksMd`, `extractJson` and a transcription of `pollPr` on the real `prfeedback.ts` helpers.
