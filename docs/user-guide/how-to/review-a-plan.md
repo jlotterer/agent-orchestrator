@@ -10,7 +10,7 @@ No task runs until you approve the plan. Use the time to check that each task ha
    - The title and the acceptance criteria. A task without criteria shows "no acceptance criteria (validator will use the description)".
    - The dependencies, as "after T001, T002" or "no deps".
    - The merge policy and, if the task has one, its own test command.
-   - The validation mode and owned files (**Planned**), with dependencies that orch adds because two tasks own the same files.
+   - The files each task owns, and under **not with**, the tasks it never runs beside because they own some of the same files. The validation mode (**Planned**).
 3. Go to the **Decisions** tab to read why the planner made each choice.
 
 ## Edit a task
@@ -29,7 +29,7 @@ You can edit a task before approval. After approval, you can still edit tasks th
    | **Merge policy** | **auto — merge when validated**, or **manual — wait for my review**. |
    | **Validation command (blank = project default)** | A task-specific test command, or nothing to use the project's `validation.command`. |
    | Validation mode (**Planned**) | `standard`, or `ui` to test the running app. See [Validate UI tasks in a browser](validate-ui-tasks.md). |
-   | Owned files (**Planned**) | Files or folders the task changes, such as `src/auth/**`. See [Run tasks in parallel](run-in-parallel.md). |
+   | Owned files | Files or folders the task changes, one per line, such as `src/auth/**`. Leave it blank for no restriction. See [Run tasks in parallel](run-in-parallel.md). |
 
 4. Select **Save**.
 

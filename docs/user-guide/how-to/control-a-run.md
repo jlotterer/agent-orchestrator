@@ -16,7 +16,7 @@ orch starts each task as soon as all of these are true:
 - No plan question is open (**Planned**).
 - The project has room under its parallel limit, `scheduler.maxParallel` (default 1).
 - The server has room under its global agent limit, `scheduler.maxAgents` (default 2).
-- No running task in the same project owns any of the same files (**Planned**).
+- No running task in the same project owns any of the same files. See [Run tasks in parallel](run-in-parallel.md#owned-files).
 
 Go to the **Board** tab to follow progress. Select a task card to see its live log.
 

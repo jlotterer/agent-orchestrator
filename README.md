@@ -191,14 +191,14 @@ sudo systemctl enable --now orch
    whose repo contains the folder. Each project has at most one unfinished run (planning, awaiting
    approval, ready, running or paused); planning or starting another is refused with the name of
    the unfinished one. The planner reads the spec,
-   writes acceptance criteria for every task, checks the dependency graph, flags risky tasks as
-   manual-merge, and logs its decisions. If something in the spec is ambiguous enough to matter it
+   writes acceptance criteria for every task, checks the dependency graph, lists the files each
+   task owns, flags risky tasks as manual-merge, and logs its decisions. If something in the spec is ambiguous enough to matter it
    asks instead of guessing: a question about the spec as a whole shows in the inbox with a **Plan**
    label, and no task starts until you answer it (you can still approve and start the run).
    To preview first, `orch plan specs/003-thing --dry-run` prints the phases, tasks, `[P]` flags and
    dependencies without creating a run or calling an agent.
 3. Open the dashboard. **Plan** tab: read the acceptance criteria, click any task to edit them,
-   its dependencies or merge policy. **Approve plan**. Approval is refused if the dependencies form a
+   its dependencies, merge policy or owned files. **Approve plan**. Approval is refused if the dependencies form a
    cycle; the error names the tasks in it, so edit one of them and approve again.
 4. **Start**. Watch the **Board** or walk away. Your phone buzzes when:
    * a worker asks a question → answer with one tap or a sentence
@@ -271,9 +271,10 @@ Any markdown file that follows the `- [ ] T001 …` convention works, Spec Kit o
 ### What the agents see
 
 * **Worker**: the task, acceptance criteria, `plan.md` + `spec.md` (capped by `handoff.specChars`),
-  the hand-off brief, and any feedback from a failed attempt. Prompt: `prompts/worker.md`.
-* **Validator**: the task, criteria, the worker's summary (as claims to check), the diff. It runs the
-  checks itself. Prompt: `prompts/validator.md`.
+  the hand-off brief, the files it owns, and any feedback from a failed attempt. Prompt: `prompts/worker.md`.
+* **Validator**: the task, criteria, the worker's summary (as claims to check), the diff, and the
+  changed files outside the task's owned files, which it reports as `findings` (never a FAIL by
+  themselves). It runs the checks itself. Prompt: `prompts/validator.md`.
 * **Planner**: all spec files plus the parsed task list. Prompt: `prompts/planner.md`.
 
 Override any prompt by copying it to `<repo>/.orch/prompts/<name>.md`.
@@ -336,8 +337,12 @@ Several projects can run at the same time. `scheduler.maxAgents` in `server.json
 sessions across all of them (a running planner counts too), because they share your agent
 subscription. When slots are scarce, the project that started a task least recently goes next, so
 one busy project cannot starve another. The usual failure mode is two parallel tasks
-editing the same file; the planner tries to keep `[P]` tasks file-disjoint, and the validator will
-catch a bad merge, but if you see conflicts, add dependency edges in the Plan tab.
+editing the same file. To prevent it, the planner gives each task `files_owned` (files or globs,
+editable in the Plan tab), and orch never runs two tasks of a project together when their owned
+files overlap (compared up to the first wildcard, so `src/auth/**` and `src/auth/login.ts` overlap).
+It records an orchestrator decision ("Holding T003 until T002 finishes…"), and the Plan tab shows
+"not with" for each such pair. Tasks without owned files are unconstrained. If you still see
+conflicts, add dependency edges in the Plan tab.
 
 ## Mixing agents (Claude for coding, Gemini for validation)
 

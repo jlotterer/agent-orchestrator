@@ -8,6 +8,11 @@ You are in an isolated git worktree on branch `{{branch}}` (branched from `{{bas
 ## Acceptance criteria
 {{acceptance}}
 
+## Files this task owns
+{{files_owned}}
+
+Keep your changes to these files. Other workers may be editing other files at the same time. If you must touch something else, do it, and say why in your summary; the validator will list it as out of scope.
+
 ## Project context (from the spec)
 {{spec_context}}
 

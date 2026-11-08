@@ -48,7 +48,7 @@ src/
     readiness.ts    selectReady(): which tasks start now                      (built: TASK-03)
     transitions.ts  nextTaskState(): task status after an event               (built: TASK-03)
     prpoll.ts       decidePrAction(): what to do with a PR observation        (built: TASK-03)
-    ownership.ts    ownedOverlap(): do two owned-file lists overlap           [stub returns false; planned: TASK-14]
+    ownership.ts    ownedOverlap() static-prefix overlap; outOfScope() via path.matchesGlob (TASK-14)
     phases.ts       phasesToValidate(), fixup planning                        [planned: TASK-15]
     graph.ts        cycle detection over depends_on (findCycle)               [built: TASK-13]
   prfeedback.ts     PURE: gh JSON → checks/feedback; worker feedback text (built, R1)
@@ -154,9 +154,9 @@ Dry run (`previewPlan(specDir)`, REQ-INTAKE-10) [built: TASK-13]: read the spec 
 ## 7. Scheduler
 ### 7.1 Readiness
 `selectReady(input) → ReadinessResult`
-_(→ code: `src/core/readiness.ts`; built in TASK-03 including fairness and plan questions; inputs filled by the orchestrator since TASK-09/13; overlap needs TASK-14)_
+_(→ code: `src/core/readiness.ts`; built in TASK-03 including fairness and plan questions; inputs filled by the orchestrator since TASK-09/13; overlap since TASK-14)_
 
-The orchestrator (built: TASK-09) passes `maxAgents` = `server.json` `scheduler.maxAgents`, `busyAgents` = planners currently running (phase validators from TASK-15), one entry per non-archived project whose current run is `running` or `paused` (`maxParallel`/`resumeOnRetry` from its context, `lastStartAt` = `projects.last_start_at`; `runStatus: null` when its context fails to build), and the tasks of those runs. `planQuestionsOpen` = unanswered questions of the run with `task_id NULL` (built: TASK-13); `filesOwned` empty until TASK-14. Every start sets `projects.last_start_at` to the tick's time.
+The orchestrator (built: TASK-09) passes `maxAgents` = `server.json` `scheduler.maxAgents`, `busyAgents` = planners currently running (phase validators from TASK-15), one entry per non-archived project whose current run is `running` or `paused` (`maxParallel`/`resumeOnRetry` from its context, `lastStartAt` = `projects.last_start_at`; `runStatus: null` when its context fails to build), and the tasks of those runs. `planQuestionsOpen` = unanswered questions of the run with `task_id NULL` (built: TASK-13); `filesOwned` = `tasks.files_owned` (built: TASK-14); each `heldForOverlap` pair becomes one orchestrator decision per run ("Holding <task> until <other> finishes: their owned files overlap", deduplicated against the stored decisions). Every start sets `projects.last_start_at` to the tick's time.
 Input:
 ```ts
 interface ReadinessInput {
@@ -181,8 +181,8 @@ Algorithm:
 5. `resume = resumeOnRetry && hasSession && adapterSupportsResume && (attempt > 0 || fixRounds > 0)`.
 
 ### 7.2 Ownership overlap
-_(→ code: `src/core/ownership.ts`; a stub returning `false` since TASK-03, [planned: TASK-14])_
-`ownedOverlap(a, b)`: false if either list is empty (unknown ownership = unconstrained, preserves today's behaviour). Otherwise, for each pattern compute its **static prefix**: path segments (split on `/`, normalized, no leading `./`) up to but excluding the first segment containing any of `* ? [ {`; a pattern without wildcards is its own prefix. Two patterns overlap if one prefix's segments are a prefix of the other's (equal included; empty prefix overlaps everything). Conservative by design: may serialize tasks that would not actually collide, never runs colliding ones together ([0017](decisions/0017-file-ownership.md)).
+_(→ code: `src/core/ownership.ts`; built in TASK-14; fixtures `test/fixtures/ownership.json`)_
+`ownedOverlap(a, b)`: false if either list is empty (unknown ownership = unconstrained, preserves today's behaviour). Otherwise, for each pattern compute its **static prefix**: path segments (split on `/`, normalized, no leading `./`) up to but excluding the first segment containing any of `* ? [ {`; a pattern without wildcards is its own prefix. Two patterns overlap if one prefix's segments are a prefix of the other's (equal included; empty prefix overlaps everything). Conservative by design: may serialize tasks that would not actually collide, never runs colliding ones together ([0017](decisions/0017-file-ownership.md)). Patterns are normalized (backslashes become `/`; leading `./` and empty segments are dropped). A task in `needs_input` whose answers arrive is not resumed while an active task of its run has overlapping ownership; the next tick retries (the same decision is recorded). The dashboard Plan tab repeats this rule to show each task's "not with" keys.
 
 ### 7.3 Tick
 One timer (`server.json` `scheduler.tickSeconds`), one tick across all projects, never two ticks at once. Per tick, for each project's current run that is `running`: (1) resume `needs_input` tasks with no open questions (T10; a resume continues a session that already held a slot and is not held back by `maxAgents`, so after answers the cap can be exceeded briefly); (2) PR polls (§12, per project settings); (3) phase checks (§10.3); then (4) one `selectReady` over every project (§7.1) → start tasks (not awaited), set `last_start_at`, log held-for-overlap decisions; (5) per running run: if no task is active and all tasks `done|skipped` (and phases validated or phase validation disabled) → run `done` + notify; else if nothing can progress without the owner → one "waiting on you" activity event (deduped by last event).
@@ -226,7 +226,7 @@ Fix-up tasks [TASK-15] use the same machine.
 
 ## 9. Worker & Hand-off Brief
 - Worktree: `git worktree add -b orch/<key>-<slug> <dir> <baseRef>`; `baseRef` = `origin/<base>` after `fetch --prune` when a remote exists, else `<base>`. Reuse existing branch. Copy `git.copyFiles`, run `git.setupCommand` (15 min timeout). A failing setup removes the new worktree (branch kept) and fails the attempt with the command's exit code and output, so the next attempt recreates the worktree and reruns setup.
-- Prompt `prompts/worker.md` vars: task key/title/description, acceptance bullets, spec excerpt (`handoff.contextFiles`, clipped to `handoff.specChars`), hand-off, branch/base, validate hint, feedback section. Owned files listed when present [TASK-14].
+- Prompt `prompts/worker.md` vars: task key/title/description, acceptance bullets, spec excerpt (`handoff.contextFiles`, clipped to `handoff.specChars`), hand-off, branch/base, validate hint, feedback section. `files_owned`: the owned list, or "(none declared…)" (built: TASK-14).
 - Hand-off (clipped to `handoff.historyChars`): completed tasks with lower `order_idx` (direct deps: full summary; others: 200 chars; up to 8 files), last 25 decisions, all answered Q/A.
 - Resume prompt: answers (if any) + `last_feedback` + "continue, commit, same JSON block".
 - Agent env: `ORCH_URL`, `ORCH_TASK_ID`, `ORCH_RUN_ID`, `ORCH_ACTOR`, `ORCH_TOKEN` (when a token is set; built: TASK-08), `PATH` prefixed with `<pkg>/bin`.
@@ -236,7 +236,7 @@ Fix-up tasks [TASK-15] use the same machine.
 `validate_cmd || validation.command` via `sh -c` in the worktree, 20 min timeout; output clipped 3000 to the log, 4000 to feedback. Precondition: `commitsAhead > 0`. Gate output (clipped 4000) is passed to the validator as `{{gate_output}}` [planned: TASK-16].
 
 ### 10.2 Validator
-Fresh session, prompt `prompts/validator.md`: task, criteria, worker summary (claims), `diffFromBase` (stat + diff, 60k chars), gate hint/output. Verdict contract §13.2. Non-PASS → T3/T4 with reasons + UNMET criteria. Out-of-scope edits (files in diff not matched by `files_owned` via `path.matchesGlob`) are listed by orch in the prompt and reported in `findings`, never a FAIL by themselves [TASK-14].
+Fresh session, prompt `prompts/validator.md`: task, criteria, worker summary (claims), `diffFromBase` (stat + diff, 60k chars), gate hint/output. Verdict contract §13.2. Non-PASS → T3/T4 with reasons + UNMET criteria. Out-of-scope edits (files in diff not matched by `files_owned` via `path.matchesGlob`) are listed by orch in the prompt (`files_owned`, `out_of_scope`; file names from `git diff --name-status`, so the list is complete even when the diff text is clipped; a pattern without wildcards also owns everything below it) and reported in `findings`, never a FAIL by themselves. The verdict event stores `findings` (validator) and `out_of_scope` (orch); the task panel shows the latest under "Validator findings" (built: TASK-14).
 
 ### 10.3 Phase validation
 _(→ code: `src/core/phases.ts`, [planned: TASK-15])_
@@ -450,7 +450,7 @@ _(→ code: `src/db.ts`)_
 ## 22. Design Assumptions
 | ID | Statement | Impact if wrong | Resolved by (task) |
 | :--- | :--- | :--- | :--- |
-| DA1 | `path.matchesGlob` (Node ≥ 22.5) is available for out-of-scope detection. Node floor is 22 ([0022](decisions/0022-node-22-floor.md)). | Need a tiny glob matcher. | TASK-14 |
+| DA1 | `path.matchesGlob` (Node ≥ 22.5) is available for out-of-scope detection. Node floor is 22 ([0022](decisions/0022-node-22-floor.md)). Confirmed in TASK-14; on Node 22 it prints an `ExperimentalWarning` once per process. | Need a tiny glob matcher. | TASK-14 |
 | DA2 | Static-prefix overlap is precise enough; over-serialization is acceptable. | Lost parallelism; refine to glob intersection. | TASK-14 |
 | DA3 | One detached worktree per phase validation is cheap enough (setup command reruns). | Slow phase checks; reuse a cached base worktree. | TASK-15 |
 | DA4 | Validator CLIs can drive a browser when configured (e.g. Playwright MCP for Claude Code). | UI mode returns BLOCKED; owner configures tooling. | TASK-16 |

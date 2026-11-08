@@ -14,6 +14,7 @@ import { readSpecDir, parseTasksMd, markTaskDoneInFile, type ImportedTask } from
 import type { Project, Question, Run, Task, TaskStatus } from "./types.js";
 import { formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
 import { selectReady } from "./core/readiness.js";
+import { ownedOverlap, outOfScope } from "./core/ownership.js";
 import { findCycle } from "./core/graph.js";
 import { nextTaskState, type TaskEvent, type TransitionResult, type Effect } from "./core/transitions.js";
 import { decidePrAction } from "./core/prpoll.js";
@@ -378,6 +379,7 @@ export class Orchestrator extends EventEmitter {
         if (Array.isArray(pt.depends_on)) patch.depends_on = pt.depends_on.map(String).filter((k: string) => k !== t.key && tasks.some((x) => x.key === k));
         if (pt.merge_policy === "manual" || pt.merge_policy === "auto") patch.merge_policy = pt.merge_policy;
         if (typeof pt.validate_cmd === "string" && pt.validate_cmd.trim()) patch.validate_cmd = pt.validate_cmd.trim();
+        if (Array.isArray(pt.files_owned)) patch.files_owned = cleanOwned(pt.files_owned);
         this.store.updateTask(t.id, patch);
       }
       for (const d of out.decisions ?? []) this.decide(run, null, "planner", String(d.text ?? d), d.rationale ?? null);
@@ -412,9 +414,13 @@ export class Orchestrator extends EventEmitter {
   }
 
   /** Human edits to the plan before approval (also allowed later for pending tasks). */
-  editTask(taskId: string, patch: Partial<Pick<Task, "title" | "description" | "acceptance" | "depends_on" | "merge_policy" | "validate_cmd" | "max_attempts">>) {
+  editTask(taskId: string, patch: Partial<Pick<Task, "title" | "description" | "acceptance" | "depends_on" | "merge_policy" | "validate_cmd" | "max_attempts" | "files_owned">>) {
     const t = this.store.getTask(taskId);
     if (!t) throw new Error("task not found");
+    if (patch.files_owned !== undefined) {
+      if (!Array.isArray(patch.files_owned)) throw new Error("files_owned must be an array of paths or globs");
+      patch = { ...patch, files_owned: cleanOwned(patch.files_owned) };
+    }
     this.store.updateTask(taskId, patch);
     const run = this.store.getRun(t.run_id)!;
     this.decide(run, t, "human", `Edited task ${t.key}: ${Object.keys(patch).join(", ")}`, null);
@@ -524,7 +530,7 @@ export class Orchestrator extends EventEmitter {
 
       // Readiness is decided by src/core (§7.1); tasks are re-read so resumed ones count as active.
       const tasksByRun = new Map(entries.map((e) => [e.run.id, this.store.listTasks(e.run.id)]));
-      const { start } = selectReady({
+      const { start, heldForOverlap } = selectReady({
         maxAgents: this.server.scheduler.maxAgents,
         busyAgents: this.busyAgents,
         projects: entries.map(({ project, run, ctx }) => ({
@@ -534,7 +540,7 @@ export class Orchestrator extends EventEmitter {
         tasks: entries.flatMap(({ project, run, ctx }) => {
           const supportsResume = ctx ? this.roleAgent(ctx.cfg, "worker").adapter.supportsResume : false;
           return tasksByRun.get(run.id)!.map((t) => ({
-            id: t.id, projectId: project.id, runId: t.run_id, key: t.key, orderIdx: t.order_idx, status: t.status, dependsOn: t.depends_on, filesOwned: [],
+            id: t.id, projectId: project.id, runId: t.run_id, key: t.key, orderIdx: t.order_idx, status: t.status, dependsOn: t.depends_on, filesOwned: t.files_owned,
             openQuestions: t.status === "pending" ? this.store.openQuestionsForTask(t.id).length : 0,
             attempt: t.attempt, fixRounds: t.fix_rounds, hasSession: !!t.session_id, adapterSupportsResume: supportsResume,
           }));
@@ -542,6 +548,11 @@ export class Orchestrator extends EventEmitter {
       });
       const taskById = new Map([...tasksByRun.values()].flat().map((t) => [t.id, t]));
       const runById = new Map(entries.map((e) => [e.run.id, e]));
+      // REQ-SCHED-02 / REQ-HITL-06: one orchestrator decision per held-back pair per run.
+      for (const h of heldForOverlap) {
+        const task = taskById.get(h.taskId)!, blocker = taskById.get(h.blockedByTaskId)!;
+        this.decideOverlapHold(runById.get(task.run_id)!.run, task, blocker);
+      }
       const startedAt = nowIso();
       for (const s of start) {
         const task = taskById.get(s.taskId)!;
@@ -630,6 +641,7 @@ export class Orchestrator extends EventEmitter {
             acceptance: this.bullets(task.acceptance), spec_context: this.specContext(cfg, run),
             handoff: this.handoff(cfg, run, task), branch, base_branch: cfg.baseBranch,
             validate_hint: validateCmd(cfg, task) ? ` (\`${validateCmd(cfg, task)}\` must pass)` : "",
+            files_owned: ownedSection(task.files_owned),
             feedback_section: task.last_feedback ? `## Feedback from the previous attempt (fix these)\n${task.last_feedback}` : "",
           });
 
@@ -709,7 +721,12 @@ export class Orchestrator extends EventEmitter {
       const validatorAgent = this.roleAgent(cfg, "validator");
       this.log(run, task, "state", { message: `validator started (${validatorAgent.label})` });
       const diff = await git.diffFromBase(worktree);
+      // REQ-VAL-05: orch lists edits outside the owned files; the validator reports them as findings, never a FAIL.
+      const changed = task.files_owned.length ? (await git.diffFiles(worktree, 0)).files.map((f) => f.path) : [];
+      const scope = outOfScope(changed, task.files_owned);
       const prompt = render(loadPrompt("validator", cfg.repo), {
+        files_owned: ownedSection(task.files_owned),
+        out_of_scope: task.files_owned.length ? (scope.length ? scope.map((f) => `- ${f}`).join("\n") : "(none)") : "(the task declares no owned files)",
         task_key: task.key, task_title: task.title, task_description: task.description, acceptance: this.bullets(task.acceptance),
         worker_summary: task.summary ?? "(none)", diff, branch: task.branch, base_branch: cfg.baseBranch,
         validate_hint: cmd ? ` (\`${cmd}\` already passed; re-run or extend it)` : "",
@@ -724,7 +741,7 @@ export class Orchestrator extends EventEmitter {
       if (cur.status !== "validating") return; // stopped
       const v = res.structured ?? {};
       const verdict = String(v.verdict ?? "").toUpperCase();
-      this.log(run, task, "verdict", { verdict: verdict || "NONE", reasons: v.reasons ?? [], criteria: v.criteria ?? [], suggestions: v.suggestions ?? [], cost_usd: res.costUsd });
+      this.log(run, task, "verdict", { verdict: verdict || "NONE", reasons: v.reasons ?? [], criteria: v.criteria ?? [], suggestions: v.suggestions ?? [], findings: Array.isArray(v.findings) ? v.findings.map(String) : [], out_of_scope: scope, cost_usd: res.costUsd });
       if (verdict !== "PASS") {
         const reasons = Array.isArray(v.reasons) && v.reasons.length ? v.reasons.map((r: any) => `- ${r}`).join("\n") : clip(res.text, 1500) || "validator gave no verdict";
         const unmet = Array.isArray(v.criteria) ? v.criteria.filter((c: any) => c && c.met === false).map((c: any) => `- UNMET: ${c.criterion} (${c.evidence ?? "no evidence"})`).join("\n") : "";
@@ -921,9 +938,19 @@ export class Orchestrator extends EventEmitter {
    * (run running) or put the task back to pending (run not running).
    */
   private async resumeAfterAnswer(run: Run, task: Task) {
+    // A resume skips readiness, but must still not run beside a task that owns overlapping files (REQ-SCHED-02);
+    // the next tick retries it.
+    const blocker = this.store.listTasks(run.id).find((o) => o.id !== task.id && ACTIVE.includes(o.status) && ownedOverlap(task.files_owned, o.files_owned));
+    if (blocker) { this.decideOverlapHold(run, task, blocker); return; }
     const r = await this.fire(run, task.id, { type: "answered", openQuestions: this.store.openQuestionsForTask(task.id).length, runStatus: run.status });
     if (r.rejected || r.status !== "running") return;
     await this.runTask(run, this.store.getTask(task.id)!, !!task.session_id, true);
+  }
+  /** "Holding X until Y finishes", recorded once per pair per run (also across restarts, via the stored decisions). */
+  private decideOverlapHold(run: Run, task: Task, blocker: Task) {
+    const text = `Holding ${task.key} until ${blocker.key} finishes: their owned files overlap`;
+    if (this.store.listDecisions(run.id).some((d) => d.actor === "orchestrator" && d.text === text)) return;
+    this.decide(run, task, "orchestrator", text, `${task.key} owns ${task.files_owned.join(", ")}; ${blocker.key} owns ${blocker.files_owned.join(", ")}`);
   }
   private resumePrompt(task: Task): string {
     const answered = this.store.listQuestions(task.run_id).filter((q) => q.task_id === task.id && q.answer);
@@ -1147,6 +1174,15 @@ export class Orchestrator extends EventEmitter {
     }
     this.ensureTicking();
   }
+}
+
+/** Planner/owner `files_owned`: trimmed non-empty strings, no duplicates. */
+function cleanOwned(v: unknown[]): string[] {
+  return [...new Set(v.map((x) => String(x).trim()).filter(Boolean))];
+}
+/** The owned-files section of the worker and validator prompts. */
+function ownedSection(owned: string[]): string {
+  return owned.length ? owned.map((f) => `- \`${f}\``).join("\n") : "(none declared: any file may change)";
 }
 
 /** The task's gate command: its own, else the project's `validation.command` (§10.1). */

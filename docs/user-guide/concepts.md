@@ -50,7 +50,7 @@ Each task has these properties, which you can review and edit in the plan:
 - **Test command**: an optional task-specific command that replaces the project's test command for this task.
 - **Attempt limit**: how many times a worker can try before the task goes to your inbox. The default is 2.
 - **Validation mode** (**Planned**): `standard`, or `ui` to test the running app in a browser.
-- **Owned files** (**Planned**): the files or folders the task expects to change. orch uses them to avoid running two tasks that touch the same files at once.
+- **Owned files**: the files or folders the task expects to change. orch uses them to avoid running two tasks that touch the same files at once.
 
 ## Agents and roles
 

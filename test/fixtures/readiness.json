@@ -2346,7 +2346,6 @@
   },
   {
     "name": "overlap with an active task holds the candidate; the next candidate starts",
-    "pending": "TASK-14",
     "input": {
       "maxAgents": 10,
       "busyAgents": 0,
@@ -2432,7 +2431,6 @@
   },
   {
     "name": "overlap with a task chosen earlier in the same tick holds the later one",
-    "pending": "TASK-14",
     "input": {
       "maxAgents": 10,
       "busyAgents": 0,

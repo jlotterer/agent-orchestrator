@@ -1,0 +1,28 @@
+{
+  "overlap": [
+    { "name": "equal file paths overlap", "a": ["src/a.ts"], "b": ["src/a.ts"], "expected": true },
+    { "name": "different files in the same dir do not overlap", "a": ["src/a.ts"], "b": ["src/b.ts"], "expected": false },
+    { "name": "dir glob vs a file inside it", "a": ["src/auth/**"], "b": ["src/auth/login.ts"], "expected": true },
+    { "name": "file vs a dir glob containing it (symmetric)", "a": ["src/auth/login.ts"], "b": ["src/auth/**"], "expected": true },
+    { "name": "sibling dirs do not overlap", "a": ["src/api/**"], "b": ["src/ui/**"], "expected": false },
+    { "name": "segment prefix is not a string prefix", "a": ["src/auth/**"], "b": ["src/authz/x.ts"], "expected": false },
+    { "name": "** at root overlaps everything", "a": ["**"], "b": ["docs/readme.md"], "expected": true },
+    { "name": "*.md at root has an empty prefix and overlaps everything", "a": ["*.md"], "b": ["src/a.ts"], "expected": true },
+    { "name": "empty list never overlaps", "a": [], "b": ["src/**"], "expected": false },
+    { "name": "both empty never overlap", "a": [], "b": [], "expected": false },
+    { "name": "wildcard in the middle segment cuts the prefix there", "a": ["src/*/index.ts"], "b": ["src/api/users.ts"], "expected": true },
+    { "name": "brace and bracket wildcards end the prefix", "a": ["lib/{a,b}.js"], "b": ["lib/c.js"], "expected": true },
+    { "name": "leading ./ and backslashes are normalized", "a": ["./src\\auth\\**"], "b": ["src/auth/x.ts"], "expected": true },
+    { "name": "any pair in the lists is enough", "a": ["docs/**", "src/db.ts"], "b": ["test/**", "src/db.ts"], "expected": true },
+    { "name": "disjoint multi-entry lists", "a": ["docs/**", "src/db.ts"], "b": ["test/**", "src/server.ts"], "expected": false },
+    { "name": "a directory path overlaps a file under it", "a": ["src/core"], "b": ["src/core/x.ts"], "expected": true }
+  ],
+  "outOfScope": [
+    { "name": "brief example: README outside src/**", "files": ["src/a.ts", "README.md"], "owned": ["src/**"], "expected": ["README.md"] },
+    { "name": "empty ownership reports nothing", "files": ["src/a.ts", "README.md"], "owned": [], "expected": [] },
+    { "name": "exact file match", "files": ["src/a.ts", "src/b.ts"], "owned": ["src/a.ts"], "expected": ["src/b.ts"] },
+    { "name": "a plain directory owns its contents", "files": ["src/core/x.ts", "src/y.ts"], "owned": ["src/core"], "expected": ["src/y.ts"] },
+    { "name": "single star does not cross directories", "files": ["src/a.ts", "src/sub/b.ts"], "owned": ["src/*.ts"], "expected": ["src/sub/b.ts"] },
+    { "name": "several patterns", "files": ["docs/x.md", "test/a.test.mjs", "package.json"], "owned": ["docs/**", "test/*.mjs"], "expected": ["package.json"] }
+  ]
+}
