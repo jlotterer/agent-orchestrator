@@ -5,13 +5,14 @@ import type { ChildProcess } from "node:child_process";
 import type { Config, ProjectConfig, ServerConfig } from "./config.js";
 import { loadProjectConfig, toLegacyConfig, DEFAULT_PROJECT_CONFIG } from "./config.js";
 import type { Store } from "./db.js";
-import { Git, shell } from "./git.js";
+import { Git, sh, shell } from "./git.js";
 import { runAgent, getAdapter } from "./adapters/index.js";
 import type { RoleName, RoleConfig } from "./config.js";
 import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
 import { notify, type NotifyOptions } from "./notify.js";
-import { readSpecDir, parseTasksMd, importFeature, markTaskDoneInFile } from "./speckit.js";
-import { DEFAULT_BRIEF_CHARS, type Conflict, type FeatureTask, type Problem } from "./core/brief.js";
+import { readSpecDir, importFeature, markTaskDoneInFile, type SpecDir } from "./speckit.js";
+import { DEFAULT_BRIEF_CHARS, earlierPhaseKeys, parseBrief, parseFrontmatter, type Conflict, type FeatureTask, type Problem } from "./core/brief.js";
+import { assembleSpecContext, extractReqRows, resolveContracts, cutDecision, type ContextBudgets, type ContextCut, type NamedText, type SpecContextInput } from "./core/context.js";
 import type { Decision, Phase, Project, Question, Run, Task, TaskStatus } from "./types.js";
 import { newPhaseRows, phaseName, phaseLabel, phasesToValidate, planFixup, type PhaseVerdict } from "./core/phases.js";
 import { formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
@@ -43,6 +44,13 @@ const WATCHED: TaskStatus[] = ["pr_checks", "pr_open"];
 /** Effects that can fail and must succeed before the transition is applied (§8: failure → T9). */
 const MERGE_EFFECTS: Effect[] = ["merge_local", "push_and_pr", "merge_pr"];
 const nowIso = () => new Date().toISOString();
+/** One folder-check problem as the CLI prints it: `tasks/T001.md:12 unresolved marker "TBD"`. */
+const problemLine = (p: Problem) => `${p.file}:${p.line} ${p.message}`;
+/** `{{plan_scope}}` of prompts/planner.md: which tasks the planner sees and why (§6.2). */
+const PLAN_SCOPE = {
+  review: "This is a review of the whole plan (`orch plan --review`). Every task of the feature is below, including the ones planned from their briefs.",
+  subset: "Only the tasks below need planning: they have no brief with acceptance criteria. The feature's other tasks are planned from their briefs (`tasks/<key>.md` in the spec files above); do not return them.",
+};
 type FixRoundKind = "ci" | "review" | "human";
 
 /** An error the HTTP layer answers with 404 (e.g. a diff whose worktree is gone). */
@@ -226,11 +234,82 @@ export class Orchestrator extends EventEmitter {
     const adapterConfig = cfg.agents.adapters[r.adapter];
     return { adapter: getAdapter(adapterConfig.type), adapterConfig, model: r.model || undefined, timeoutMs: cfg.agents.timeoutMinutes * 60_000, label: `${adapterConfig.type}${r.model ? ":" + r.model : ""}` };
   }
-  private specContext(cfg: Config, run: Run): string {
-    const spec = readSpecDir(run.spec_dir);
-    const parts: string[] = [];
-    for (const f of cfg.handoff.contextFiles) if (spec.files[f]) parts.push(`### ${f}\n${spec.files[f]}`);
-    return clip(parts.join("\n\n"), cfg.handoff.specChars);
+  // ------------------------------------------------------------------ spec context (§6.4, §9; REQ-WORK-09/10/11)
+  private budgets(cfg: Config): ContextBudgets {
+    const h = cfg.handoff;
+    return { briefChars: h.briefChars, reqChars: h.reqChars, contractChars: h.contractChars, rulesChars: h.rulesChars, specChars: h.specChars };
+  }
+  /** A file of the project repo as committed on the base branch; null when it does not exist there. */
+  private async readAtBase(cfg: Config, rel: string): Promise<string | null> {
+    const p = rel.replace(/\\/g, "/").replace(/^\.\//, "");
+    const r = await sh("git", ["show", `${cfg.baseBranch}:${p}`], cfg.repo);
+    return r.code === 0 ? r.stdout : null;
+  }
+  /** The project rules files (`handoff.projectFiles`) that exist on the base branch; absent ones are skipped (REQ-WORK-11). */
+  private async projectRules(cfg: Config): Promise<NamedText[]> {
+    const out: NamedText[] = [];
+    for (const name of cfg.handoff.projectFiles) {
+      const text = await this.readAtBase(cfg, name);
+      if (text !== null) out.push({ name, text });
+    }
+    return out;
+  }
+  /** The feature folder of a run, or an empty one when it is gone (the run still works without spec context). */
+  private specFolder(run: Run): SpecDir {
+    try { return readSpecDir(run.spec_dir); } catch { return { dir: run.spec_dir, title: run.title, files: {} }; }
+  }
+  /**
+   * The spec context of a task's worker and task validator (REQ-WORK-09/10, REQ-VAL-10): with a brief, the brief,
+   * the requirement rows it cites, its contracts and the rules; without, the spec files and the rules. One decision
+   * per cut (deduplicated, since every attempt and every validator builds the same context).
+   */
+  private async taskSpecContext(cfg: Config, run: Run, task: Task): Promise<string> {
+    const files = this.specFolder(run).files;
+    const briefName = `tasks/${task.key}.md`;
+    const briefText = task.synthetic ? undefined : files[briefName];
+    const brief = briefText !== undefined ? parseBrief(task.key, briefText) : null;
+    const rules = await this.projectRules(cfg);
+    let input: SpecContextInput;
+    if (brief?.supported) {
+      const reqFile = cfg.handoff.requirementsFile;
+      const reqRows = brief.cites.length ? extractReqRows({ name: reqFile, text: (await this.readAtBase(cfg, reqFile)) ?? "" }, brief.cites) : null;
+      const contracts = brief.contracts ? resolveContracts({ files }, brief.contracts.map((c) => c.name), briefName).contracts : [];
+      input = { brief: { name: briefName, text: briefText! }, reqRows, contracts, rules };
+    } else {
+      input = { specFiles: files, contextFiles: cfg.handoff.contextFiles, rules };
+    }
+    return this.sectionedContext(run, task, task.key, input, cfg);
+  }
+  /**
+   * `assembleSpecContext` with a `## ` heading per group (Brief, Requirements covered, Contracts, Project rules, or
+   * Project context for a task without a brief). Each group is the assembler's own output for that group, so budgets,
+   * headers and cut markers are exactly the core's; the cuts come from one call over the whole input.
+   */
+  private sectionedContext(run: Run, task: Task | null, label: string, input: SpecContextInput, cfg: Config): string {
+    const B = this.budgets(cfg);
+    this.recordCuts(run, task, label, assembleSpecContext(input, B).cuts);
+    const out: string[] = [];
+    const section = (heading: string, text: string) => { if (text) out.push(`## ${heading}\n${text}`); };
+    if (input.brief) {
+      const brief = assembleSpecContext({ brief: input.brief }, B).text;
+      const after = (extra: SpecContextInput) => assembleSpecContext({ brief: input.brief, ...extra }, B).text.slice(brief.length + 2);
+      section("Brief", brief);
+      section("Requirements covered", after({ reqRows: input.reqRows }));
+      section("Contracts", after({ contracts: input.contracts }));
+    } else {
+      section("Project context (from the spec)", assembleSpecContext({ specFiles: input.specFiles, contextFiles: input.contextFiles }, B).text);
+    }
+    section("Project rules", assembleSpecContext({ rules: input.rules }, B).text);
+    return out.join("\n\n");
+  }
+  /** One decision per context cut, naming the task (or phase), part and size; a cut already recorded is not repeated. */
+  private recordCuts(run: Run, task: Task | null, label: string, cuts: ContextCut[]) {
+    if (!cuts.length) return;
+    const seen = new Set(this.store.listDecisions(run.id).map((d) => d.text));
+    for (const c of cuts) {
+      const text = cutDecision(label, c);
+      if (!seen.has(text)) { seen.add(text); this.decide(run, task, "orchestrator", text, null); }
+    }
   }
   private bullets(items: string[]): string {
     return items.length ? items.map((a) => `- ${a}`).join("\n") : "- (none given; use the task description)";
@@ -347,42 +426,89 @@ export class Orchestrator extends EventEmitter {
 
   // ------------------------------------------------------------------ planning
   /**
-   * Import a Spec Kit dir into a new run of `projectId`. With llm=true the planner agent enriches tasks.
+   * Import a feature folder into a new run of `projectId` (§6.2, §6.4). Briefs set their tasks' plan values; the
+   * folder checks' errors refuse the plan unless `allowOpen` (REQ-INTAKE-13), and the override, the `[P]` conflicts
+   * and the warnings become decisions (REQ-INTAKE-11/14). When every open task has criteria from its brief and
+   * `review` is not set, no agent is called; otherwise, with `llm`, the planner runs over the tasks without brief
+   * criteria, or over every task with `review`, and never removes or rewrites a brief's criteria (REQ-INTAKE-12).
    * Refused while the project has an unfinished run (REQ-PROJ-07). The project's settings are re-read here.
    */
-  async plan(projectId: string, specDir: string, opts: { llm: boolean }): Promise<Run> {
+  async plan(projectId: string, specDir: string, opts: { llm: boolean; review?: boolean; allowOpen?: boolean }): Promise<Run> {
     if (this.requireProject(projectId).archived) throw new Error(`project '${projectId}' is archived; register its repo again to use it`);
     const open = this.unfinishedRun(projectId);
     if (open) throw this.refusal(projectId, open);
+    if (opts.review && !opts.llm) throw new Error("--review runs the planner; it cannot be combined with --no-llm");
     const ctx = this.refreshContext(projectId), cfg = ctx.cfg;
     const spec = readSpecDir(specDir);
-    const tasksMd = spec.files["tasks.md"];
-    if (!tasksMd) throw new Error(`no tasks.md in ${spec.dir}. Run /speckit.tasks first.`);
-    const imported = parseTasksMd(tasksMd);
-    if (!imported.length) throw new Error(`no tasks found in ${path.join(spec.dir, "tasks.md")}`);
+    const { tasks: imported, feature } = importFeature(spec, { briefChars: cfg.handoff.briefChars }); // throws without tasks.md or tasks
+    const errors = feature.problems.filter((p) => p.kind === "error");
+    if (errors.length && !opts.allowOpen) {
+      const n = errors.length, shown = errors.slice(0, 5).map(problemLine).join("; ");
+      throw new Error(`${n} error${n === 1 ? "" : "s"} in ${spec.dir}: ${shown}${n > 5 ? "; …" : ""}. Fix ${n === 1 ? "it" : "them"} or pass --allow-open to plan anyway`);
+    }
+    const planned = feature.tasks;
+    // The planner is needed for open tasks whose criteria do not come from a brief, or for everything on review.
+    const needCriteria = planned.filter((t) => !t.done && !t.fromBrief.includes("acceptance"));
+    const fromBriefs = feature.hasBriefs && !opts.review && needCriteria.length === 0;
+    const subset = opts.review ? planned : needCriteria;
+    const runPlanner = opts.llm && !fromBriefs && subset.length > 0;
 
-    const run = this.store.createRun(spec.dir, spec.title, cfg.baseBranch, opts.llm ? "planning" : "plan_pending", projectId);
+    const run = this.store.createRun(spec.dir, spec.title, cfg.baseBranch, runPlanner ? "planning" : "plan_pending", projectId);
     this.changed("run", { run, projectId });
     this.logWarnings(run, ctx);
-    this.log(run, null, "state", { message: `imported ${imported.length} tasks from ${path.relative(cfg.repo, spec.dir)}` });
+    const briefCount = planned.filter((t) => t.brief).length;
+    this.log(run, null, "state", { message: `imported ${planned.length} tasks from ${path.relative(cfg.repo, spec.dir)}${briefCount ? ` (${briefCount} with a brief)` : ""}` });
 
-    for (const t of imported) {
+    for (const t of planned) {
       this.store.insertTask({
-        run_id: run.id, key: t.key, title: t.title, description: t.description, acceptance: [], depends_on: t.depends_on,
+        run_id: run.id, key: t.key, title: t.title, description: t.description, acceptance: t.acceptance, depends_on: t.depends_on,
         parallel: t.parallel ? 1 : 0, phase: t.phase, order_idx: t.order_idx, status: t.done ? "done" : "pending",
-        attempt: 0, max_attempts: cfg.scheduler.maxAttempts, merge_policy: cfg.git.mergePolicy,
-        validate_cmd: null, worktree: null, branch: null, pr_url: null, session_id: null, summary: t.done ? "(already complete before this run)" : null,
+        attempt: 0, max_attempts: cfg.scheduler.maxAttempts, merge_policy: t.merge_policy ?? cfg.git.mergePolicy,
+        validate_cmd: t.validate_cmd, validate_mode: t.validate_mode ?? "standard", files_owned: t.files_owned,
+        worktree: null, branch: null, pr_url: null, session_id: null, summary: t.done ? "(already complete before this run)" : null,
         files: [], last_feedback: null,
       });
     }
     this.changed("tasks", { runId: run.id });
-    if (!opts.llm) return run;
 
-    // Planner agent enriches the plan.
+    // Plan-time decisions (REQ-INTAKE-11/13/14): the override, each [P] conflict, each warning of the folder checks.
+    const taskOf = (key: string | undefined) => (key ? this.store.getTaskByKey(run.id, key) ?? null : null);
+    const keyOfFile = (file: string) => file.match(/^tasks\/(T\d{2,4})\.md$/)?.[1];
+    if (errors.length) {
+      this.decide(run, null, "human", `Planned despite ${errors.length} error${errors.length === 1 ? "" : "s"} in the feature folder (--allow-open)`, clip(errors.map(problemLine).join("; "), 1500));
+    }
+    for (const c of feature.conflicts) this.decide(run, taskOf(c.key), "orchestrator", c.decision, "frontmatter takes precedence over tasks.md marks");
+    for (const w of feature.problems.filter((p) => p.kind === "warning")) {
+      this.decide(run, taskOf(keyOfFile(w.file)), "orchestrator", `Import warning: ${problemLine(w)}`, `folder check ${w.rule}`);
+    }
+
+    if (fromBriefs) {
+      const n = planned.filter((t) => !t.done).length;
+      this.decide(run, null, "orchestrator", "Plan built from briefs; the planner was not run", `${n} open task${n === 1 ? "" : "s"}, each with acceptance criteria from its brief (orch plan --review runs the planner over the whole plan)`);
+      this.changed("run", { run: this.store.getRun(run.id) });
+      if (opts.llm) await this.notify(ctx, `Plan ready: ${run.title}`, `${planned.length} tasks, built from their briefs. Review and approve in the dashboard.`, { tags: ["clipboard"] });
+      return this.store.getRun(run.id)!;
+    }
+    if (!runPlanner) return run;
+
+    // Planner agent: the tasks without brief criteria, or the whole plan on review.
+    if (opts.review) this.decide(run, null, "orchestrator", "Planner reviews the whole plan (--review)", "it may add criteria and correct dependencies; it never removes or rewrites a brief's criteria");
+    else if (feature.hasBriefs) this.decide(run, null, "orchestrator", `Planner runs for ${subset.map((t) => t.key).join(", ")} only`, "no brief with acceptance criteria; the other tasks are planned from their briefs");
     const tasks = this.store.listTasks(run.id);
-    const tasksJson = JSON.stringify(tasks.map((t) => ({ key: t.key, title: t.description, phase: t.phase, parallel: !!t.parallel, depends_on: t.depends_on, done: t.status === "done" })), null, 2);
+    const subsetKeys = new Set(subset.map((t) => t.key));
+    const tasksJson = JSON.stringify(planned.filter((t) => subsetKeys.has(t.key)).map((t) => ({
+      key: t.key, title: t.description, phase: t.phase, parallel: t.parallel, depends_on: t.depends_on, done: t.done,
+      ...(t.brief ? { brief: t.brief, from_brief: t.fromBrief } : {}),
+      ...(t.fromBrief.includes("acceptance") ? { acceptance: t.acceptance } : {}),
+    })), null, 2);
     const specContext = Object.entries(spec.files).filter(([f]) => f !== "tasks.md").map(([f, c]) => `### ${f}\n${c}`).join("\n\n");
-    const prompt = render(loadPrompt("planner", cfg.repo), { title: run.title, spec_context: clip(specContext, cfg.handoff.specChars * 2), tasks_json: tasksJson });
+    const rules = assembleSpecContext({ rules: await this.projectRules(cfg) }, this.budgets(cfg));
+    this.recordCuts(run, null, "planner", rules.cuts);
+    const prompt = render(loadPrompt("planner", cfg.repo), {
+      title: run.title, spec_context: clip(specContext, cfg.handoff.specChars * 2), tasks_json: tasksJson,
+      plan_scope: opts.review ? PLAN_SCOPE.review : feature.hasBriefs ? PLAN_SCOPE.subset : "",
+      project_rules: rules.text || "(no project rules file)",
+    });
 
     const planner = this.roleAgent(cfg, "planner");
     this.log(run, null, "state", { message: `planner started (${planner.label})` });
@@ -403,17 +529,44 @@ export class Orchestrator extends EventEmitter {
       this.log(run, null, "error", { message: "planner failed or returned no plan; using imported tasks as-is", text: clip(res.text, 2000) });
       this.decide(run, null, "orchestrator", "Planner produced no usable output; proceeding with tasks.md as imported", res.text ? clip(res.text, 300) : null);
     } else {
+      const byKey = new Map(planned.map((t) => [t.key, t]));
       for (const pt of out.tasks) {
-        const t = this.store.getTaskByKey(run.id, pt.key);
-        if (!t) continue;
+        if (!pt || !subsetKeys.has(pt.key)) continue; // outside the subset: planned from its brief, untouched
+        const t = this.store.getTaskByKey(run.id, pt.key), ft = byKey.get(pt.key);
+        if (!t || !ft) continue;
+        // A value the brief sets wins; the planner fills only what the brief leaves open (§6.4).
+        const free = (field: string) => !ft.fromBrief.includes(field);
         const patch: Partial<Task> = {};
-        if (Array.isArray(pt.acceptance)) patch.acceptance = pt.acceptance.map(String);
-        if (Array.isArray(pt.depends_on)) patch.depends_on = pt.depends_on.map(String).filter((k: string) => k !== t.key && tasks.some((x) => x.key === k));
-        if (pt.merge_policy === "manual" || pt.merge_policy === "auto") patch.merge_policy = pt.merge_policy;
-        if (typeof pt.validate_cmd === "string" && pt.validate_cmd.trim()) patch.validate_cmd = pt.validate_cmd.trim();
-        if (Array.isArray(pt.files_owned)) patch.files_owned = cleanOwned(pt.files_owned);
-        if (pt.validate_mode === "ui" || pt.validate_mode === "standard") patch.validate_mode = pt.validate_mode;
-        this.store.updateTask(t.id, patch);
+        if (Array.isArray(pt.acceptance)) {
+          const proposed: string[] = pt.acceptance.map((a: unknown) => String(a).trim()).filter(Boolean);
+          if (free("acceptance")) patch.acceptance = proposed;
+          else {
+            // REQ-INTAKE-12: brief criteria are kept verbatim; the planner's other criteria are appended and recorded.
+            const added = proposed.filter((a) => !ft.acceptance.includes(a));
+            if (added.length) {
+              patch.acceptance = [...ft.acceptance, ...added];
+              this.decide(run, t, "planner", `Added ${added.length} acceptance criteri${added.length === 1 ? "on" : "a"} to ${t.key}; the brief's ${ft.acceptance.length} kept`, clip(added.join("; "), 1000));
+            }
+          }
+        }
+        if (Array.isArray(pt.depends_on)) {
+          const deps: string[] = [...new Set<string>(pt.depends_on.map(String))].filter((k) => k !== t.key && tasks.some((x) => x.key === k));
+          if (free("depends_on")) patch.depends_on = deps;
+          else if (opts.review) {
+            // REQ-INTAKE-02: the earlier-phase part of a brief task's dependencies is never removed (§6.4).
+            const own = imported.find((x) => x.key === t.key)!;
+            const kept = [...new Set([...earlierPhaseKeys(imported, own), ...deps])].sort();
+            if (kept.join() !== [...ft.depends_on].sort().join()) {
+              patch.depends_on = kept;
+              this.decide(run, t, "planner", `Changed ${t.key}'s dependencies from [${ft.depends_on.join(", ")}] to [${kept.join(", ")}]`, "planner review (--review); tasks of earlier phases are always kept");
+            }
+          }
+        }
+        if (free("merge_policy") && (pt.merge_policy === "manual" || pt.merge_policy === "auto")) patch.merge_policy = pt.merge_policy;
+        if (free("validate_cmd") && typeof pt.validate_cmd === "string" && pt.validate_cmd.trim()) patch.validate_cmd = pt.validate_cmd.trim();
+        if (free("files_owned") && Array.isArray(pt.files_owned)) patch.files_owned = cleanOwned(pt.files_owned);
+        if (free("validate_mode") && (pt.validate_mode === "ui" || pt.validate_mode === "standard")) patch.validate_mode = pt.validate_mode;
+        if (Object.keys(patch).length) this.store.updateTask(t.id, patch);
       }
       for (const d of out.decisions ?? []) this.decide(run, null, "planner", String(d.text ?? d), d.rationale ?? null);
       for (const q of out.questions ?? []) {
@@ -705,7 +858,7 @@ export class Orchestrator extends EventEmitter {
         ? this.resumePrompt(task)
         : render(loadPrompt("worker", cfg.repo), {
             task_key: task.key, task_title: task.title, task_description: task.description,
-            acceptance: this.bullets(task.acceptance), spec_context: this.specContext(cfg, run),
+            acceptance: this.bullets(task.acceptance), spec_context: await this.taskSpecContext(cfg, run, task),
             handoff: this.handoff(cfg, run, task), branch, base_branch: cfg.baseBranch,
             validate_hint: validateCmd(cfg, task) ? ` (\`${validateCmd(cfg, task)}\` must pass)` : "",
             files_owned: ownedSection(task.files_owned),
@@ -836,7 +989,10 @@ export class Orchestrator extends EventEmitter {
     // REQ-VAL-05: orch lists edits outside the owned files; the validator reports them as findings, never a FAIL.
     const changed = task.files_owned.length ? (await git.diffFiles(worktree, 0)).files.map((f) => f.path) : [];
     const scope = outOfScope(changed, task.files_owned);
+    // REQ-VAL-10: the same brief, requirement rows, contracts and rules as the worker; never the worker's transcript.
+    const specContext = await this.taskSpecContext(cfg, run, task);
     const prompt = render(loadPrompt(app ? "validator-ui" : "validator", cfg.repo), {
+      spec_context: specContext,
       files_owned: ownedSection(task.files_owned),
       out_of_scope: task.files_owned.length ? (scope.length ? scope.map((f) => `- ${f}`).join("\n") : "(none)") : "(the task declares no owned files)",
       task_key: task.key, task_title: task.title, task_description: task.description, acceptance: this.bullets(task.acceptance),
@@ -1179,15 +1335,24 @@ export class Orchestrator extends EventEmitter {
     const { cfg } = ctx;
     const agent = this.agentFor(cfg, ctx.phase.role);
     const count = this.store.listPhases(run.id).length;
+    const files = this.specFolder(run).files;
     const taskLines = own.map((t) => {
       const head = `### ${t.key}${t.synthetic ? " (fix-up)" : ""}: ${t.title} (${t.status})`;
+      // §6.4: each task's brief frontmatter (its plan values as the owner wrote them), then its criteria.
+      const brief = t.synthetic ? undefined : files[`tasks/${t.key}.md`];
+      const fm = brief !== undefined ? parseFrontmatter(brief) : null;
+      const front = fm?.present ? `Brief tasks/${t.key}.md frontmatter:\n${brief!.replace(/\r\n/g, "\n").split("\n").slice(0, fm.length).join("\n")}` : "";
       const crit = t.acceptance.length ? `Acceptance criteria:\n${t.acceptance.map((a) => `- ${a}`).join("\n")}` : "";
-      return [head, crit, `Summary: ${t.summary ?? "(none)"}`].filter(Boolean).join("\n");
+      return [head, front, crit, `Summary: ${t.summary ?? "(none)"}`].filter(Boolean).join("\n");
     });
+    // spec.md in full (within specChars, cut recorded) and the rules; a folder without spec.md gives its context files.
+    const specFiles = files["spec.md"] !== undefined ? { "spec.md": files["spec.md"] } : files;
+    const contextFiles = files["spec.md"] !== undefined ? ["spec.md"] : cfg.handoff.contextFiles.filter((f) => files[f] !== undefined);
+    const specContext = this.sectionedContext(run, null, `Phase "${phaseLabel(phase.name)}"`, { specFiles: Object.fromEntries(contextFiles.map((f) => [f, specFiles[f]])), rules: await this.projectRules(cfg) }, cfg);
     const prompt = render(loadPrompt("phase-validator", cfg.repo), {
       phase_label: phaseLabel(phase.name), phase_idx: phase.idx, phase_count: count, base_branch: cfg.baseBranch,
       phase_tasks: clip(taskLines.join("\n\n"), cfg.handoff.historyChars * 2),
-      spec_context: this.specContext(cfg, run),
+      spec_context: specContext,
       command_section: cmd ? `\`${cmd}\` passed on ${cfg.baseBranch}. Its output:\n\n\`\`\`\n${gateOutput || "(no output)"}\n\`\`\`` : "(none configured; run the project's checks yourself)",
       fixup_section: phase.fixup_rounds ? `## Earlier rounds\nThis phase failed validation ${phase.fixup_rounds} time${phase.fixup_rounds > 1 ? "s" : ""} before; the fix-up tasks above were meant to fix that. Check that they did.` : "",
     });

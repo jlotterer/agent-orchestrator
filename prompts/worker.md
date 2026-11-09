@@ -13,7 +13,6 @@ You are in an isolated git worktree on branch `{{branch}}` (branched from `{{bas
 
 Keep your changes to these files. Other workers may be editing other files at the same time. If you must touch something else, do it, and say why in your summary; the validator will list it as out of scope.
 
-## Project context (from the spec)
 {{spec_context}}
 
 ## Hand-off from earlier tasks
@@ -30,7 +29,8 @@ Keep your changes to these files. Other workers may be editing other files at th
 5. **Questions**: if something is ambiguous AND a wrong guess would be expensive to undo, ask:
    `orch ask "the question" --options "A,B,C"`
    then STOP WORKING and end your turn with status "blocked". A human will answer and you will be resumed with the answer. Do not ask about things you can reasonably decide yourself; decide, and log it with `orch decide`.
-6. Do not modify `tasks.md`, `spec.md` or `plan.md`; the orchestrator owns them.
+6. Do not modify `tasks.md`, `spec.md`, `plan.md` or the briefs under `tasks/`; the orchestrator owns them.
+7. Follow the project rules and the contracts above (when given). The validator rejects a change that breaks a project rule or a named contract. If the task cannot be done without breaking one, ask instead of breaking it.
 
 # Finishing
 End your final message with ONE fenced ```json block:

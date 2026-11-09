@@ -4,7 +4,7 @@
  *
  *   orch serve                        start the daemon + dashboard (run this under systemd)
  *   orch project add <path> [--name n] | project list [--archived] | project remove <id>
- *   orch plan <specDir> [--no-llm] [--dry-run] [--allow-open]   import a feature dir and draft a plan (or preview it)
+ *   orch plan <specDir> [--no-llm] [--review] [--dry-run] [--allow-open]   import a feature dir and draft a plan (or preview it)
  *   orch approve [runId]              approve the pending plan
  *   orch run | pause | stop           control the project's current run
  *   orch status                       print the board
@@ -45,7 +45,7 @@ function flag(name: string): string | undefined {
   return v;
 }
 function has(name: string) { return argv.includes(`--${name}`); }
-const BOOL_FLAGS = new Set(["--no-llm", "--archived", "--help", "--dry-run", "--allow-open"]);
+const BOOL_FLAGS = new Set(["--no-llm", "--review", "--archived", "--help", "--dry-run", "--allow-open"]);
 /** Arguments after the command, without flags and their values. */
 function positional(): string[] {
   const out: string[] = [];
@@ -126,6 +126,7 @@ const HELP = `orch — orchestrator/worker/validator runner
   orch project list [--archived]       list projects with run status and inbox count
   orch project remove <id>             archive a project (repo and history are kept)
   orch plan <specDir> [--no-llm]       import a feature folder (tasks.md + tasks/*.md briefs) and draft a plan
+       [--review]                      run the planner over the whole plan, briefs included (it may add criteria, never remove them)
        [--dry-run]                     only print phases, tasks, briefs, dependencies and checks; create nothing
        [--allow-open]                  plan despite unresolved markers (TBD, TODO, [NEEDS CLARIFICATION) in the folder
   orch approve [runId]                 approve the plan
@@ -212,7 +213,8 @@ async function main() {
     }
     case "plan": {
       const dir = positional()[0];
-      if (!dir) throw new UsageError("usage: orch plan <specDir> [--no-llm] [--dry-run] [--allow-open]");
+      if (!dir) throw new UsageError("usage: orch plan <specDir> [--no-llm] [--review] [--dry-run] [--allow-open]");
+      if (has("review") && has("no-llm")) throw new UsageError("--review runs the planner over the whole plan; it cannot be combined with --no-llm");
       const specDir = path.resolve(dir);
       const project = await resolveProject(specDir);
       const allowOpen = has("allow-open");
@@ -229,8 +231,11 @@ async function main() {
         throw new Error(`${count(errors.length, "error")} in ${pv.dir}; fix ${errors.length === 1 ? "it" : "them"} or pass --allow-open to plan anyway`);
       }
       if (pv.problems.length) console.log(formatProblems(pv.problems, allowOpen));
-      console.log(has("no-llm") ? `importing tasks into ${project.id}…` : `importing tasks into ${project.id} and running the planner (this takes a minute)…`);
-      const run = await api("POST", `/api/projects/${encodeURIComponent(project.id)}/plan`, { specDir, llm: !has("no-llm") });
+      // REQ-INTAKE-12: with criteria in every brief and no --review, the plan is built from the briefs without an agent.
+      const fromBriefs = pv.hasBriefs && !has("review") && pv.tasks.every((t) => t.done || t.fromBrief.includes("acceptance"));
+      console.log(has("no-llm") || fromBriefs ? `importing tasks into ${project.id}${fromBriefs ? " (plan built from the briefs; no planner)" : ""}…`
+        : `importing tasks into ${project.id} and running the planner${has("review") ? " over the whole plan" : ""} (this takes a minute)…`);
+      const run = await api("POST", `/api/projects/${encodeURIComponent(project.id)}/plan`, { specDir, llm: !has("no-llm"), review: has("review"), allowOpen });
       console.log(`run ${run.id} "${run.title}" → ${run.status}. Review the plan in the dashboard, then: orch approve`);
       return;
     }

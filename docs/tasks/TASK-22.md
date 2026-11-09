@@ -1,5 +1,5 @@
 # TASK-22: Plan from briefs; rules and contracts for every agent
-**Status:** todo · **Wave:** 15 · **Depends on:** TASK-20, TASK-21 · **Parallel:** No
+**Status:** done (2026-11-09; real run recorded in the PR) · **Wave:** 15 · **Depends on:** TASK-20, TASK-21 · **Parallel:** No
 
 ## Goal
 Wire TASK-20 and TASK-21 into the orchestrator. With briefs, `orch plan` builds the plan without an agent; the planner runs only for brief-less tasks or on `--review`. Workers, task validators and phase validators receive the brief, cited requirements, contracts and project rules. Conflicts, cuts and overrides are recorded as decisions.

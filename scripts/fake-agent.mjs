@@ -20,6 +20,7 @@
  * Lifecycle markers (scripts/e2e-lifecycle.mjs), matched anywhere in the prompt:
  *   PLANNER_FAIL  (spec.md, planner) -> prints to stderr and exits 1 with no plan
  *   PLAN_QUESTION (spec.md, planner) -> also returns one plan question (scripts/e2e.mjs, TASK-13)
+ *   PLANNER_DROP_DEPS (spec.md, planner) -> returns depends_on [] for every task (test/unit/plan.test.mjs, TASK-22)
  *   SLEEP_LONG    (task, worker)     -> commits impl/<KEY>.wip, writes its pid to $FAKE_STATE_DIR/<KEY>.pid,
  *                                       then sleeps (up to 120 s; exits early if orphaned). Once
  *                                       impl/<KEY>.wip exists in the worktree it behaves normally.
@@ -42,6 +43,13 @@
  *
  * FAKE_PROMPT_LOG=<file> (env, scripts/e2e-auth.mjs) appends every prompt received to <file>, so a
  * test can check what reached an agent.
+ * FAKE_PROMPT_DIR=<dir> (env, scripts/e2e-briefs.mjs) writes every prompt to its own file <dir>/<time>-<pid>.txt (prompts
+ * contain `---` lines, so one log cannot be split reliably).
+ *
+ * Project rules (scripts/e2e-briefs.mjs, TASK-22; REQ-VAL-11):
+ *   BREAK_RULE  (brief, worker)  -> on its first attempt the worker writes "OK RULE_BROKEN" into impl/<KEY>.txt
+ *   RULE_BROKEN in the diff (validator) -> FAIL quoting the line of the "## Project rules" section that mentions
+ *                                RULE_BROKEN: `breaks project rule "<line>": impl/<KEY>.txt contains RULE_BROKEN`
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -52,6 +60,10 @@ const resumeIdx = args.indexOf("--resume");
 const sessionId = resumeIdx >= 0 ? args[resumeIdx + 1] : "sess-" + Math.random().toString(36).slice(2, 10);
 const prompt = fs.readFileSync(0, "utf8");
 if (process.env.FAKE_PROMPT_LOG) fs.appendFileSync(process.env.FAKE_PROMPT_LOG, prompt + "\n---\n");
+if (process.env.FAKE_PROMPT_DIR) {
+  fs.mkdirSync(process.env.FAKE_PROMPT_DIR, { recursive: true });
+  fs.writeFileSync(path.join(process.env.FAKE_PROMPT_DIR, `${Date.now()}-${process.pid}.txt`), prompt);
+}
 // FAKE_FLAVOR=gemini makes this script speak Gemini CLI's stream-json dialect instead of Claude Code's.
 const gemini = process.env.FAKE_FLAVOR === "gemini";
 if (gemini && !args.includes("--yolo")) { console.error("fake gemini: expected --yolo"); process.exit(42); }
@@ -106,7 +118,7 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
   const tasks = JSON.parse(m[1]);
   say("Reading the spec and tasks.");
   finish({
-    tasks: tasks.map((t) => ({ key: t.key, acceptance: [`impl/${t.key}.txt exists and contains OK`], depends_on: t.depends_on, merge_policy: t.key === "T004" || /(manual)/.test(t.title) ? "manual" : "auto", validate_cmd: null, validate_mode: /UI_(MODE|BLOCKED|HANG)/.test(t.title) ? "ui" : "standard", files_owned: process.env.FAKE_ACTIVE_DIR ? OWNED[t.key] ?? [] : [] })),
+    tasks: tasks.map((t) => ({ key: t.key, acceptance: [`impl/${t.key}.txt exists and contains OK`], depends_on: prompt.includes("PLANNER_DROP_DEPS") ? [] : t.depends_on, merge_policy: t.key === "T004" || /(manual)/.test(t.title) ? "manual" : "auto", validate_cmd: null, validate_mode: /UI_(MODE|BLOCKED|HANG)/.test(t.title) ? "ui" : "standard", files_owned: process.env.FAKE_ACTIVE_DIR ? OWNED[t.key] ?? [] : [] })),
     decisions: [{ text: "Marked T004 manual merge", rationale: "it touches the public API" }],
     // PLAN_QUESTION in spec.md: one question about the spec as a whole (TASK-13, REQ-INTAKE-07).
     questions: prompt.includes("PLAN_QUESTION") ? [{ text: "Should greetings be capitalized throughout the spec?", options: ["Yes", "No"] }] : [],
@@ -147,6 +159,16 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
       : { verdict: "FAIL", criteria: [{ criterion: "the page loads", met: false, evidence: `HTTP ${status} from ${url}` }], reasons: [`app answered ${status} at ${url}`], suggestions: [], findings: [`app answered ${status} at ${url}`] }, "Validated in the browser.");
   }
 } else if (prompt.includes("You are the VALIDATOR")) {
+  // TASK-22 (REQ-VAL-11): a diff that adds RULE_BROKEN breaks the project rule that names it; quote that rule.
+  const diffPart = prompt.split("## Diff against")[1] ?? "";
+  const rulesPart = (prompt.split("\n## Project rules\n")[1] ?? "").split("\n## ")[0];
+  const rule = rulesPart.split("\n").find((l) => l.includes("RULE_BROKEN") && !l.startsWith("###"));
+  if (diffPart.includes("+OK RULE_BROKEN") && rule) {
+    tool("Bash", { command: "cat AGENTS.md" }, rule);
+    finish({ verdict: "FAIL", criteria: [], reasons: [`breaks project rule "${rule.replace(/^\s*[-*]\s+/, "").trim()}": impl/${taskKey}.txt contains RULE_BROKEN`], suggestions: [] }, "Rejected: a project rule is broken.");
+    await new Promise((r) => process.stdout.write("", r)); // flush before exiting
+    process.exit(0);
+  }
   const diffBad = prompt.includes("NEEDS_REVIEW");
   // REQ-VAL-05: report orch's out-of-scope list as findings; they never turn a PASS into a FAIL.
   const scopeSection = (prompt.split("## Changed files outside the owned files")[1] || "").split("\n## ")[0];
@@ -191,6 +213,8 @@ if (prompt.includes("You are the PLANNER") && prompt.includes("PLANNER_FAIL")) {
     if (prompt.includes("CI_TRAP") && !retry) content = "OK CIFAIL";
     if (retry && prompt.includes("the reviewer")) content = "OK reviewed";
     if (retry && prompt.includes("trailing note")) content = "OK note";
+    // "\n## Brief\n" (not "## Brief", which "### Brief: tasks/<key>.md" also contains).
+    if (!retry && (prompt.split("\n## Brief\n")[1] ?? "").split("\n## ")[0].includes("BREAK_RULE")) content = "OK RULE_BROKEN";
     if (key === "T002") {
       const ans = (prompt.match(/A: (\w+)/) || [])[1] || "unknown";
       content = `OK greeting=${ans}`;
