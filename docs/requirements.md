@@ -396,8 +396,8 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | :--- | :--- | :--- |
 | REQ-SPEC-01 | The repository MUST ship a skill (`skills/orch-spec/`) with three modes: project (writes the project record: rules file, requirements with REQ IDs, architecture, decision records, roadmap), feature (writes a feature folder conforming to the brief contract in architecture §6, with the current `orch` brief version), and fold-back (updates the project record and briefs from a completed run's inbox item). | built (TASK-19) |
 | REQ-SPEC-02 | In feature mode the skill MUST apply orch's execution rules: tests in the same task as their code and no task that ends with failing tests; fixtures-first tasks ship skipped tests; parallel tasks share no target files; briefs within `handoff.briefChars`; every MUST requirement the feature covers appears in a brief; no unresolved markers. | built (TASK-19) |
-| REQ-SPEC-03 | The skill MUST include a check script that verifies a feature folder against the brief contract (frontmatter fields, links, sizes, markers, coverage, parallel overlap), and `orch plan --dry-run` MUST accept any folder the check script passes without warnings. | built (TASK-19: check script; TASK-20: `--dry-run` reports the same problems) |
-| REQ-SPEC-04 | An adopt mode MUST turn an existing Spec Kit feature folder into briefs without changing `tasks.md` task keys or tick state. | built (TASK-19) |
+| REQ-SPEC-03 | The skill MUST include a check script that verifies a feature folder against the brief contract (frontmatter fields, links, sizes, markers, coverage, parallel overlap), and `orch plan --dry-run` MUST accept any folder the check script passes without warnings. | built (TASK-19: check script; TASK-20: `--dry-run` reports the same problems; TASK-26: both checkers cross-checked on every fixture) |
+| REQ-SPEC-04 | An adopt mode MUST turn an existing Spec Kit feature folder into briefs without changing `tasks.md` task keys or tick state. | built (TASK-19; real run TASK-26) |
 
 **Edge cases:**
 - The project already has `CLAUDE.md` → the skill merges the doc map into it and never overwrites it.
@@ -407,7 +407,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 **Acceptance criteria:**
 - `REQ-SPEC-03`: Given the fixture folder `test/fixtures/spec-dir/full/`, Then the check script passes and `orch plan --dry-run` shows no warnings. Given `test/fixtures/spec-dir/bad/`, Then both report the same four problems (marker, parallel overlap, oversized brief, test-only task).
 - `REQ-SPEC-04`: Given a Spec Kit folder with T001–T004 and T001 ticked, When adopted, Then `tasks.md` has the same four keys, T001 still ticked, and `tasks/T00N.md` exists for each.
-- `REQ-SPEC-01`, `REQ-SPEC-02`: manual. One real run per mode, recorded in the PR of TASK-19. Done 2026-11-08 (project and feature mode on a scratch repo; fold-back and adopt wait for a real run once TASK-23 ships the inbox item). The check-script half of `REQ-SPEC-03` and the scaffold half of `REQ-SPEC-04` are automated in `test/unit/check-feature.test.mjs`.
+- `REQ-SPEC-01`, `REQ-SPEC-02`: manual. One real run per mode, recorded in the PR of TASK-19. Done 2026-11-08 (project and feature mode on a scratch repo), 2026-11-09 for fold-back (TASK-23) and adopt (TASK-26, on a copy of the `speckit` fixture). The check-script half of `REQ-SPEC-03` and the scaffold half of `REQ-SPEC-04` are automated in `test/unit/check-feature.test.mjs`, which also cross-checks the script against orch's own checks on every fixture folder.
 
 ## 6. Non-Functional Requirements
 | ID | Category | Requirement | How Verified |

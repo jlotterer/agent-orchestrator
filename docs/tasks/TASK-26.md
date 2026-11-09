@@ -1,5 +1,5 @@
 # TASK-26: orch-spec follow-ups: align the check script with orch, cross-check them, run adopt mode for real
-**Status:** todo · **Wave:** 15 · **Depends on:** TASK-19, TASK-20 · **Parallel:** Yes
+**Status:** done · **Wave:** 15 · **Depends on:** TASK-19, TASK-20 · **Parallel:** Yes
 
 ## Goal
 The skill's `check-feature.mjs` and orch's `src/core/brief.ts` implement the same folder checks (architecture §6.4) in two places, because the skill must run dependency-free from `~/.claude/skills`. Today they agree on every fixture, but two differences were found in the TASK-19 review, and nothing would catch future drift. After this task the two checkers are proven identical on every fixture by a test, the skill reports exactly what `orch plan --dry-run` reports, and adopt mode has had its real run.

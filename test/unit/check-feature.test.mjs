@@ -136,7 +136,7 @@ describe("check-feature rules beyond the fixtures (direct calls)", () => {
     edit(d, "contracts/auth-api.md", (t) => t + "\nTODO: rate limits\n");
     const got = rules(d).filter(([r]) => r === "marker").map(([, f, , m]) => [f, m]);
     assert.deepEqual(got, [
-      ["tasks/T001.md", 'unresolved marker "NEEDS CLARIFICATION"'],
+      ["tasks/T001.md", 'unresolved marker "[NEEDS CLARIFICATION"'],
       ["tasks/T001.md", 'unresolved marker "TODO"'],
       ["contracts/auth-api.md", 'unresolved marker "TODO"'],
     ]);
@@ -146,6 +146,9 @@ describe("check-feature rules beyond the fixtures (direct calls)", () => {
     const d = copyFixture("full");
     const got = rules(d, { briefChars: 2000, contractChars: 1000, totalChars: 4000 });
     assert.ok(got.some(([r, f, l, m]) => r === "brief-size" && f === "tasks/T003.md" && l === 1 && m === "brief is 2222 characters; handoff.briefChars is 2000"));
+    const size = checkFeature(d, { requirementsText: reqText, briefChars: 2000 }).find((p) => p.rule === "brief-size" && p.file === "tasks/T003.md");
+    assert.equal(size.chars, 2222, "--json carries chars as orch does");
+    assert.equal(size.limit, 2000, "--json carries limit as orch does");
     assert.ok(got.some(([r, f, , m]) => r === "contract-size" && f === "contracts/auth-api.md" && /1112 characters; handoff.contractChars is 1000/.test(m)));
     assert.ok(got.some(([r, f, l, m]) => r === "total-size" && f === "tasks/T003.md" && l === 1 && /total 4734 characters; keep the total under 4000/.test(m)));
     assert.equal(rules(d).length, 0, "defaults: full is clean");
@@ -155,7 +158,7 @@ describe("check-feature rules beyond the fixtures (direct calls)", () => {
     const d = copyFixture("full");
     edit(d, "tasks/T003.md", (t) => t.replace("- src/auth/refresh.ts", "- src/auth/pages/*"));
     let got = rules(d).filter(([r]) => r === "parallel-overlap").map(([, f, l, m]) => [f, l, m]);
-    assert.deepEqual(got, [["tasks/T003.md", 22, "T002 and T003 are both parallel and T003's src/auth/pages/* overlaps T002's src/auth/pages/login.html"]]);
+    assert.deepEqual(got, [["tasks/T003.md", 22, "T002 and T003 are both parallel and T002's src/auth/pages/login.html overlaps src/auth/pages/*"]]);
     edit(d, "tasks/T003.md", (t) => t.replace("parallel: true", "parallel: false"));
     assert.equal(rules(d).filter(([r]) => r === "parallel-overlap").length, 0, "brief parallel: false wins over [P]");
     // T001 owns fixtures + a test: not test-only.
@@ -203,11 +206,20 @@ describe("scaffold-briefs.mjs (adopt mode, REQ-SPEC-04)", () => {
     assert.match(fm("T003"), /depends_on: \[T001\]\nparallel: true/);
     assert.match(fm("T004"), /depends_on: \[T001\]\nparallel: true/);
     assert.match(fs.readFileSync(path.join(d, "tasks/T003.md"), "utf8"), /^# T003: Login and logout endpoints per contracts\/one.md in src\/auth\/routes.ts$/m);
-    // A skeleton is not a finished brief: the check fails it on the empty sections and the missing Covers list, nothing else.
+    // A skeleton is not a finished brief: the check fails it on the empty sections, nothing else. Without a
+    // requirements file (--no-requirements) and with nothing cited, a missing "## Covers" is not reported.
     const rules = new Set(checkFeature(d, { noRequirements: true }).map((p) => p.rule));
-    assert.deepEqual([...rules].sort(), ["coverage", "sections"]); // coverage: a Spec Kit spec.md has no "## Covers" yet
-    // Running again writes nothing and changes nothing.
-    assert.equal(run(SCAFFOLD, d).out, "");
+    assert.deepEqual([...rules].sort(), ["sections"]);
+    // With a requirements file the missing Covers list is reported.
+    const withReqs = new Set(checkFeature(d, { requirementsText: fs.readFileSync(REQS, "utf8") }).map((p) => p.rule));
+    assert.deepEqual([...withReqs].sort(), ["coverage", "sections"]);
+    assert.match(fs.readFileSync(path.join(d, "tasks/T002.md"), "utf8"), /## Contracts\n<!-- orch-spec: one bullet per interface/);
+    // Running again writes nothing and changes nothing, and says why instead of staying silent.
+    const again = run(SCAFFOLD, d);
+    assert.equal(again.code, 1);
+    assert.equal(again.out, "");
+    assert.match(again.err, /^nothing to scaffold: every task in tasks\.md already has a brief in .*tasks; edit those briefs instead$/);
+    assert.ok(before.equals(fs.readFileSync(path.join(d, "tasks.md"))), "tasks.md still unchanged");
   });
 
   test("--dry-run writes nothing", () => {
@@ -239,5 +251,72 @@ describe("check-project.mjs (project record)", () => {
       "docs/requirements.md:7: REQ-A-03 (MUST) is covered by no roadmap feature",
       "docs/roadmap.md:4: REQ-A-02 is not defined in docs/requirements.md",
     ]);
+  });
+});
+
+// TASK-26: the skill's checker and orch's (src/core/brief.ts) implement the same §6.4 checks in two places. This proves
+// they agree on every fixture folder for the rules both implement. Skipped (not failed) without a build, so the skill's
+// own tests above still run on a fresh checkout.
+const BRIEF_JS = path.join(ROOT, "dist/core/brief.js");
+const SPECKIT_JS = path.join(ROOT, "dist/speckit.js");
+const haveDist = fs.existsSync(BRIEF_JS) && fs.existsSync(SPECKIT_JS);
+const SHARED_RULES = new Set(["marker", "version", "parallel-overlap", "brief-size", "test-only"]);
+
+describe("cross-check: check-feature.mjs and orch's readFeature report the same problems", { skip: haveDist ? false : "dist/ not built" }, () => {
+  const fields = ({ kind, rule, file, line, message }) => ({ kind, rule, file, line, message });
+  const orchProblems = async (dir) => {
+    const { readFeature } = await import(`file://${BRIEF_JS.replace(/\\/g, "/")}`);
+    const { readSpecDir, parseTasksMd } = await import(`file://${SPECKIT_JS.replace(/\\/g, "/")}`);
+    const { files } = readSpecDir(dir);
+    return readFeature(files, parseTasksMd(files["tasks.md"] ?? ""), { briefChars: 8000 }).problems.map(fields);
+  };
+  const skillProblems = (dir) => checkFeature(dir, { noRequirements: true }).filter((p) => SHARED_RULES.has(p.rule)).map(fields);
+  const write = (dir, rel, text) => fs.writeFileSync(path.join(dir, rel), text);
+  const edit = (dir, rel, fn) => write(dir, rel, fn(fs.readFileSync(path.join(dir, rel), "utf8")));
+
+  const folders = fs.readdirSync(FIXTURES).filter((f) => f.endsWith(".expected.json")).map((f) => f.replace(/\.expected\.json$/, "")).sort();
+  test("every fixture folder is cross-checked", () => assert.deepEqual(folders, ["bad", "full", "nocriteria", "speckit", "version"]));
+  for (const folder of folders) {
+    test(`${folder}: identical [{kind, rule, file, line, message}]`, async () => {
+      const dir = path.join(FIXTURES, folder);
+      const orch = await orchProblems(dir);
+      assert.deepEqual(orch, expected(folder).problems.map(fields), "orch matches its fixture");
+      assert.deepEqual(skillProblems(dir), orch);
+    });
+  }
+
+  test("a later-phase [P] task sharing a file with an earlier-phase [P] task warns in neither checker", async () => {
+    const d = copyFixture("full");
+    // T003 moves to its own phase after T002; both stay [P]; T003 also lists T002's routes.ts. Earlier phases are
+    // dependencies (REQ-INTAKE-02), so T003 depends on T002 and the pair is not parallel.
+    edit(d, "tasks.md", (t) => t.replace(/- \[ \] T003 \[P\] Session refresh near expiry\r?\n/, "")
+      .replace("- [ ] T004 [P]", "\n## Phase 3: Refresh\n- [ ] T003 [P] Session refresh near expiry\n- [ ] T004 [P]"));
+    edit(d, "tasks/T003.md", (t) => t.replace(/- src\/auth\/refresh\.ts\r?\n/, "- src/auth/refresh.ts\n- src/auth/routes.ts\n"));
+    assert.match(fs.readFileSync(path.join(d, "tasks.md"), "utf8"), /## Phase 3: Refresh\n- \[ \] T003 \[P\]/);
+    assert.deepEqual(await orchProblems(d), []);
+    assert.deepEqual(skillProblems(d), []);
+  });
+
+  test("a brief depends_on naming the other parallel task warns in neither checker; without it both warn alike", async () => {
+    const d = copyFixture("full");
+    edit(d, "tasks/T003.md", (t) => t.replace(/- src\/auth\/refresh\.ts\r?\n/, "- src/auth/refresh.ts\n- src/auth/routes.ts\n- src/auth/pages/*\n"));
+    const both = await orchProblems(d);
+    assert.deepEqual(both.map((p) => p.message), [
+      "T002 and T003 are both parallel and both list src/auth/routes.ts",
+      "T002 and T003 are both parallel and T002's src/auth/pages/login.html overlaps src/auth/pages/*",
+    ]);
+    assert.deepEqual(skillProblems(d), both);
+    edit(d, "tasks/T003.md", (t) => t.replace("depends_on: [T001]", "depends_on: [T001, T002]"));
+    assert.deepEqual(await orchProblems(d), []);
+    assert.deepEqual(skillProblems(d), []);
+  });
+
+  test("markers and a missing orch: key read the same in both", async () => {
+    const d = copyFixture("full");
+    edit(d, "tasks/T001.md", (t) => t + "\nStill [NEEDS CLARIFICATION: which store?]\n");
+    edit(d, "tasks/T002.md", (t) => t.replace(/orch: 1\r?\n/, ""));
+    const orch = await orchProblems(d);
+    assert.deepEqual(orch.map((p) => p.rule).sort(), ["marker", "version"]);
+    assert.deepEqual(skillProblems(d), orch);
   });
 });

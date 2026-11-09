@@ -11,8 +11,9 @@
  * sections with an `<!-- orch-spec: … -->` note on what to write. The skeleton is not a finished brief:
  * check-feature.mjs fails it until the acceptance criteria and target files are filled in, which is the point.
  *
- * Prints one line per brief written (`wrote tasks/T003.md`); nothing when every task already has one. Exit 2 when
- * the folder or tasks.md is missing.
+ * Prints one line per brief written (`wrote tasks/T003.md`). When every task already has a brief there is nothing to
+ * adopt: it says so on stderr and exits 1, so a second run is never mistaken for a silent success. Exit 2 when the
+ * folder or tasks.md is missing.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -42,7 +43,7 @@ ${task.description}
 <!-- orch-spec: one path per bullet; parallel tasks must not share any. -->
 
 ## Contracts
-None.
+<!-- orch-spec: one bullet per interface this task shares with another: "<Name> (spec.md §Contracts)" or "contracts/<file>.md"; write "None." when it shares none. -->
 
 ## Out of scope
 <!-- orch-spec: what neighbouring tasks own, so this worker does not build it. -->
@@ -55,6 +56,7 @@ None.
 export function scaffold(folder, { dryRun = false } = {}) {
   const feature = readFeature(folder);
   if (feature.files["tasks.md"] === undefined) throw new Error(`tasks.md not found in ${feature.dir}`);
+  if (!feature.tasks.length) throw new Error(`no tasks found in ${path.join(feature.dir, "tasks.md")} (expected lines like \`- [ ] T001 Title\`)`);
   const written = [];
   const dir = path.join(feature.dir, "tasks");
   for (const t of feature.tasks) {
@@ -71,7 +73,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const dryRun = args.includes("--dry-run");
   const folder = args.find((a) => !a.startsWith("--"));
   if (!folder) { console.error("usage: scaffold-briefs.mjs <folder> [--dry-run]"); process.exit(2); }
-  try {
-    for (const rel of scaffold(folder, { dryRun })) console.log(`${dryRun ? "would write" : "wrote"} ${rel}`);
-  } catch (e) { console.error(e.message); process.exit(2); }
+  let written;
+  try { written = scaffold(folder, { dryRun }); } catch (e) { console.error(e.message); process.exit(2); }
+  if (!written.length) {
+    console.error(`nothing to scaffold: every task in tasks.md already has a brief in ${path.join(path.resolve(folder), "tasks")}; edit those briefs instead`);
+    process.exit(1);
+  }
+  for (const rel of written) console.log(`${dryRun ? "would write" : "wrote"} ${rel}`);
 }
