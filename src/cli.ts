@@ -76,8 +76,9 @@ async function api(method: string, p: string, body?: any): Promise<any> {
   let r: Response;
   try {
     r = await fetch(base + p, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  } catch {
-    throw new Error(`cannot reach orch at ${base} (is \`orch serve\` running?)`);
+  } catch (e) {
+    const why = (e as any)?.cause?.message ?? (e as Error)?.message ?? String(e);
+    throw new Error(`cannot reach orch at ${base}: ${why} (is \`orch serve\` running?)`);
   }
   const j: any = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error ?? `${r.status} ${r.statusText}`);

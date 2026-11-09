@@ -157,7 +157,7 @@ docker compose exec orch orch status
 docker compose exec orch orch approve && docker compose exec orch orch run
 ```
 
-Or alias it: `alias orch='docker compose -f ~/orch/docker-compose.yml exec orch orch'`.
+Or alias it: `alias orch='docker exec orch orch'` (the container is named `orch`). Prefer `docker exec` over `docker compose exec` for the alias: if a `docker compose run` container from a sign-in step is still running, `compose exec` may run the command there, where no server is listening.
 
 To add another repo, clone it under `work/repos/` and register it by its path inside the container:
 `docker compose exec orch orch project add /work/repos/otherapp`. `docker compose exec` starts in

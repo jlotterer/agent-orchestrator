@@ -332,6 +332,12 @@ docker compose logs -f orch
 
 Check the log for errors. Press **Ctrl+C** to stop following the log. orch keeps running.
 
+The server needs up to 10 seconds to start. An `orch` command run before that fails with `cannot reach orch at http://127.0.0.1:4800`. To wait for it:
+
+```bash
+until docker compose ps orch | grep -q "(healthy)"; do sleep 2; done
+```
+
 ### Check the health endpoint
 
 ```bash
@@ -367,12 +373,12 @@ If the project switcher shows **No projects**, see [The project is missing after
 ### Add a shortcut for the orch command
 
 ```bash
-echo "alias orch='docker compose -f /home/jeffrey/docker/orch/docker-compose.yml exec orch orch'" >> ~/.bashrc
+echo "alias orch='docker exec orch orch'" >> ~/.bashrc
 source ~/.bashrc
 orch status
 ```
 
-The alias runs `orch` inside the container, where the access token is already set.
+The alias runs `orch` inside the container, where the access token is already set. It uses `docker exec` with the container name `orch` on purpose: `docker compose exec` can land in a leftover container from an earlier `docker compose run`, where no server is listening.
 
 ## Run your first plan for screen_copier
 
@@ -400,7 +406,7 @@ orch needs a spec folder with a `tasks.md` in the project.
 1. Pull the spec onto the server:
 
    ```bash
-   docker compose -f /home/jeffrey/docker/orch/docker-compose.yml exec orch git -C /work/repos/screen_copier pull
+   docker exec orch git -C /work/repos/screen_copier pull
    ```
 
 2. Preview the plan, and check the phases, tasks, and dependencies:
@@ -502,7 +508,7 @@ Each task opens a pull request on GitHub. Review and merge them as they arrive, 
 | Start orch | `cd /home/jeffrey/docker/orch && docker compose up -d` |
 | Follow the log | `cd /home/jeffrey/docker/orch && docker compose logs -f orch` |
 | Apply a change to `work/server.json` | `cd /home/jeffrey/docker/orch && docker compose restart` |
-| Pull a repo | `docker compose -f /home/jeffrey/docker/orch/docker-compose.yml exec orch git -C /work/repos/<name> pull` |
+| Pull a repo | `docker exec orch git -C /work/repos/<name> pull` |
 
 ## Where settings live
 
@@ -574,6 +580,24 @@ Then create `work/repos/<repo>/orch.config.json` with at least `validation.comma
    ```
 
    If they don't, see the next section.
+
+### orch commands say "cannot reach orch at http://127.0.0.1:4800"
+
+The dashboard works, `docker compose ps` says `(healthy)`, but every `orch` command fails with that error. A container from an earlier `docker compose run` (for example a Claude or Gemini sign-in that was never closed) is still running, and `docker compose exec` ran your command in it instead of in the server container. `docker compose down` also warns `Network orch_default Resource is still in use` in that case.
+
+1. List the containers of the project:
+
+   ```bash
+   docker ps --filter label=com.docker.compose.project=orch --format "table {{.Names}}\t{{.Status}}\t{{.Command}}"
+   ```
+
+2. Remove every container other than `orch`:
+
+   ```bash
+   docker rm -f <name>
+   ```
+
+3. Run the `orch` command again. The alias in this guide uses `docker exec orch`, which always targets the server container, so this only happens with `docker compose exec`.
 
 ### The server settings are missing or wrong
 
