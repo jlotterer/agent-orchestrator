@@ -52,7 +52,9 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 - [ ] T021 [P] Context assembly with per-part budgets. Brief: docs/tasks/TASK-21.md.
 
 ## Phase 15: Wave 15
+- [ ] T025 Make e2e-phase scenario (d) deterministic. Brief: docs/tasks/TASK-25.md.
 - [ ] T022 Plan from briefs; rules and contracts for every agent. Brief: docs/tasks/TASK-22.md.
+- [ ] T026 [P] orch-spec follow-ups: overlap rule, cross-check test, adopt real run. Brief: docs/tasks/TASK-26.md.
 
 ## Phase 16: Wave 16
 - [ ] T023 "Update project docs" inbox item at the end of a run. Brief: docs/tasks/TASK-23.md.

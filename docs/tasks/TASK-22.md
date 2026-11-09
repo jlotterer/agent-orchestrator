@@ -13,6 +13,7 @@ REQ-INTAKE-11 (plan values), REQ-INTAKE-12, REQ-INTAKE-14 (decisions at plan tim
 - [architecture.md §6](../architecture.md#6-spec-intake--planner), [§9](../architecture.md#9-worker--hand-off-brief), [§10](../architecture.md#10-validation)
 - [decisions/0001](../decisions/0001-deterministic-orchestrator.md), [0004](../decisions/0004-independent-validation.md), [0023](../decisions/0023-orch-owns-spec-skill.md)
 - `src/orchestrator.ts`: `plan*`, `specContext`, the worker, validator and phase-validator prompt assembly; `prompts/*.md`; `scripts/lib/e2e.mjs`, `scripts/fake-agent.mjs`, `scripts/e2e.mjs`
+- `skills/README.md` and `skills/orch-spec/SKILL.md` (TASK-19): what the skill tells owners `orch plan` does with briefs; the README "Writing specs" section and the user guide must agree with the code after this task
 
 ## Scope
 - `src/orchestrator.ts`:
@@ -24,6 +25,8 @@ REQ-INTAKE-11 (plan values), REQ-INTAKE-12, REQ-INTAKE-14 (decisions at plan tim
 - `src/server.ts`: `review` and `allowOpen` on the plan endpoint.
 - `scripts/e2e-briefs.mjs` (new, via `scripts/lib/e2e.mjs`): runs `test/fixtures/spec-dir/full` with fake agents: asserts no planner call without `--review`, one planner call when a brief is removed, the worker prompt order (brief, REQ rows, contract, rules), validator prompt containing the brief and not the worker log, and a `fake-agent.mjs` marker that makes the validator reject with a quoted rule and the feedback carrying it. Add to `npm run test:e2e`.
 - One real run (prompts are product): record it in the PR.
+- Docs that TASK-19 left pointing at this task: remove the sentence in README "Writing specs" and in `docs/user-guide/feature-status.md` saying the planner still writes the criteria until planning from briefs ships; move the "Task briefs", "Planning without an agent", "More context for agents" and "Validation against project rules" rows of feature-status from "Coming later" to the shipped table; `docs/requirements.md` status column for REQ-INTAKE-11, -12, -14, REQ-WORK-09, -10, -11, REQ-VAL-10, -11 → `built (TASK-22)`.
+- Warnings recorded at plan time come from `checkFeature` in `src/core/brief.ts`; do not add a second rule set here. The skill's script is kept at least as strict by TASK-26.
 
 ## Out of scope
 The end-of-run inbox item (TASK-23). The user guide page (TASK-24). Dashboard changes beyond showing planner-skipped decisions as they already appear.
