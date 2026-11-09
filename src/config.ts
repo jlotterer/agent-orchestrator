@@ -105,13 +105,26 @@ export interface Config {
     };
   };
 
+  /** Budgets and sources of the context each agent receives (architecture §6.4, §9). Every part is clipped on its own. */
   handoff: {
-    /** Max characters of the spec/plan excerpt given to each worker. */
+    /** Max characters of each spec file given to a worker without a brief (one budget per file, so a long plan.md never cuts spec.md). */
     specChars: number;
-    /** Max characters of prior-task summaries given to each worker. */
+    /** Max characters of prior-task summaries, decisions and answers given to each worker. */
     historyChars: number;
-    /** Files from the spec dir to include in worker context, in order. */
+    /** Spec files that come first, in this order, when a task has no brief; the folder's other *.md and contracts/* follow. */
     contextFiles: string[];
+    /** Max characters of a task's brief (tasks/<key>.md). Over budget: clipped with a marker, and a decision records the cut. */
+    briefChars: number;
+    /** Max characters of the requirement rows and acceptance criteria for the REQ IDs a brief cites. */
+    reqChars: number;
+    /** Max characters of each contract a brief names (a spec.md section or a contracts/* file). */
+    contractChars: number;
+    /** Max characters of each project rules file. */
+    rulesChars: number;
+    /** The project's requirements file, relative to the repo; cited REQ rows are taken from it. Missing rows are noted, not errors. */
+    requirementsFile: string;
+    /** Project rules files, relative to the repo, given to every agent when present. Absent files are skipped. */
+    projectFiles: string[];
   };
 
   notify: {
@@ -190,7 +203,13 @@ export const DEFAULT_CONFIG: Config = {
   handoff: {
     specChars: 12000,
     historyChars: 6000,
-    contextFiles: ["plan.md", "spec.md"],
+    contextFiles: ["spec.md", "data-model.md", "plan.md"],
+    briefChars: 8000,
+    reqChars: 4000,
+    contractChars: 6000,
+    rulesChars: 6000,
+    requirementsFile: "docs/requirements.md",
+    projectFiles: ["AGENTS.md"],
   },
   notify: {
     ntfyUrl: "",

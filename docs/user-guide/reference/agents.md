@@ -7,7 +7,7 @@ This page describes what each agent role receives, what it can do while it works
 | Role | Receives | Doesn't receive |
 | :--- | :--- | :--- |
 | Planner | The feature title, every file in the feature folder except `tasks.md` (up to twice `handoff.specChars`), and the imported task list. | Not applicable |
-| Worker | The task's key, title, description and acceptance criteria; an excerpt of `plan.md` and `spec.md` (up to `handoff.specChars`); a hand-off brief; its branch and base branch; the test command; and feedback from a failed attempt, fix round or **Send back**. The files it owns. | Other tasks' sessions |
+| Worker | The task's key, title, description and acceptance criteria; an excerpt of the feature files (`spec.md`, `data-model.md` and `plan.md` by default; set by `handoff.contextFiles`, up to `handoff.specChars`); a hand-off brief; its branch and base branch; the test command; and feedback from a failed attempt, fix round or **Send back**. The files it owns. | Other tasks' sessions |
 | Validator | The task, its acceptance criteria, the worker's summary as claims to check, and the diff against the base branch. The test gate's output. The list of changes outside the task's owned files. The app's address in UI mode. | The worker's reasoning or conversation |
 | Phase validator | The phase's tasks and their summaries, an excerpt of the spec, and the phase test output. | Not applicable |
 

@@ -442,7 +442,7 @@ export class Orchestrator extends EventEmitter {
     let briefChars = DEFAULT_BRIEF_CHARS;
     if (projectId !== undefined) {
       this.requireProject(projectId); // 404 for an unknown project, like the real plan
-      briefChars = (this.context(projectId).cfg.handoff as { briefChars?: number }).briefChars ?? DEFAULT_BRIEF_CHARS;
+      briefChars = this.context(projectId).cfg.handoff.briefChars;
     }
     const spec = readSpecDir(specDir);
     const { feature } = importFeature(spec, { briefChars });

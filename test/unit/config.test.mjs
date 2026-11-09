@@ -170,7 +170,11 @@ describe("loadProjectConfig", () => {
     assert.deepStrictEqual(config.scheduler, { maxParallel: 1, maxAttempts: 2, resumeOnRetry: true });
     assert.deepStrictEqual(config.validation.phase, { enabled: true, command: "", maxFixups: 2 });
     assert.deepStrictEqual(config.validation.ui, { startCommand: "", url: "http://127.0.0.1:{port}/", readyTimeoutSeconds: 120, env: {} });
-    assert.deepStrictEqual(config.handoff, { specChars: 12000, historyChars: 6000, contextFiles: ["plan.md", "spec.md"] });
+    assert.deepStrictEqual(config.handoff, {
+      specChars: 12000, historyChars: 6000, contextFiles: ["spec.md", "data-model.md", "plan.md"],
+      briefChars: 8000, reqChars: 4000, contractChars: 6000, rulesChars: 6000,
+      requirementsFile: "docs/requirements.md", projectFiles: ["AGENTS.md"],
+    });
   });
 
   test("name defaults to the repo directory name", () => {
