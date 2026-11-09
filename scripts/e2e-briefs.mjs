@@ -212,7 +212,7 @@ const scenarios = {
     const w1 = of("worker", "T001");
     assert(w1.length === 2, `T001 worker ran ${w1.length} times, expected 2 (rule broken once)`);
     inOrder(w1[0].text, ["## Brief", "### Brief: tasks/T001.md", "BREAK_RULE", "## Requirements covered", "### Requirements: REQ-AUTH-01 (docs/requirements.md)", "| REQ-AUTH-01 |",
-      "## Contracts", "### Contract: SessionStore (spec.md)", "export interface SessionStore", "## Project rules", "### Rules: AGENTS.md", RULE, "## Hand-off from earlier tasks"], "T001 worker prompt");
+      "## Named contracts (full text)", "### Contract: SessionStore (spec.md)", "export interface SessionStore", "## Project rules", "### Rules: AGENTS.md", RULE, "## Hand-off from earlier tasks"], "T001 worker prompt");
     assert(!w1[0].text.includes("## Project context (from the spec)"), "a task with a brief also got the spec excerpt");
     assert(w1[0].text.includes("… (truncated, "), "T001's brief over briefChars has no cut marker");
     assert(decided(s, "T001: brief cut from ").some((d) => /to 1800 characters \(handoff\.briefChars\)$/.test(d.text)), "the cut is not a decision");
