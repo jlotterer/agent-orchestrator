@@ -1,5 +1,5 @@
 # TASK-25: Make phase e2e scenario (d) deterministic
-**Status:** todo · **Wave:** 15 · **Depends on:** — · **Parallel:** No (run it before TASK-22 if the fix touches `src/orchestrator.ts`)
+**Status:** done (2026-11-09; cause: test timing, kill before the worker's first commit; see the PR) · **Wave:** 15 · **Depends on:** — · **Parallel:** No (run it before TASK-22 if the fix touches `src/orchestrator.ts`)
 
 ## Goal
 CI on `main` is green on every run again. `scripts/e2e-phase.mjs` scenario (d), "a run in flight across the upgrade", times out intermittently ("timed out after 120000ms waiting for run done after the upgrade") when it runs last in the `npm test` chain, on GitHub Actions and in the `node:22` container, while it passes every time in isolation. The flake has been red on `main` since at least commit `3bf3c80` (before TASK-19/20/21) and hides any new failure behind it. Either the scenario is timing-fragile and must wait on the right signal, or the post-restart recovery path is slow under load and that is a product defect; this task finds out which and fixes it.
