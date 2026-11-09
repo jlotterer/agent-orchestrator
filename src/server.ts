@@ -80,6 +80,9 @@ export function startServer(orch: Orchestrator) {
   route("POST", "/api/start", () => { orch.start(); return { ok: true }; });
   route("POST", "/api/pause", () => { orch.pause(); return { ok: true }; });
   route("POST", "/api/stop", () => { orch.stop(); return { ok: true }; });
+  // REQ-HITL-08: a finished run's "Update project docs" item (lists + Copy text) and its acknowledgement.
+  route("GET", "/api/runs/:id/docs-update", (_r, _s, p) => orch.docsUpdate(p.id));
+  route("POST", "/api/runs/:id/docs-update/ack", (_r, _s, p) => orch.ackDocsUpdate(p.id));
 
   // ---- task control ----
   route("POST", "/api/tasks/:id/retry", async (_r, _s, p) => { await orch.retryTask(p.id); return { ok: true }; });

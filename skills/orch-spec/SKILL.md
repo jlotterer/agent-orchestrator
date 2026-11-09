@@ -123,13 +123,28 @@ Then run `node <skill_dir>/scripts/check-feature.mjs specs/NNN-<name>` and fix e
 Finish by telling the user: `git add specs/NNN-<name> docs/roadmap.md && git commit` on the base branch, then `orch plan specs/NNN-<name> --dry-run`.
 
 ### Fold-back mode
-Input: the pasted **Update project docs** inbox item (REQ IDs cited by merged tasks, decisions recorded during the run, plan edits made in the dashboard, contracts named by merged tasks), plus the feature folder and the merged code. Steps:
-1. **Statuses.** For each cited REQ ID whose tasks merged, set the Status cell in `docs/requirements.md` to `built (FNN)`. A REQ whose task was skipped or failed stays `new`; say so.
-2. **Decisions.** For each run decision that is project-level (a stack, layout, contract or scope choice an agent might later reverse), write `docs/decisions/NNNN-*.md` from the template and add it to the index. If it reverses an existing record, add the new one and set the old one's status to `Superseded by NNNN`. Task-local decisions (a variable name, a test layout) are not recorded.
-3. **Plan edits.** Carry each dashboard edit (criteria, dependencies, merge policy, validation mode) into the task's brief so the folder matches what actually ran. Never change `tasks.md` keys or ticks.
-4. **Contracts.** Where a named contract changed in code, update the `(→ code)` section of `docs/architecture.md` to a summary plus a link to the file; the code is now the source of truth.
-5. **Rules.** If a rule in `AGENTS.md` was broken and the owner accepted it, change the rule; if a new rule emerged (a decision says "never again"), add it.
-6. **Roadmap.** Set the feature's Status to `built`.
+Input: the pasted **Update project docs** inbox item (its **Copy** button, or `orch docs-update`), plus the feature folder and the merged code. The text has this shape; an empty list says `none`:
+```text
+Update project docs: <project> <run title>
+Feature folder: specs/NNN-name
+
+## REQ IDs
+- REQ-AUTH-01 (T001)
+- REQ-AUTH-04 (T003; not merged: T004 skipped)
+## Decisions
+- worker T001: Used a plain text file — why: the spec does not require a format
+## Plan edits
+- T002: merge_policy = "manual"
+## Contracts
+- SessionStore (T001, T003)
+```
+**REQ IDs** are the ones cited by merged tasks, each with those tasks; `not merged:` names tasks of the run that cite it and did not merge, with their status (`skipped`, `failed`). **Decisions** are the planner's and workers', with the rationale after `— why:`; the item does not say which are project-level, so judge it (step 2). **Plan edits** are the owner's dashboard edits with the new values. **Contracts** are the names merged tasks' briefs give: a `### <name>` section under `spec.md`'s `## Contracts`, or a file path in the folder. **FNN** is the roadmap feature whose folder is the `Feature folder` line. Steps:
+1. **Statuses.** For each listed REQ ID, set the Status cell in `docs/requirements.md` to `built (FNN)`, unless it says `not merged:`; then it is only partly built: set the cell to `new (FNN partial: T004 skipped)` so the gap stays in the record. REQ IDs the feature's roadmap row covers but no listed task cites (their tasks were skipped or failed, or no brief cites them) keep their status; name them in the summary.
+2. **Decisions.** For each run decision that is project-level (a stack, layout, contract or scope choice an agent might later reverse), write `docs/decisions/NNNN-*.md` from the template and add it to the index; take the alternatives from the decision's own wording ("X, not Y") and the merged code, and write `[ASSUMED]` where neither says. If it reverses an existing record, add the new one and set the old one's status to `Superseded by NNNN`. Task-local decisions (a variable name, a test layout) get no record, but when one renames or reshapes something that an unmerged task's brief or a `contracts/` file names (a function, a route, a file), update those to what the code has, so a re-planned task does not build against a name that no longer exists.
+3. **Plan edits.** Carry each dashboard edit into the task's brief so the folder matches what actually ran: a scalar (`merge_policy`, `validate_mode`, `validate_cmd`, `max_attempts`) into the frontmatter; `depends_on` and `files_owned` as the complete new list; `acceptance = [...]` is the complete new list of criteria, so replace the `## Acceptance criteria` section with it, verbatim, one bullet each. Then reread the brief's Goal and Notes and fix any sentence the edit made untrue (a dropped criterion they still promise). Never change `tasks.md` keys or ticks.
+4. **Contracts.** For each listed contract, find where the merged code implements it. Shrink its `(→ code)` section in `docs/architecture.md` to a one-paragraph summary plus a link to the file (writing rule 3): the code is now the source of truth. Compare the code with the contract text first: where they differ (an added method, a changed signature), say so in the summary, and update the same contract in `spec.md`'s `## Contracts` section or `contracts/` file only where an unmerged task still relies on it.
+5. **Rules.** If step 4 or a decision shows that a rule in `AGENTS.md` (or a brief's "exactly as written") was broken, ask the owner whether to accept it; if accepted, change the rule. If a decision sets a lasting rule ("never use X", "never again"), add it.
+6. **Roadmap.** Set the feature's Status to `built` only when every task in `tasks.md` is ticked; otherwise keep `running` and name the open tasks in the summary.
 Run `check-project.mjs` and `check-feature.mjs` on the folder; fix what they print. Summarise what moved, and tell the user to commit and acknowledge the inbox item.
 
 ### Adopt mode
@@ -143,12 +158,12 @@ Input: a Spec Kit folder (`spec.md`, `plan.md`, `tasks.md`, maybe `data-model.md
 ## Writing rules (all modes)
 1. **IDs are stable.** `REQ-<DOMAIN>-NN`, never renumbered; retire instead of reusing. RFC 2119 keywords used strictly. Task keys `T001…` are never renumbered or reused.
 2. **Criteria are Given/When/Then with exact values.** "Then the response is 401 `{ "error": "not signed in" }`", not "Then access is denied". Numbers that depend on design defaults go in the brief, not the requirement.
-3. **Code becomes the source of truth for contracts.** Mark contract sections _(→ code)_; fold-back shrinks them to a summary plus a link.
+3. **Code becomes the source of truth for contracts.** Mark contract sections _(→ code)_; fold-back shrinks the ones the merged code implements to a summary plus a link.
 4. **Never pad.** `N/A: <reason>` instead of invented content. Adapt section names to the platform.
 5. **Self-contained briefs.** A worker with only the brief, the cited rows, the named contracts and `AGENTS.md` can finish. Name exported functions, routes, files and the neighbouring tasks' keys. Say what not to touch.
 6. **Append, don't renumber; supersede, don't delete** when extending an existing record.
 
 ## Finishing
 1. Before deleting or overwriting anything, confirm with the user. Outside a Git repository, offer to back up any file you replace.
-2. Ask whether to keep or delete the draft file.
+2. Ask whether to keep or delete the draft file (project and feature modes; fold-back and adopt write none).
 3. Summarise: files written, counts (requirements, decisions, features or tasks), `[ASSUMED]` items worth reviewing, the fixtures-first task and its merge policy, which tasks can run in parallel, which of the **rules you apply without being asked** shaped the result, and the next command (`git commit`, then `orch plan … --dry-run`, or acknowledge the inbox item).

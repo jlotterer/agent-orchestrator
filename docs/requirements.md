@@ -243,7 +243,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-HITL-05 | The decisions log MUST show every decision by planner, worker, validator, orchestrator and owner, in order, with actor, time, task (if any) and rationale. | built |
 | REQ-HITL-06 | Every choice orch makes on its own MUST be recorded as an orchestrator decision. That includes retrying, holding back a task for file overlap, starting a PR fix round, merging, creating a fix-up task, and falling back from the planner. | built (fix-up creation: TASK-15) |
 | REQ-HITL-07 | The owner MUST be able to do the following to a task: retry from scratch, skip, stop, merge now, mark as merged elsewhere, and send it back with written feedback. Each action MUST be recorded as a human decision. | built |
-| REQ-HITL-08 | When a run completes, orch MUST create an inbox item "Update project docs" listing the REQ IDs cited by merged tasks, the decisions recorded during the run, the plan edits the owner made in the dashboard (REQ-INTAKE-09), and the contracts named by merged tasks, and MUST send a notification. The item closes when the owner acknowledges it. | new (TASK-23) |
+| REQ-HITL-08 | When a run completes, orch MUST create an inbox item "Update project docs" listing the REQ IDs cited by merged tasks, the decisions recorded during the run, the plan edits the owner made in the dashboard (REQ-INTAKE-09), and the contracts named by merged tasks, and MUST send a notification. The item closes when the owner acknowledges it. | built (TASK-23: `docs_update` inbox item with Copy and Acknowledge, notification, `orch docs-update [--ack]`) |
 
 **Edge cases:**
 - Notifications are not configured → the inbox still works; nothing else changes.

@@ -61,6 +61,8 @@ export interface Run {
   cost_usd: number | null;     // planner + phase-validator spend (§18); NULL = unknown
   agent_ms: number | null;
   archived_at: string | null;  // when the run's events were archived (§17)
+  docs_update_json: string | null;   // "Update project docs" lists (REQ-HITL-08, core/docsUpdate.ts); NULL = none
+  docs_update_ack_at: string | null; // when the owner acknowledged it; NULL = still in the inbox
 }
 
 export interface Task {
