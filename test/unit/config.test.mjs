@@ -68,7 +68,8 @@ describe("ORCH_HOME paths", () => {
 
   test("projectSlug", () => {
     assert.equal(projectSlug("My App"), "my-app");
-    assert.equal(projectSlug("--Foo_Bar.2--"), "foo-bar-2");
+    assert.equal(projectSlug("--Foo_Bar.2--"), "foo_bar-2");
+    assert.equal(projectSlug("screen_copier"), "screen_copier");
     assert.equal(projectSlug("???"), "project");
   });
 });

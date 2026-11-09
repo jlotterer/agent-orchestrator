@@ -38,9 +38,9 @@ export function runDir(home = orchHome()): string {
   return path.join(home, "run");
 }
 
-/** Project id from a directory name (§5.3): lowercase, runs of other characters become `-`. */
+/** Project id from a directory name (§5.3): lowercase, underscores kept, runs of other characters become `-`. */
 export function projectSlug(name: string): string {
-  const s = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const s = name.toLowerCase().replace(/[^a-z0-9_]+/g, "-").replace(/^-+|-+$/g, "");
   return s || "project";
 }
 

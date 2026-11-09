@@ -28,7 +28,7 @@ export type PhaseStatus = "pending" | "validating" | "passed" | "failed" | "need
 
 /** A registered repository (architecture §5.3). */
 export interface Project {
-  id: string;                  // slug of the repo directory name, `-2`, `-3`… on collision
+  id: string;                  // slug of the repo directory name (lower case, `_` kept, other punctuation → `-`), `-2`, `-3`… on collision
   name: string;
   repo_path: string;           // realpath of the repo root; unique
   archived: boolean;
