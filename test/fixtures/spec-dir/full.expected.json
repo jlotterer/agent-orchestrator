@@ -8,7 +8,7 @@
       "phase": "Phase 1: Foundation",
       "done": false,
       "brief": "tasks/T001.md",
-      "briefChars": 1902,
+      "briefChars": 1936,
       "orch": 1,
       "depends_on": [],
       "parallel": false,
@@ -23,7 +23,10 @@
         "Given the fixture table `test/fixtures/sessions.json`, When the unit tests run, Then every `get` case passes and every `touch` case is reported as skipped, not failed."
       ],
       "cites": ["REQ-AUTH-01"],
-      "contracts": [{ "name": "SessionStore", "resolved": "spec.md#SessionStore" }],
+      "contracts": [
+        { "name": "SessionStore", "resolved": "spec.md#SessionStore" },
+        { "name": "TokenCodec", "resolved": "spec.md#TokenCodec" }
+      ],
       "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "files_owned", "acceptance"],
       "tasksMd": { "parallel": false, "depends_on": [] }
     },
@@ -33,18 +36,19 @@
       "phase": "Phase 2: Core",
       "done": false,
       "brief": "tasks/T002.md",
-      "briefChars": 1862,
+      "briefChars": 2291,
       "orch": 1,
       "depends_on": ["T001"],
       "parallel": true,
       "merge_policy": "manual",
       "validate_mode": "ui",
       "validate_cmd": "npm test -- test/auth/routes",
-      "files_owned": ["src/auth/routes.ts", "src/auth/pages/login.html", "test/auth/routes.test.ts"],
+      "files_owned": ["src/auth/routes.ts", "src/auth/codec.ts", "src/auth/pages/login.html", "test/auth/routes.test.ts"],
       "acceptance": [
         "Given a registered user, When `POST /api/login` is called with the right password, Then the response is 204 and sets an `HttpOnly` `sid` cookie whose value decodes to a session in the store.",
         "Given a wrong password or an unknown user, When `POST /api/login` is called, Then the response is 401 with body `{ \"error\": \"invalid credentials\" }` and no cookie is set.",
         "Given a signed-in user, When `POST /api/logout` is called, Then the response is 204, the session is removed from the store and the cookie is cleared.",
+        "Given `auth.secret`, When a session id is encoded with `encode` and the result is passed to `decode`, Then the same id comes back; When any character of the signature is changed, Then `decode` returns `null` without throwing.",
         "Given a browser, When it opens `/login`, Then it sees a form with fields `user` and `password` and a submit button labelled \"Sign in\"."
       ],
       "cites": ["REQ-AUTH-02"],
@@ -61,7 +65,7 @@
       "phase": "Phase 2: Core",
       "done": false,
       "brief": "tasks/T003.md",
-      "briefChars": 2118,
+      "briefChars": 2202,
       "orch": 1,
       "depends_on": ["T001"],
       "parallel": true,
@@ -135,7 +139,7 @@
       "projectFilesFixture": ["test/fixtures/spec-dir/AGENTS.sample.md"]
     },
     "parts": [
-      { "part": "brief", "header": "### Brief: tasks/T003.md", "source": "tasks/T003.md", "budget": 8000, "chars": 2118, "cut": false },
+      { "part": "brief", "header": "### Brief: tasks/T003.md", "source": "tasks/T003.md", "budget": 8000, "chars": 2202, "cut": false },
       {
         "part": "requirements",
         "header": "### Requirements: REQ-AUTH-03, REQ-AUTH-04 (docs/requirements.md)",

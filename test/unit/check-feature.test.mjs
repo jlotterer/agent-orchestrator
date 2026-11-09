@@ -145,9 +145,9 @@ describe("check-feature rules beyond the fixtures (direct calls)", () => {
   test("sizes: brief-size uses --brief-chars; contract-size and total-size warn", () => {
     const d = copyFixture("full");
     const got = rules(d, { briefChars: 2000, contractChars: 1000, totalChars: 4000 });
-    assert.ok(got.some(([r, f, l, m]) => r === "brief-size" && f === "tasks/T003.md" && l === 1 && m === "brief is 2118 characters; handoff.briefChars is 2000"));
+    assert.ok(got.some(([r, f, l, m]) => r === "brief-size" && f === "tasks/T003.md" && l === 1 && m === "brief is 2202 characters; handoff.briefChars is 2000"));
     assert.ok(got.some(([r, f, , m]) => r === "contract-size" && f === "contracts/auth-api.md" && /1112 characters; handoff.contractChars is 1000/.test(m)));
-    assert.ok(got.some(([r, f, l, m]) => r === "total-size" && f === "tasks/T003.md" && l === 1 && /total 4630 characters; keep the total under 4000/.test(m)));
+    assert.ok(got.some(([r, f, l, m]) => r === "total-size" && f === "tasks/T003.md" && l === 1 && /total 4714 characters; keep the total under 4000/.test(m)));
     assert.equal(rules(d).length, 0, "defaults: full is clean");
   });
 
