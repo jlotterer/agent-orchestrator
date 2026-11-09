@@ -65,7 +65,7 @@
       "phase": "Phase 2: Core",
       "done": false,
       "brief": "tasks/T003.md",
-      "briefChars": 2202,
+      "briefChars": 2222,
       "orch": 1,
       "depends_on": ["T001"],
       "parallel": true,
@@ -139,7 +139,7 @@
       "projectFilesFixture": ["test/fixtures/spec-dir/AGENTS.sample.md"]
     },
     "parts": [
-      { "part": "brief", "header": "### Brief: tasks/T003.md", "source": "tasks/T003.md", "budget": 8000, "chars": 2202, "cut": false },
+      { "part": "brief", "header": "### Brief: tasks/T003.md", "source": "tasks/T003.md", "budget": 8000, "chars": 2222, "cut": false },
       {
         "part": "requirements",
         "header": "### Requirements: REQ-AUTH-03, REQ-AUTH-04 (docs/requirements.md)",

@@ -12,7 +12,7 @@ Users of the sample app sign in once and stay signed in across requests until th
 ## Out of scope
 - Roles, permissions and the admin page (F03).
 - Password reset by e-mail (F04).
-- Token rotation on every request (rejected in decision 0007; refresh only near expiry).
+- Token rotation on every request (rejected: it doubles store writes and makes two tabs race on the cookie; refresh only near expiry).
 - Rate limiting of the login endpoint (handled by the reverse proxy; see architecture.md section 9).
 
 ## Contracts
