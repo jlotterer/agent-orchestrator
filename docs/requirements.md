@@ -79,7 +79,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - `REQ-PROJ-10`: Given an installation created before multi-project support, with one completed run, When orch starts after the upgrade, Then the repo is listed as a project and the completed run is visible with its decisions.
 
 ### 5.2 Spec Intake & Planning (INTAKE)
-**User intent:** As the owner, I want to hand orch my Spec Kit task list and get a reviewed, enriched plan so that every task has clear acceptance criteria and a correct order before any agent starts.
+**User intent:** As the owner, I want to hand orch a feature folder (task briefs written with the `orch-spec` skill, or a plain Spec Kit task list) and get a reviewed plan so that every task has clear acceptance criteria and a correct order before any agent starts.
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |

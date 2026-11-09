@@ -6,6 +6,8 @@ Each task is a self-contained brief for one agent session and one PR. Start with
 
 **Status values:** `todo` · `in-progress` · `done`. Update the status line in the brief in your PR.
 
+**From TASK-27 on**, orch's own briefs live in `specs/NNN-*/tasks/`, written with the [`orch-spec` skill](../../skills/README.md) in the format of [architecture §6.4](../architecture.md#64-feature-folder-and-brief-contract), and this folder stays as the record of TASK-01..26. TASK-25 and TASK-26 were written here before the skill was dogfooded.
+
 **Running these with orch itself:** [specs/001-orch-roadmap/tasks.md](../../specs/001-orch-roadmap/tasks.md) lists the same tasks in Spec Kit format (one phase per wave), so `orch plan specs/001-orch-roadmap` imports them. TASK-01 needs the owner's review: give it merge policy `manual`.
 
 **Hot files:** `src/orchestrator.ts`, `dashboard/index.html`, `src/server.ts` and `src/cli.ts` are touched by most feature tasks, which is why waves 5–12 are sequential. **Shared doc files** (`README.md`, `docs/architecture.md`, `docs/requirements.md`, `docs/user-guide/feature-status.md`) are touched by nearly every task: in wave 14 three parallel tasks conflicted there. Parallel tasks should add their doc lines in task-specific places (their own §, row or page) and the last one to merge resolves the shared paragraphs.
@@ -37,7 +39,7 @@ Each task is a self-contained brief for one agent session and one PR. Start with
 | [TASK-26](TASK-26.md) | 15 | Skill | orch-spec follow-ups: overlap rule equal to `brief.ts`, cross-check test over every fixture, adopt-mode real run | 19, 20 | Yes |
 | [TASK-22](TASK-22.md) | 15 | Planning | (done) Plan from briefs without an agent; `--review`; rules and contracts in worker, validator and phase prompts | 20, 21 | No |
 | [TASK-23](TASK-23.md) | 16 | HITL | (done) End-of-run "Update project docs" inbox item, notification, ack, CLI | 22 | No |
-| [TASK-24](TASK-24.md) | 17 | Docs | User-guide pages for the spec workflow; README; status columns; close out the proposal | 23 | Yes |
+| [TASK-24](TASK-24.md) | 17 | Docs | (done) User-guide pages for the spec workflow; README; status columns; close out the proposal | 23 | Yes |
 
 ## Waves at a glance
 ```

@@ -1,5 +1,5 @@
 # TASK-24: Document the spec workflow
-**Status:** todo · **Wave:** 17 · **Depends on:** TASK-23 · **Parallel:** Yes
+**Status:** done · **Wave:** 17 · **Depends on:** TASK-23 · **Parallel:** Yes
 
 ## Goal
 Owners can follow the whole process from the user guide: write the project record, write a feature, run it, fold the results back. Everything the guide says is shipped; the proposal is closed out as implemented.

@@ -1,13 +1,16 @@
 # Plan a feature
 
-Planning turns a feature's `tasks.md` into a run that orch can execute. orch imports the tasks, works out their order, and, unless you turn it off, asks a planner agent to add acceptance criteria and check the plan.
+Planning turns a feature's `tasks.md` into a run that orch can execute. orch imports the tasks and works out their order. When every task has a brief with acceptance criteria, orch builds the plan from the briefs without calling an agent. Otherwise, unless you turn it off, a planner agent adds acceptance criteria and checks the plan.
+
+To write a feature folder with briefs, see [Write specs with the orch-spec skill](write-specs-with-orch-spec.md). For a Spec Kit folder, see [Import a Spec Kit folder](import-a-spec-kit-folder.md).
 
 ## Prepare the feature folder
 
 orch reads a feature folder, such as `specs/003-checkout/`. It needs:
 
 - `tasks.md` (required): the task list. See [Task file format](../reference/tasks-file.md).
-- `spec.md` and `plan.md` (recommended): the planner reads them, and workers get an excerpt of them.
+- `tasks/T001.md` and so on (recommended): one brief per task, written by the `orch-spec` skill. A brief sets the task's acceptance criteria, dependencies, merge policy, validation mode, test command and owned files.
+- `spec.md` and `plan.md` (recommended): the planner reads them, and workers of tasks without a brief get an excerpt of them.
 
 Spec Kit's `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` commands create these files. Any Markdown task list that follows the `- [ ] T001 …` format works, with or without Spec Kit.
 
@@ -24,7 +27,7 @@ Put the feature folder inside the project's repo. orch uses its location to pick
 
    `<spec-folder>` is the feature folder, for example `specs/003-checkout`. It can be relative to your current folder.
 
-3. Wait for the planner. It usually takes a minute or two. orch then prints the run ID, its title and its status, `plan_pending`.
+3. Wait for the planner. It usually takes a minute or two. orch then prints the run ID, its title and its status, `plan_pending`. When every task has a brief with criteria, no planner runs and orch prints `(plan built from the briefs; no planner)`. To have the planner review such a plan anyway, add `--review`.
 4. Review the plan in the dashboard. See [Review and approve a plan](review-a-plan.md).
 
 To import the tasks without running the planner, add `--no-llm`. The run goes straight to `plan_pending` with the tasks as written, with no acceptance criteria. The validator then judges each task against its description.

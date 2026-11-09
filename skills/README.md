@@ -1,6 +1,6 @@
 # Skills
 
-Skills that ship with orch. Today there is one: `orch-spec`, the author's side of the spec workflow in [decision 0023](../docs/decisions/0023-orch-owns-spec-skill.md). It writes exactly what `orch plan` reads: the project record once, and per feature a folder with one self-contained brief per task (the contract is [architecture §6.4](../docs/architecture.md#64-feature-folder-and-brief-contract)). The owner's end-to-end workflow is in [proposals/spec-workflow.md, Part 1](../docs/proposals/spec-workflow.md#part-1-the-owners-workflow).
+Skills that ship with orch. Today there is one: `orch-spec`, the author's side of the spec workflow in [decision 0023](../docs/decisions/0023-orch-owns-spec-skill.md). It writes exactly what `orch plan` reads: the project record once, and per feature a folder with one self-contained brief per task (the contract is [architecture §6.4](../docs/architecture.md#64-feature-folder-and-brief-contract)). This file is the install and modes summary; the owner's step-by-step manual is the user-guide page [Write specs with the orch-spec skill](../docs/user-guide/how-to/write-specs-with-orch-spec.md) (and [Import a Spec Kit folder](../docs/user-guide/how-to/import-a-spec-kit-folder.md) for adopt mode).
 
 ## Install
 

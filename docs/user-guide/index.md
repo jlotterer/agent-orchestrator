@@ -10,16 +10,17 @@ This manual is for the owner who installs and operates orch. It assumes you're c
 
 ## How a feature moves through orch
 
-1. You write a feature spec that ends in a `tasks.md` task list. Spec Kit produces one, and so does any tool that follows the same format.
-2. You ask orch to plan the feature. A planner agent adds acceptance criteria to each task and checks the order.
+1. You write a feature spec that ends in a `tasks.md` task list. The `orch-spec` skill that ships with orch writes one with a complete brief per task. Spec Kit produces one too, and so does any tool that follows the same format.
+2. You ask orch to plan the feature. When every task has a brief with acceptance criteria, orch builds the plan from the briefs. Otherwise a planner agent adds acceptance criteria to each task and checks the order.
 3. You review the plan, edit it if you want, and approve it.
 4. You start the run. For each task, a worker agent writes the code in its own copy of the repo. A test command checks it, and a separate validator agent checks it against the acceptance criteria.
 5. orch merges each validated task, either straight away or after your review, and moves on to the next one.
 6. Anything that needs you appears in the **Inbox** and on your phone.
+7. When the run finishes, you bring the results back into your project's documents, so the next feature starts from an up-to-date record.
 
 ## Feature availability
 
-Every feature in this manual is available in the current release. One larger change is decided but not yet built: a spec skill that writes task briefs made for orch, so that agents start with everything they need. For a summary of what's available, what's coming, and what orch doesn't do, see [Feature status](feature-status.md).
+Every feature in this manual is available in the current release. For a summary of what's available and what orch doesn't do, see [Feature status](feature-status.md).
 
 ## Contents
 
@@ -38,6 +39,8 @@ Every feature in this manual is available in the current release. One larger cha
 | Page | What it covers |
 | :--- | :--- |
 | [Add and manage projects](how-to/manage-projects.md) | Register repos, list them, archive and restore them |
+| [Write specs with the orch-spec skill](how-to/write-specs-with-orch-spec.md) | Write the project record and feature folders with task briefs, run them, and bring the results back |
+| [Import a Spec Kit folder](how-to/import-a-spec-kit-folder.md) | Plan a Spec Kit folder as it is, or add briefs with the skill's adopt mode |
 | [Plan a feature](how-to/plan-a-feature.md) | Prepare `tasks.md`, draft a plan, preview a plan, answer plan questions |
 | [Review and approve a plan](how-to/review-a-plan.md) | Edit criteria, dependencies, merge policy and test commands, then approve |
 | [Run and control a run](how-to/control-a-run.md) | Start, pause, stop, and recover after a restart |
@@ -66,7 +69,7 @@ Every feature in this manual is available in the current release. One larger cha
 | [Task file format](reference/tasks-file.md) | How orch reads `tasks.md` and works out dependencies |
 | [What agents see and do](reference/agents.md) | Agent inputs, `orch decide` and `orch ask`, and the results agents return |
 | [HTTP API](reference/http-api.md) | Endpoints for scripts and integrations |
-| [Feature status](feature-status.md) | What's available now, what's coming, and what orch doesn't do |
+| [Feature status](feature-status.md) | What's available now and what orch doesn't do |
 
 ### Help
 

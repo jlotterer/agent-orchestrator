@@ -20,7 +20,7 @@ Server-wide settings, such as the network address, the access token and which ag
 
 ## Features, runs and plans
 
-You describe a feature in a *feature folder*, such as `specs/003-checkout/`. The folder must contain a `tasks.md` task list. [Spec Kit](https://github.com/github/spec-kit) produces this layout, with `spec.md` and `plan.md` beside the task list, and agents read those files too. Any tool that writes the same task list format works.
+You describe a feature in a *feature folder*, such as `specs/003-checkout/`. The folder must contain a `tasks.md` task list. The `orch-spec` skill that ships with orch writes this layout with a brief per task under `tasks/` ([Write specs with the orch-spec skill](how-to/write-specs-with-orch-spec.md)). [Spec Kit](https://github.com/github/spec-kit) produces it too, with `spec.md` and `plan.md` beside the task list, and agents read those files. Any tool that writes the same task list format works.
 
 A *run* is one execution of one feature's task list in one project. When you plan a feature, orch creates a run and imports the tasks into it. The run then moves through these statuses:
 
