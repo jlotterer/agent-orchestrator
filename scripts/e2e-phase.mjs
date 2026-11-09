@@ -10,7 +10,12 @@
  *       fail it), phase 2 is validated
  *   (d) a run in flight across the upgrade: phase 1 finished and phase 2 mid-task with phase validation
  *       off, then kill -9, phase rows deleted (as before TASK-15), validation on, restart: phase 1 passes
- *       without validation, phase 2 finishes and is validated
+ *       without validation, phase 2 finishes and is validated. The kill waits for T006's worker to record
+ *       "Started slow work on T006", which it does after committing impl/T006.wip: status "running" alone is
+ *       set before the worker has done anything, and a kill in that window made the retried worker take the
+ *       SLEEP_LONG path again and sleep past the budget (TASK-25). After the restart each step has its own
+ *       wait (T006 restarted, done, phase 2 validating, run done; normally 0.3–1 s each), so a stall names
+ *       the step and the state dump shows where it is. E2E_TIMINGS=1 prints each wait's duration.
  *
  *   node scripts/e2e-phase.mjs          # all scenarios
  *   node scripts/e2e-phase.mjs b        # only (b)
@@ -72,12 +77,32 @@ async function setup(port, phase = {}, { tasks = TASKS } = {}) {
       await api("POST", `/api/runs/${run.id}/start`);
       return run;
     },
-    waitState: (pred, label, timeoutMs = 90_000) => waitFor(async () => {
+    /** Wait for `pred`; a timeout names `label` and dumps the run (tasks, phases, last events) so a stall shows where it is. */
+    waitState: async (pred, label, timeoutMs = 90_000) => {
+      const t0 = Date.now();
+      try {
+        const s = await waitFor(async () => {
+          const s = await h.state();
+          const bad = s.inbox.find((i) => i.type === "failed");
+          if (bad) throw new Error(`unexpected failure: ${bad.title}\n${bad.detail}`);
+          return pred(s) ? s : null;
+        }, { timeoutMs, intervalMs: 250, label });
+        if (process.env.E2E_TIMINGS) console.log(`  [timing] ${label}: ${Date.now() - t0} ms`);
+        return s;
+      } catch (e) {
+        throw new Error(`${e.message}\n${await h.dump().catch((x) => `(no dump: ${x.message})`)}`);
+      }
+    },
+    dump: async () => {
       const s = await h.state();
-      const bad = s.inbox.find((i) => i.type === "failed");
-      if (bad) throw new Error(`unexpected failure: ${bad.title}\n${bad.detail}`);
-      return pred(s) ? s : null;
-    }, { timeoutMs, intervalMs: 250, label }),
+      const evs = s.run ? await api("GET", `/api/runs/${s.run.id}/events?limit=25`) : [];
+      return [
+        `run ${s.run?.status}`,
+        `tasks: ${s.tasks.map((t) => `${t.key}=${t.status}#${t.attempt}`).join(" ")}`,
+        `phases: ${s.phases.map((p) => `${p.name}=${p.status}`).join(" | ")}`,
+        "last events:", ...evs.map((e) => `  ${e.ts} ${e.kind} ${e.task_id ?? "-"} ${JSON.stringify(e.data).slice(0, 160)}`),
+      ].join("\n");
+    },
     tasksMd: () => fs.readFileSync(path.join(repo, SPEC, "tasks.md"), "utf8"),
   };
   return h;
@@ -193,13 +218,18 @@ const scenarios = {
     const tasks = TASKS.replace("T006 Create impl/T006.txt", "T006 Create impl/T006.txt SLEEP_LONG");
     const h = await setup(port, { enabled: false }, { tasks });
     const run = await h.planAndStart();
-    await h.waitState((s) => task(s, "T006").status === "running" && task(s, "T001").status === "done" && task(s, "T005").status === "done", "phase 1 done, T006 running");
+    // "running" is set when the worker is spawned; the decision comes after it committed impl/T006.wip (fake-agent SLEEP_LONG).
+    await h.waitState((s) => task(s, "T006").status === "running" && decided(s, "Started slow work on T006").length === 1 && task(s, "T001").status === "done" && task(s, "T005").status === "done", "phase 1 done, T006 mid-task");
     await h.restart(() => {
       const db = new Database(path.join(h.home, "orch.db"));
       db.prepare("DELETE FROM phases WHERE run_id = ?").run(run.id); // the run as an older orch left it
       db.close();
     }, { enabled: true });
-    const s = await h.waitState((s) => s.run.status === "done", "run done after the upgrade", 120_000);
+    // Each step after the restart has its own wait, so a stall names the step (TASK-25).
+    await h.waitState((s) => task(s, "T006").status === "running" && task(s, "T006").attempt >= 2, "after the upgrade: T006 restarted by recover()");
+    await h.waitState((s) => task(s, "T006").status === "done", "after the upgrade: T006 done");
+    await h.waitState((s) => ["validating", "passed"].includes(phaseOf(s, P2)?.status), "after the upgrade: phase 2 validating");
+    const s = await h.waitState((s) => s.run.status === "done", "after the upgrade: run done");
     assert(task(s, "T006").status === "done", "T006 finished after the restart");
     assert(decided(s, `Phase "${P1}" passed without validation: all its tasks were finished before`).length === 1, "phase 1 passed without validation");
     assert(!(await phaseVerdicts(h, run.id, P1)).length, "phase 1 was not validated again");

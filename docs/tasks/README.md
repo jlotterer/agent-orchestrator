@@ -33,7 +33,7 @@ Each task is a self-contained brief for one agent session and one PR. Start with
 | [TASK-19](TASK-19.md) | 14 | Skill | `skills/orch-spec/`: project, feature, fold-back and adopt modes; `check-feature.mjs` | 18 | Yes |
 | [TASK-20](TASK-20.md) | 14 | Core | `src/core/brief.ts`: frontmatter and brief parsing, folder checks; `--dry-run` shows briefs and warnings | 18 | Yes |
 | [TASK-21](TASK-21.md) | 14 | Core | `src/core/context.ts`: spec context with per-part budgets, REQ-row extraction; new `handoff` settings | 18 | Yes |
-| [TASK-25](TASK-25.md) | 15 | Regression | Make `e2e-phase` scenario (d) deterministic: CI on `main` is intermittently red since before wave 14 | — | No |
+| [TASK-25](TASK-25.md) | 15 | Regression | (done) Make `e2e-phase` scenario (d) deterministic: CI on `main` is intermittently red since before wave 14 | — | No |
 | [TASK-26](TASK-26.md) | 15 | Skill | orch-spec follow-ups: overlap rule equal to `brief.ts`, cross-check test over every fixture, adopt-mode real run | 19, 20 | Yes |
 | [TASK-22](TASK-22.md) | 15 | Planning | (done) Plan from briefs without an agent; `--review`; rules and contracts in worker, validator and phase prompts | 20, 21 | No |
 | [TASK-23](TASK-23.md) | 16 | HITL | (done) End-of-run "Update project docs" inbox item, notification, ack, CLI | 22 | No |

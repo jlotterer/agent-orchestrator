@@ -66,7 +66,7 @@ async function setup(port, { tasks, spec = "# Feature Specification: Lifecycle\n
     planAndStart: async (llm = false) => { const run = await h.plan(llm); await api("POST", `/api/runs/${run.id}/approve`); await api("POST", `/api/runs/${run.id}/start`); return run; },
     /** Wait until task `key` satisfies `pred(task, state)`; returns the task. */
     waitTask: (key, pred, label, timeoutMs = 60_000) => waitFor(async () => { const s = await h.state(); const t = s.tasks.find((x) => x.key === key); return t && pred(t, s) ? t : null; }, { timeoutMs, intervalMs: 250, label }),
-    waitRunDone: (timeoutMs = 90_000) => waitFor(async () => { const s = await h.state(); const bad = s.inbox.find((i) => i.type === "failed"); if (bad) throw new Error(`unexpected failure: ${bad.title}\n${bad.detail}`); return s.run.status === "done" ? s : null; }, { timeoutMs, intervalMs: 300, label: "run done" }),
+    waitRunDone: (timeoutMs = 90_000, label = "run done") => waitFor(async () => { const s = await h.state(); const bad = s.inbox.find((i) => i.type === "failed"); if (bad) throw new Error(`unexpected failure: ${bad.title}\n${bad.detail}`); return s.run.status === "done" ? s : null; }, { timeoutMs, intervalMs: 300, label }),
     events: (runId) => api("GET", `/api/runs/${runId}/events?limit=5000`),
     commitsAhead: (branch) => Number(sh(`git rev-list --count main..${branch}`).trim()),
   };
@@ -133,7 +133,7 @@ const scenarios = [
 
       const q = after.questions[0];
       await h.api("POST", `/api/questions/${q.id}/answer`, { answer: "French" });
-      const s = await h.waitRunDone();
+      const s = await h.waitRunDone(90_000, "after the restart: run done");
       assert(h.sh("cat impl/T002.txt").includes("greeting=French"), "answer did not reach T002 after the restart");
       assert(s.decisions.length > before.decisions.length, "no decisions recorded after restart");
     },
