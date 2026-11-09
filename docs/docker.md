@@ -72,7 +72,7 @@ settings in the repo's `orch.config.json` (no restart; they apply at the next ru
 
 `host` must be `0.0.0.0` inside the container, or the published port can't reach orch. Because
 that is a non-local address, orch refuses to start without an access token (see
-[Access token](#access-token) below). Leave `auth.token` empty here and set `ORCH_TOKEN` in `.env`
+[Credentials](#3-credentials) below). Leave `auth.token` empty here and set `ORCH_TOKEN` in `.env`
 instead, so the secret stays out of the mounted directory.
 
 If the host user isn't uid 1000, `chown -R 1000:1000 work` (the container runs as uid 1000).

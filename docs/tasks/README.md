@@ -8,7 +8,7 @@ Each task is a self-contained brief for one agent session and one PR. Start with
 
 **Running these with orch itself:** [specs/001-orch-roadmap/tasks.md](../../specs/001-orch-roadmap/tasks.md) lists the same tasks in Spec Kit format (one phase per wave), so `orch plan specs/001-orch-roadmap` imports them. TASK-01 needs the owner's review: give it merge policy `manual`.
 
-**Hot files:** `src/orchestrator.ts`, `dashboard/index.html`, `src/server.ts` and `src/cli.ts` are touched by most feature tasks, which is why waves 5–12 are sequential.
+**Hot files:** `src/orchestrator.ts`, `dashboard/index.html`, `src/server.ts` and `src/cli.ts` are touched by most feature tasks, which is why waves 5–12 are sequential. **Shared doc files** (`README.md`, `docs/architecture.md`, `docs/requirements.md`, `docs/user-guide/feature-status.md`) are touched by nearly every task: in wave 14 three parallel tasks conflicted there. Parallel tasks should add their doc lines in task-specific places (their own §, row or page) and the last one to merge resolves the shared paragraphs.
 
 | Task | Wave | Area | Summary | Depends on | Parallel |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -33,6 +33,8 @@ Each task is a self-contained brief for one agent session and one PR. Start with
 | [TASK-19](TASK-19.md) | 14 | Skill | `skills/orch-spec/`: project, feature, fold-back and adopt modes; `check-feature.mjs` | 18 | Yes |
 | [TASK-20](TASK-20.md) | 14 | Core | `src/core/brief.ts`: frontmatter and brief parsing, folder checks; `--dry-run` shows briefs and warnings | 18 | Yes |
 | [TASK-21](TASK-21.md) | 14 | Core | `src/core/context.ts`: spec context with per-part budgets, REQ-row extraction; new `handoff` settings | 18 | Yes |
+| [TASK-25](TASK-25.md) | 15 | Regression | Make `e2e-phase` scenario (d) deterministic: CI on `main` is intermittently red since before wave 14 | — | No |
+| [TASK-26](TASK-26.md) | 15 | Skill | orch-spec follow-ups: overlap rule equal to `brief.ts`, cross-check test over every fixture, adopt-mode real run | 19, 20 | Yes |
 | [TASK-22](TASK-22.md) | 15 | Planning | Plan from briefs without an agent; `--review`; rules and contracts in worker, validator and phase prompts | 20, 21 | No |
 | [TASK-23](TASK-23.md) | 16 | HITL | End-of-run "Update project docs" inbox item, notification, ack, CLI | 22 | No |
 | [TASK-24](TASK-24.md) | 17 | Docs | User-guide pages for the spec workflow; README; status columns; close out the proposal | 23 | Yes |
@@ -53,12 +55,12 @@ W11 16
 W12 17
 W13 18
 W14 19 20 21
-W15 22
+W15 25 22 26
 W16 23
 W17 24
 ```
 
-Waves 13–17 implement [decision 0023](../decisions/0023-orch-owns-spec-skill.md) (authored briefs and the `orch-spec` skill); the design is in [proposals/spec-workflow.md](../proposals/spec-workflow.md). TASK-18 needs the owner's review: give it merge policy `manual`.
+Waves 13–17 implement [decision 0023](../decisions/0023-orch-owns-spec-skill.md) (authored briefs and the `orch-spec` skill); the design is in [proposals/spec-workflow.md](../proposals/spec-workflow.md). TASK-18 needs the owner's review: give it merge policy `manual`. TASK-25 and TASK-26 are follow-ups found in the TASK-19 review (a pre-existing flaky e2e scenario that keeps CI red, and drift between the skill's checker and orch's).
 
 ## Requirement Coverage
 | Requirement | Covered by |
@@ -158,15 +160,15 @@ Waves 13–17 implement [decision 0023](../decisions/0023-orch-owns-spec-skill.m
 | REQ-OPS-05 | TASK-07 |
 | REQ-OPS-06 | TASK-05, TASK-09 |
 | REQ-OPS-07 | TASK-08 |
-| REQ-NFR-01 | TASK-04 |
+| REQ-NFR-01 | TASK-04, TASK-25 |
 | REQ-NFR-02 | TASK-02 |
 | REQ-NFR-03 | TASK-02 |
 | REQ-NFR-04 | TASK-02 |
 | REQ-NFR-05 | TASK-01, TASK-03 |
-| REQ-SPEC-01 | TASK-19 |
+| REQ-SPEC-01 | TASK-19, TASK-23 (fold-back real run), TASK-26 (adopt real run) |
 | REQ-SPEC-02 | TASK-19 |
-| REQ-SPEC-03 | TASK-18, TASK-19, TASK-20 |
-| REQ-SPEC-04 | TASK-19 |
+| REQ-SPEC-03 | TASK-18, TASK-19, TASK-20, TASK-26 |
+| REQ-SPEC-04 | TASK-19, TASK-26 |
 | REQ-NFR-06 | TASK-10 |
-| REQ-NFR-07 | TASK-04 |
+| REQ-NFR-07 | TASK-04, TASK-25 |
 | REQ-NFR-08 | TASK-08 |
