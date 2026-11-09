@@ -17,8 +17,8 @@ Template notes (do not copy into the output):
   bullet), "## Contracts" (one per bullet: "<Name> (spec.md §Contracts)" or "contracts/<file>.md"; or "None.").
   Goal, Out of scope and Notes for the worker are read as prose. The H1 is "# <key>: <title>".
 - Every acceptance criterion must be testable inside THIS task's target files. If a criterion needs a file owned
-  by a sibling of the same wave, move the criterion to that sibling (see the full fixture: T003 exposes
-  refreshIfDue, T004 owns the request path and tests the /api/me body).
+  by a sibling of the same wave, move the criterion to that sibling (for example, a refresh task exposes
+  refreshIfDue and tests it; the middleware task owns the request path and tests the /api/me body).
 - Tests ship here, in the same task as the code they test; no task may end with failing tests. A fixtures-first
   task ships its tests skipped and names the task that un-skips them; its tests import modules that do not exist
   yet with a dynamic import() inside the test body, because a top-level import of a missing module fails the file.
