@@ -217,7 +217,9 @@ sudo systemctl enable --now orch
      **Merge now**, or **Send back** with a note on what to change (in PR mode, a `/orch …` comment
      on the PR works too)
    * a PR's CI keeps failing, or its checks hang → look at the PR
-   * the run finishes
+   * the run finishes; the inbox then has an **Update project docs** item listing the REQ IDs the merged
+     tasks covered, the run's decisions, your plan edits and the named contracts. **Copy** it into the
+     `orch-spec` skill's fold-back mode, commit, then **Acknowledge** (`orch docs-update [--ack]`)
 5. **Decisions** tab is the audit trail: every planner, worker, validator and human decision with
    its rationale, in order. **Activity** is the run-level event stream. Past runs of the project are
    in the run selector next to the run controls.

@@ -59,19 +59,19 @@ const schemaSql = (store) => store.db.prepare("SELECT type, name, sql FROM sqlit
 const notNull = (store, table, col) => store.db.prepare(`PRAGMA table_info(${table})`).all().find((c) => c.name === col).notnull;
 
 describe("migrations", () => {
-  test("schema version is 2", () => assert.equal(SCHEMA_VERSION, 2));
+  test("schema version is 3", () => assert.equal(SCHEMA_VERSION, 3));
 
   test("a fresh database is created at the current version", () => {
     const s = new Store(dbFile());
-    assert.equal(version(s), 2);
+    assert.equal(version(s), 3);
     assert.equal(notNull(s, "questions", "task_id"), 0);
     s.db.close();
   });
 
   for (const r1 of [false, true]) {
-    test(`a pre-migration DB (${r1 ? "with" : "without"} R1 columns) keeps every row and reaches version 2`, () => {
+    test(`a pre-migration DB (${r1 ? "with" : "without"} R1 columns) keeps every row and reaches version 3`, () => {
       const s = new Store(legacyDb({ r1 }));
-      assert.equal(version(s), 2);
+      assert.equal(version(s), 3);
 
       const run = s.getRun("r1");
       assert.equal(run.title, "Old run");
@@ -81,6 +81,8 @@ describe("migrations", () => {
       assert.equal(run.cost_usd, null);
       assert.equal(run.agent_ms, null);
       assert.equal(run.archived_at, null);
+      assert.equal(run.docs_update_json, null);
+      assert.equal(run.docs_update_ack_at, null);
 
       const t = s.getTask("t1");
       assert.equal(t.key, "T001");
@@ -123,12 +125,34 @@ describe("migrations", () => {
     a.db.close();
 
     const b = new Store(file);
-    assert.equal(version(b), 2);
+    assert.equal(version(b), 3);
     assert.deepEqual(schemaSql(b), before.schema);
     assert.deepEqual(b.listQuestions("r1"), before.questions);
     assert.deepEqual(b.listTasks("r1"), before.tasks);
     assert.deepEqual(b.listRuns(), before.runs);
     b.db.close();
+  });
+
+  test("version 3: a run's docs update is stored, pending until acknowledged, newest first (REQ-HITL-08)", () => {
+    const s = new Store(dbFile());
+    s.addProject({ id: "p", name: "P", repo_path: "/p" });
+    const a = s.createRun("specs/a", "A", "main", "done", "p");
+    assert.equal(a.docs_update_json, null);
+    assert.equal(s.getRun(a.id).docs_update_ack_at, null);
+    s.db.prepare("UPDATE runs SET created_at = '2026-01-01' WHERE id = ?").run(a.id);
+    const b = s.createRun("specs/b", "B", "main", "done", "p");
+    s.createRun("specs/c", "C", "main", "done", "p"); // no docs update
+    s.setDocsUpdate(a.id, '{"a":1}');
+    s.setDocsUpdate(b.id, '{"b":1}');
+    assert.deepEqual(s.pendingDocsUpdates("p").map((r) => r.id), [b.id, a.id]);
+    s.ackDocsUpdate(a.id, "2026-11-09T00:00:00Z");
+    assert.equal(s.getRun(a.id).docs_update_ack_at, "2026-11-09T00:00:00Z");
+    assert.deepEqual(s.pendingDocsUpdates("p").map((r) => r.id), [b.id]);
+    // A replaced item is back in the inbox.
+    s.setDocsUpdate(a.id, '{"a":2}');
+    assert.equal(s.getRun(a.id).docs_update_ack_at, null);
+    assert.equal(s.getRun(a.id).docs_update_json, '{"a":2}');
+    s.db.close();
   });
 
   test("a DB from a newer orch is refused", () => {

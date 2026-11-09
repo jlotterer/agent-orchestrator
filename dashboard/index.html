@@ -457,8 +457,33 @@ function inboxBody(i) {
   if (i.type === "failed") return `<div class="t">${tag}<span class="pill s-failed">failed</span> ${esc(i.task_key)}</div><div class="d">${esc((i.detail || "").slice(0, 400))}</div><div class="actions"><button class="small" onclick="goTask(${pid}, '${esc(i.task_id)}')">Inspect</button><button class="small good" onclick="taskAct('${esc(i.task_id)}','retry')">Retry</button><button class="small" onclick="taskAct('${esc(i.task_id)}','skip')">Skip</button></div>`;
   if (i.type === "merge") return `<div class="t">${tag}<span class="pill s-pr_open">review</span> ${esc(i.task_key)} ${ciBadge(i.ci_status)}${i.fix_rounds ? ` <span class="ci">· ${i.fix_rounds} fix round${i.fix_rounds > 1 ? "s" : ""}</span>` : ""}</div><div class="d">${i.pr_url ? `<a href="${esc(i.pr_url)}" target="_blank">${esc(i.pr_url)}</a>` : esc(i.detail)}${i.feedback ? "\n" + esc(i.feedback.slice(0, 300)) : ""}</div><div class="actions"><button class="small" onclick="goTask(${pid}, '${esc(i.task_id)}')">Inspect</button><button class="small good" onclick="taskAct('${esc(i.task_id)}','merge')">Merge now</button><button class="small" onclick="openSendBack('${esc(i.task_id)}', ${pid})">Send back…</button><button class="small" onclick="taskAct('${esc(i.task_id)}','mark-merged')">Merged elsewhere</button><button class="small" onclick="taskAct('${esc(i.task_id)}','retry')">Re-run</button></div>`;
   if (i.type === "phase") return `<div class="t">${tag}<span class="pill s-needs_human">phase</span> ${esc(phaseLabel(i.phase_name))}${i.fixup_rounds ? ` <span class="ci">· ${i.fixup_rounds} fix-up round${i.fixup_rounds > 1 ? "s" : ""}</span>` : ""}</div><div class="d">Phase validation failed; later phases wait.${i.detail ? "<br>" + esc(i.detail.slice(0, 400)) : ""}</div><div class="actions"><button class="small good" onclick="phaseAct(${i.phase_id},'revalidate')" title="Validate the phase again on the base branch (e.g. after fixing it by hand)">Re-run validation</button><button class="small" onclick="phaseAct(${i.phase_id},'accept')" title="Accept the phase as it is; later phases start">Accept phase</button></div>`;
+  if (i.type === "docs_update") {
+    // REQ-HITL-08: the four lists; Copy gives the plain text /orch-spec fold-back reads.
+    docsTexts[i.run_id] = i.text;
+    const u = i.update || {};
+    const list = (h, items) => `<b>${h}</b>${items.length ? items.map(x => "\n• " + esc(x)).join("") : "\nnone"}`;
+    const body = [
+      list("REQ IDs", (u.reqs || []).map(r => `${r.id} (${r.tasks.join(", ")}${r.notMerged.length ? `; not merged: ${r.notMerged.map(n => n.task + " " + n.status).join(", ")}` : ""})`)),
+      list("Decisions", (u.decisions || []).map(d => `${d.actor}${d.task ? " " + d.task : ""}: ${d.text}`)),
+      list("Plan edits", (u.planEdits || []).map(e => `${e.task || "plan"}: ${e.detail || e.text}`)),
+      list("Contracts", (u.contracts || []).map(c => `${c.name} (${c.tasks.join(", ")})`)),
+    ].join("\n");
+    return `<div class="t">${tag}<span class="pill s-done">docs</span> Update project docs</div><div class="d">${esc(i.title.replace(/^Update project docs: /, ""))} · ${esc(u.feature || "")}\n${body}</div><div class="actions"><button class="small primary" onclick="copyDocsUpdate('${esc(i.run_id)}')" title="Copy the plain text; paste it into /orch-spec fold-back">Copy</button><button class="small" onclick="ackDocsUpdate('${esc(i.run_id)}')" title="Remove this item from the inbox (after folding it back into the project docs)">Acknowledge</button></div>`;
+  }
   return "";
 }
+const docsTexts = {};   // run id → the docs update's plain text (Copy)
+async function copyDocsUpdate(runId) {
+  const text = docsTexts[runId] || "";
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    // No clipboard API (plain http on another host): copy through a selected textarea.
+    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } finally { ta.remove(); }
+  }
+  toast("copied: paste it into /orch-spec fold-back");
+}
+async function ackDocsUpdate(runId) { await act(async () => { await api("POST", `/api/runs/${runId}/docs-update/ack`); toast("acknowledged"); await refresh(); }); }
 function renderInbox() {
   const list = $("#globalInbox"), n = gInbox.length;
   $("#inboxCount").hidden = !n; $("#inboxCount").textContent = n;

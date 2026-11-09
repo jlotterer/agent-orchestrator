@@ -16,11 +16,17 @@
  *       the validator prompt holds the same and not the worker's log; the T001 validator rejects quoting the
  *       rule and the retry's feedback carries the quote; cuts are decisions; the phase validator gets spec.md,
  *       the briefs' frontmatter and the rules; the run finishes
+ *   (d) REQ-HITL-08: a two-task run of `full` (T001, T002; REQ-AUTH-01/02), T002's merge policy edited to manual
+ *       in the dashboard: when it completes, one "Update project docs" item lists both REQ IDs, the two worker
+ *       decisions, the T002 edit and the contracts, and a notification naming the project was sent;
+ *       `orch docs-update` prints the same text; an all-skipped run creates no item and does not hide it;
+ *       `orch docs-update --ack` removes it and records a human decision
  *
  *   node scripts/e2e-briefs.mjs          # all scenarios
  *   node scripts/e2e-briefs.mjs c        # only (c)
  */
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { makeRepo, writeConfig, startDaemon, api as apiFor, waitFor, cleanup, FAKE_AGENT, ROOT } from "./lib/e2e.mjs";
@@ -36,7 +42,7 @@ const decided = (s, text) => s.decisions.filter((d) => d.text.startsWith(text));
 const task = (s, key) => s.tasks.find((t) => t.key === key);
 
 /** A repo with AGENTS.md, docs/requirements.md and the given feature folders; a daemon on `port`. */
-async function setup(port, { handoff = {} } = {}) {
+async function setup(port, { handoff = {}, notify } = {}) {
   const { repo, home, tmp } = makeRepo({
     prefix: "orch-e2e-briefs-",
     files: {
@@ -56,6 +62,7 @@ async function setup(port, { handoff = {} } = {}) {
     validation: { command: "", agent: true, phase: { enabled: true, command: "", maxFixups: 1 } },
     git: { pr: false, mergePolicy: "auto", squash: true, copyFiles: [], setupCommand: "" },
     handoff,
+    ...(notify ? { notify: { ntfyUrl: notify, ntfyToken: "" } } : {}),
   });
   await startDaemon({ cwd: repo, port, env: { ORCH_HOME: home, FAKE_PROMPT_DIR: prompts }, name: `d${port}` });
   const api = apiFor(port);
@@ -84,6 +91,26 @@ async function setup(port, { handoff = {} } = {}) {
     },
   };
   return h;
+}
+
+/** A local stand-in for ntfy: records the Title header of every POST. */
+async function startSink() {
+  const titles = [];
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => { titles.push(String(req.headers.title ?? "")); res.end("ok"); });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  return { titles, url: `http://127.0.0.1:${server.address().port}/orch-e2e`, close: () => server.close() };
+}
+
+/** Make the `full` fixture's briefs runnable by the fake agents: no validate commands, no UI, auto merge. */
+function runnable(d, keys) {
+  for (const k of keys) {
+    const f = path.join(d, `tasks/${k}.md`);
+    fs.writeFileSync(f, fs.readFileSync(f, "utf8")
+      .replace(/^validate_command: .*\n/m, "").replace(/^validate: ui$/m, "validate: standard").replace(/^merge_policy: manual$/m, "merge_policy: auto"));
+  }
 }
 
 /** `needle`s appear in `text` in this order; returns their indexes. */
@@ -238,6 +265,84 @@ const scenarios = {
     inOrder(phase2.text, ["### T002", "Brief tasks/T002.md frontmatter:", "covers: [REQ-AUTH-02]", "Acceptance criteria:", "### spec.md", "### SessionStore", "### Rules: AGENTS.md", RULE], "phase validator prompt");
     assert(s.tasks.every((t) => t.status === "done"), "not every task is done");
     console.log("  worker/validator/phase prompts carry brief, REQ rows, contracts and rules; rule break quoted and fixed; run done");
+  },
+
+  async d(port) {
+    const sink = await startSink();
+    try {
+      const h = await setup(port, { notify: sink.url });
+      // Two tasks of `full`: T001 (REQ-AUTH-01) in phase 1, T002 (REQ-AUTH-02) in phase 2.
+      const dir = h.folder("full", "005-docs", (d) => {
+        for (const k of ["T003", "T004"]) fs.rmSync(path.join(d, `tasks/${k}.md`));
+        fs.writeFileSync(path.join(d, "tasks.md"), "# Tasks: Session authentication\n\n## Phase 1: Foundation\n- [ ] T001 Session store, types and expiry fixtures\n\n## Phase 2: Core\n- [ ] T002 Login and logout endpoints with the login page\n");
+        runnable(d, ["T001", "T002"]);
+        const t2 = path.join(d, "tasks/T002.md");
+        fs.writeFileSync(t2, fs.readFileSync(t2, "utf8").replace(/^parallel: true$/m, "parallel: false"));
+      });
+      const run = await h.api("POST", "/api/plan", { specDir: dir, llm: true });
+      let s = await h.state();
+      assert(s.run.status === "plan_pending", `run status ${s.run.status}`);
+      // REQ-INTAKE-09: the owner edits T002's merge policy in the dashboard.
+      await h.api("POST", `/api/tasks/${task(s, "T002").id}/edit`, { merge_policy: "manual" });
+      await h.api("POST", `/api/runs/${run.id}/approve`);
+      await h.api("POST", `/api/runs/${run.id}/start`);
+      const answered = new Set();
+      s = await waitFor(async () => {
+        const st = await h.state();
+        for (const i of st.inbox) {
+          if (i.type === "question" && !answered.has(i.id)) { answered.add(i.id); await h.api("POST", `/api/questions/${i.id}/answer`, { answer: "English" }); }
+          if (i.type === "merge" && i.task_key === "T002") await h.api("POST", `/api/tasks/${i.task_id}/merge`);
+          if (i.type === "failed") throw new Error(`unexpected failure: ${i.title}\n${i.detail}`);
+        }
+        return st.run.status === "done" ? st : null;
+      }, { timeoutMs: 180_000, intervalMs: 300, label: "run done" });
+
+      // One item, with the four lists.
+      const items = (await h.api("GET", "/api/inbox")).filter((i) => i.type === "docs_update");
+      assert(items.length === 1 && items[0].run_id === run.id, `docs_update items: ${JSON.stringify(items)}`);
+      const item = items[0], u = item.update, project = item.project_name;
+      assert(project && item.title === `Update project docs: ${project} ${run.title}`, `item title: ${item.title}`);
+      assert(JSON.stringify(u.reqs.map((r) => r.id)) === '["REQ-AUTH-01","REQ-AUTH-02"]', `REQ IDs: ${JSON.stringify(u.reqs)}`);
+      assert(JSON.stringify(u.decisions.map((d) => `${d.actor} ${d.task}: ${d.text}`)) === JSON.stringify(["worker T001: Used a plain text file for T001", "worker T002: Used a plain text file for T002"]), `decisions: ${JSON.stringify(u.decisions)}`);
+      assert(u.planEdits.length === 1 && u.planEdits[0].task === "T002" && u.planEdits[0].detail === 'merge_policy = "manual"', `plan edits: ${JSON.stringify(u.planEdits)}`);
+      assert(JSON.stringify(u.contracts.map((c) => c.name).sort()) === JSON.stringify(["SessionStore", "TokenCodec", "contracts/auth-api.md"]), `contracts: ${JSON.stringify(u.contracts)}`);
+      inOrder(item.text, [`Update project docs: ${project} ${run.title}\n`, "Feature folder: specs/005-docs", "## REQ IDs\n- REQ-AUTH-01 (T001)\n- REQ-AUTH-02 (T002)",
+        "## Decisions\n- worker T001: Used a plain text file for T001", '## Plan edits\n- T002: merge_policy = "manual"', "## Contracts\n- SessionStore (T001)"], "docs update text");
+      // REQ-HITL-02/08: a notification whose title names the project.
+      await waitFor(async () => sink.titles.includes(`[${project}] Update project docs: ${project} ${run.title}`), { label: "docs update notification" })
+        .catch(() => { throw new Error(`no docs update notification; titles: ${JSON.stringify(sink.titles)}`); });
+      // The CLI prints the same text.
+      const out = h.cli("docs-update");
+      assert(out.status === 0 && out.stdout === item.text, `orch docs-update (exit ${out.status}):\n${out.stdout}${out.stderr}`);
+      console.log("  one 'Update project docs' item: 2 REQ IDs, 2 worker decisions, the T002 edit, 3 contracts; notified; CLI text matches");
+
+      // An all-skipped run: no item of its own, and the previous run's item stays in the inbox.
+      const skipDir = path.join(h.repo, "specs/006-skip");
+      fs.mkdirSync(skipDir, { recursive: true });
+      fs.writeFileSync(path.join(skipDir, "spec.md"), "# Feature Specification: Skip\n\nNothing.\n");
+      fs.writeFileSync(path.join(skipDir, "tasks.md"), "# Tasks\n\n## Phase 1: Core\n- [ ] T001 Create impl/skip.txt\n");
+      const run2 = await h.api("POST", "/api/plan", { specDir: skipDir, llm: false });
+      await h.api("POST", `/api/runs/${run2.id}/approve`);
+      s = await h.state();
+      await h.api("POST", `/api/tasks/${task(s, "T001").id}/skip`);
+      await h.api("POST", `/api/runs/${run2.id}/start`);
+      await waitFor(async () => (await h.api("GET", `/api/runs/${run2.id}`)).run.status === "done", { timeoutMs: 30_000, label: "skipped run done" });
+      const after = (await h.api("GET", "/api/inbox")).filter((i) => i.type === "docs_update");
+      assert(after.length === 1 && after[0].run_id === run.id, `after the skipped run: ${JSON.stringify(after.map((i) => i.run_id))}`);
+      assert(!(await h.api("GET", `/api/runs/${run2.id}`)).run.docs_update_json, "the all-skipped run has a docs update");
+      console.log("  all-skipped run: no item; the previous run's item is still in the inbox");
+
+      // Acknowledge: the item leaves the inbox and a human decision records it.
+      const ack = h.cli("docs-update", "--ack");
+      assert(ack.status === 0 && ack.stdout.includes("acknowledged"), `orch docs-update --ack (exit ${ack.status}):\n${ack.stdout}${ack.stderr}`);
+      assert(!(await h.api("GET", "/api/inbox")).some((i) => i.type === "docs_update"), "the item is still in the inbox after --ack");
+      const r1 = await h.api("GET", `/api/runs/${run.id}`);
+      assert(r1.decisions.some((d) => d.actor === "human" && d.text === 'Acknowledged "Update project docs"'), "no human decision for the acknowledgement");
+      assert(h.cli("docs-update").status === 1, "orch docs-update with nothing pending should fail");
+      console.log("  --ack: the item leaves the inbox; a human decision records it");
+    } finally {
+      sink.close();
+    }
   },
 };
 

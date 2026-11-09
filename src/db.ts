@@ -168,6 +168,13 @@ const MIGRATIONS: ((db: Database.Database) => void)[] = [
     }
     db.exec("CREATE INDEX IF NOT EXISTS questions_run ON questions(run_id, id)");
   },
+  // 3: the run's "Update project docs" item (REQ-HITL-08): its lists as JSON and when the owner acknowledged it.
+  (db) => {
+    addColumns(db, "runs", [
+      ["docs_update_json", "TEXT"],
+      ["docs_update_ack_at", "TEXT"],
+    ]);
+  },
 ];
 
 /** The schema version this build writes. */
@@ -275,6 +282,8 @@ export class Store {
       cost_usd: null,
       agent_ms: null,
       archived_at: null,
+      docs_update_json: null,
+      docs_update_ack_at: null,
     };
     this.db
       .prepare(`INSERT INTO runs (id, project_id, spec_dir, title, status, base_branch, created_at, updated_at, notes)
@@ -302,6 +311,19 @@ export class Store {
   }
   setRunStatus(id: string, status: RunStatus) {
     this.db.prepare("UPDATE runs SET status = ?, updated_at = ? WHERE id = ?").run(status, now(), id);
+  }
+  /** Store a finished run's "Update project docs" lists (REQ-HITL-08); a new item is unacknowledged. */
+  setDocsUpdate(id: string, json: string) {
+    this.db.prepare("UPDATE runs SET docs_update_json = ?, docs_update_ack_at = NULL, updated_at = ? WHERE id = ?").run(json, now(), id);
+  }
+  ackDocsUpdate(id: string, ts: string = now()) {
+    this.db.prepare("UPDATE runs SET docs_update_ack_at = ?, updated_at = ? WHERE id = ?").run(ts, now(), id);
+  }
+  /** A project's runs with an unacknowledged docs update, newest first. */
+  pendingDocsUpdates(projectId: string): Run[] {
+    return this.db
+      .prepare("SELECT * FROM runs WHERE project_id = ? AND docs_update_json IS NOT NULL AND docs_update_ack_at IS NULL ORDER BY created_at DESC")
+      .all(projectId) as Run[];
   }
   setRunNotes(id: string, notes: string) {
     this.db.prepare("UPDATE runs SET notes = ?, updated_at = ? WHERE id = ?").run(notes, now(), id);

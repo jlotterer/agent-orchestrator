@@ -25,6 +25,7 @@ import { UNFINISHED_RUN_STATUSES, resolveProjectForCwd, registerProject, archive
 import { orchHome, runDir } from "./paths.js";
 import { startApp, killLeftovers, AppStartError, APP_OUTPUT_CHARS, type AppProcess } from "./appserver.js";
 import { addRunUsage, addTaskUsage, projectTotals, runTotals } from "./costs.js";
+import { ALREADY_COMPLETE_SUMMARY, buildDocsUpdate, docsUpdateText, docsUpdateTitle, type DocsUpdate } from "./core/docsUpdate.js";
 
 /** What `orch plan --dry-run` prints (§6.3, §6.4). */
 export interface PlanPreview {
@@ -465,7 +466,7 @@ export class Orchestrator extends EventEmitter {
         parallel: t.parallel ? 1 : 0, phase: t.phase, order_idx: t.order_idx, status: t.done ? "done" : "pending",
         attempt: 0, max_attempts: cfg.scheduler.maxAttempts, merge_policy: t.merge_policy ?? cfg.git.mergePolicy,
         validate_cmd: t.validate_cmd, validate_mode: t.validate_mode ?? "standard", files_owned: t.files_owned,
-        worktree: null, branch: null, pr_url: null, session_id: null, summary: t.done ? "(already complete before this run)" : null,
+        worktree: null, branch: null, pr_url: null, session_id: null, summary: t.done ? ALREADY_COMPLETE_SUMMARY : null,
         files: [], last_feedback: null,
       });
     }
@@ -621,7 +622,9 @@ export class Orchestrator extends EventEmitter {
     }
     this.store.updateTask(taskId, patch);
     const run = this.store.getRun(t.run_id)!;
-    this.decide(run, t, "human", `Edited task ${t.key}: ${Object.keys(patch).join(", ")}`, null);
+    // The new values go in the rationale: the "Update project docs" item carries them into the briefs (REQ-HITL-08).
+    const values = Object.entries(patch).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join("; ");
+    this.decide(run, t, "human", `Edited task ${t.key}: ${Object.keys(patch).join(", ")}`, clip(values, 1000));
     this.changed("tasks", { runId: t.run_id });
   }
 
@@ -800,6 +803,7 @@ export class Orchestrator extends EventEmitter {
       this.log(run, null, "state", { message: "all tasks done" });
       this.changed("run", { run: this.store.getRun(run.id) });
       await this.notify(ctx, `Run complete: ${run.title}`, `${tasks.length} tasks finished.`, { tags: ["tada"], priority: "high" });
+      await this.recordDocsUpdate(run, ctx, tasks);
     } else if (this.openPlanQuestions(run.id).length) {
       // An open plan question holds every start (§7.1); say so once.
       const lastEv = this.store.listEvents({ runId: run.id, limit: 1 })[0];
@@ -1623,6 +1627,64 @@ export class Orchestrator extends EventEmitter {
     return clip(parts.join("\n\n"), cfg.handoff.historyChars);
   }
 
+  // ------------------------------------------------------------------ "Update project docs" (REQ-HITL-08, §14)
+  /**
+   * On run completion: store the run's docs update and notify. None when no task merged in the run. A run that
+   * completes again (a task retried after completion) replaces a changed item and puts it back in the inbox.
+   */
+  private async recordDocsUpdate(run: Run, ctx: ProjectContext, tasks: Task[]) {
+    const files = this.specFolder(run).files;
+    const decisions = this.store.listDecisions(run.id);
+    const humanEdits = decisions.filter((d) => d.actor === "human" && d.text.startsWith("Edited task "));
+    const real = (p: string) => { try { return fs.realpathSync(p); } catch { return p; } };
+    const rel = path.relative(real(ctx.cfg.repo), real(run.spec_dir));
+    const feature = rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel.split(path.sep).join("/") : run.spec_dir;
+    const update = buildDocsUpdate(
+      { spec_dir: feature },
+      tasks.map((t) => ({ id: t.id, key: t.key, status: t.status, summary: t.summary, acceptance: t.acceptance, brief: t.synthetic ? null : files[`tasks/${t.key}.md`] ?? null })),
+      decisions, humanEdits,
+    );
+    if (!update) {
+      this.log(run, null, "info", { message: "no task merged in this run: no \"Update project docs\" item" });
+      return;
+    }
+    const json = JSON.stringify(update);
+    if (json === this.store.getRun(run.id)?.docs_update_json) return;
+    this.store.setDocsUpdate(run.id, json);
+    this.log(run, null, "state", { message: `"Update project docs" is in the inbox: ${update.reqs.length} REQ IDs, ${update.decisions.length} decisions, ${update.planEdits.length} plan edits, ${update.contracts.length} contracts` });
+    this.changed("run", { run: this.store.getRun(run.id) });
+    await this.notify(ctx, docsUpdateTitle(ctx.project.name, run.title),
+      `${update.reqs.length} REQ IDs, ${update.decisions.length} decisions, ${update.planEdits.length} plan edits, ${update.contracts.length} contracts. Copy it from the inbox into /orch-spec fold-back, then acknowledge.`,
+      { tags: ["memo"] });
+  }
+  /** A run's docs update with its plain text (`orch docs-update`, the dashboard's Copy). */
+  docsUpdate(runId: string) {
+    const run = this.store.getRun(runId);
+    if (!run) throw new NotFoundError(`no run '${runId}'`);
+    if (!run.docs_update_json) throw new NotFoundError(`run ${runId} has no "Update project docs" item (it has not completed, or no task merged)`);
+    return this.docsUpdateItem(run);
+  }
+  private docsUpdateItem(run: Run) {
+    const update: DocsUpdate = JSON.parse(run.docs_update_json!);
+    const project = run.project_id ? this.store.getProject(run.project_id) : undefined;
+    const projectName = project?.name ?? "";
+    return {
+      type: "docs_update", run_id: run.id, title: docsUpdateTitle(projectName, run.title), detail: update.feature,
+      update, text: docsUpdateText(projectName, run.title, update), ack_at: run.docs_update_ack_at, ts: run.updated_at,
+    };
+  }
+  /** The owner has folded the item back (or chosen not to): it leaves the inbox; a human decision records it. */
+  ackDocsUpdate(runId: string) {
+    const run = this.store.getRun(runId);
+    if (!run) throw new NotFoundError(`no run '${runId}'`);
+    if (!run.docs_update_json) throw new Error(`run ${runId} has no "Update project docs" item`);
+    if (run.docs_update_ack_at) return { ok: true, alreadyAcknowledged: true };
+    this.store.ackDocsUpdate(runId);
+    this.decide(run, null, "human", "Acknowledged \"Update project docs\"", null);
+    this.changed("run", { run: this.store.getRun(runId) });
+    return { ok: true };
+  }
+
   // ------------------------------------------------------------------ snapshot for UI
   /** The run a project's views show by default: its current run, else its newest. */
   private shownRun(projectId: string): Run | undefined {
@@ -1652,7 +1714,18 @@ export class Orchestrator extends EventEmitter {
         inbox.push({ type: "phase", run_id: run.id, phase_id: p.id, phase_name: p.name, title: `Phase "${phaseLabel(p.name)}" failed validation`, detail: last?.rationale ?? null, fixup_rounds: p.fixup_rounds, ts: p.updated_at });
       }
     }
+    if (run.docs_update_json && !run.docs_update_ack_at) inbox.push(this.docsUpdateItem(run));
     return inbox;
+  }
+  /**
+   * A project's inbox: its shown run's items, plus the unacknowledged docs updates of its other runs (a new
+   * run does not hide the previous run's "Update project docs").
+   */
+  private projectInbox(p: Project): any[] {
+    const run = this.shownRun(p.id);
+    const items = run ? this.runInbox(run) : [];
+    for (const r of this.store.pendingDocsUpdates(p.id)) if (r.id !== run?.id) items.push(this.docsUpdateItem(r));
+    return items;
   }
 
   /**
@@ -1701,7 +1774,7 @@ export class Orchestrator extends EventEmitter {
         id: p.id, name: p.name, repo: p.repo_path, archived: p.archived,
         error: this.projectError(p),
         run: run ? { id: run.id, status: run.status, title: run.title } : null,
-        inboxCount: run && !p.archived ? this.runInbox(run).length : 0,
+        inboxCount: !p.archived ? this.projectInbox(p).length : 0,
       };
     });
   }
@@ -1715,9 +1788,7 @@ export class Orchestrator extends EventEmitter {
   globalInbox() {
     const items: any[] = [];
     for (const p of this.store.listProjects()) {
-      const run = this.shownRun(p.id);
-      if (!run) continue;
-      for (const item of this.runInbox(run)) items.push({ ...item, project_id: p.id, project_name: p.name });
+      for (const item of this.projectInbox(p)) items.push({ ...item, project_id: p.id, project_name: p.name });
     }
     return items;
   }

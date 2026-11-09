@@ -17,6 +17,7 @@ The inbox shows these kinds of items.
 | **failed** `<task>` | A task used up its attempts, or failed for another reason. | **Inspect**, **Retry**, **Skip** |
 | **review** `<task>` | A task passed validation and waits for you, or merging needs you. | **Inspect**, **Merge now**, **Send back**, **Merged elsewhere**, **Re-run** |
 | **phase** `<phase>` | A phase failed validation more times than allowed, or its validation couldn't run. | **Re-run validation**, **Accept phase** |
+| **docs** Update project docs | A run finished and merged at least one task. | **Copy**, **Acknowledge** |
 
 ## Answer a question
 
@@ -82,3 +83,21 @@ When a phase fails validation more times than its fix-up limit allows, orch stop
 - Select **Accept phase** to take the phase as it is, so later phases can continue.
 
 See [Validate whole phases](validate-phases.md).
+
+## Update the project docs after a run
+
+When a run finishes, orch adds an **Update project docs** item and sends a notification titled "Update project docs: <project> <run title>". The item lists what to bring back into your project's documents:
+
+- **REQ IDs**: the requirements the merged tasks cover, from each brief's `covers` list (or the `REQ-…` IDs in a task's acceptance criteria when it has no brief). A requirement that a skipped or failed task also covers shows "not merged" with that task and its status, for example `not merged: T004 skipped`.
+- **Decisions**: the decisions the planner and the workers recorded during the run.
+- **Plan edits**: the changes you made to tasks in the dashboard, with their new values, for example `T002: merge_policy = "manual"`.
+- **Contracts**: the contracts the merged tasks' briefs name.
+
+A run in which no task merged, for example because every task was skipped, gets no item. Starting a new run doesn't remove the item of the previous one.
+
+1. On the inbox card, select **Copy**.
+2. In Claude Code, in the project's repository, run the `orch-spec` skill's fold-back mode and paste the text. The skill updates the requirement statuses, decision records, briefs, architecture and roadmap. See [skills/README.md](../../../skills/README.md).
+3. Review and commit the changes on the base branch.
+4. Select **Acknowledge**. The item leaves the inbox, and a decision records it.
+
+From the command line, `orch docs-update` prints the same text, and `orch docs-update --ack` acknowledges it.

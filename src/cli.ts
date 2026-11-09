@@ -10,6 +10,7 @@
  *   orch status                       print the board
  *   orch answer <questionId> <text>   answer a question
  *   orch retry|skip|merge|stop-task <taskKey>   task actions
+ *   orch docs-update [runId] [--ack]  print a finished run's "Update project docs" text; --ack acknowledges it
  *   orch archive-events               archive old runs' event logs now (also runs at serve start and daily)
  *
  * Project commands act on `--project <id>`, else ORCH_PROJECT, else the project whose repo contains the
@@ -45,7 +46,7 @@ function flag(name: string): string | undefined {
   return v;
 }
 function has(name: string) { return argv.includes(`--${name}`); }
-const BOOL_FLAGS = new Set(["--no-llm", "--review", "--archived", "--help", "--dry-run", "--allow-open"]);
+const BOOL_FLAGS = new Set(["--no-llm", "--review", "--archived", "--help", "--dry-run", "--allow-open", "--ack"]);
 /** Arguments after the command, without flags and their values. */
 function positional(): string[] {
   const out: string[] = [];
@@ -134,6 +135,7 @@ const HELP = `orch — orchestrator/worker/validator runner
   orch status                          show the board and inbox
   orch answer <qid> <text>             answer a question
   orch retry|skip|merge|stop-task <taskKey>   task actions
+  orch docs-update [runId] [--ack]     print a finished run's "Update project docs" text (input of /orch-spec fold-back); --ack closes it
   orch archive-events                  archive event logs of runs finished > retention.eventDays ago
   orch decide "<text>" --why "<r>"     (agents) record a decision
   orch ask "<q>" --options "A,B"       (agents) ask a human and stop
@@ -285,6 +287,25 @@ async function main() {
       if (!t) throw new Error(`task ${key} not found in ${project.id}${s.run ? ` run ${s.run.id}` : ""}`);
       await api("POST", `/api/tasks/${t.id}/${cmd === "stop-task" ? "stop" : cmd}`);
       console.log(`${cmd} ${t.key}: ok`);
+      return;
+    }
+    case "docs-update": {
+      // REQ-HITL-08: print a finished run's "Update project docs" text (the fold-back input); --ack closes it.
+      let id = positional()[0];
+      if (!id) {
+        const project = await resolveProject();
+        const items: any[] = (await api("GET", "/api/inbox")).filter((i: any) => i.type === "docs_update" && i.project_id === project.id);
+        if (!items.length) throw new Error(`project ${project.id} has no unacknowledged "Update project docs" item`);
+        id = items[0].run_id as string;
+      }
+      const item = await api("GET", `/api/runs/${encodeURIComponent(id)}/docs-update`);
+      if (has("ack")) {
+        const r = await api("POST", `/api/runs/${encodeURIComponent(id)}/docs-update/ack`);
+        console.log(r.alreadyAcknowledged ? `run ${id}: already acknowledged` : `run ${id}: "Update project docs" acknowledged`);
+        return;
+      }
+      process.stdout.write(item.text);
+      if (item.ack_at) console.error(`(acknowledged ${item.ack_at})`);
       return;
     }
     case "archive-events": {

@@ -59,6 +59,8 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 | `POST /api/runs/:id/start` | None | `{ok}` |
 | `POST /api/runs/:id/pause` | None | `{ok}` |
 | `POST /api/runs/:id/stop` | None | `{ok}` |
+| `GET /api/runs/:id/docs-update` | None | The run's "Update project docs" item: `{type, run_id, title, detail, update, text, ack_at}`, where `text` is what **Copy** gives. `404` when the run has none. |
+| `POST /api/runs/:id/docs-update/ack` | None | `{ok}`. Acknowledges the item, so it leaves the inbox. `400` when the run has none. |
 | `GET /api/runs/:id/events` | `?after=<event-id>&limit=<n>` | The run's log entries |
 
 ## Tasks

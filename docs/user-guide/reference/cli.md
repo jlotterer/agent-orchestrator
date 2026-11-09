@@ -24,6 +24,7 @@ The following table lists every command.
 | [`orch status`](#orch-status) | Show the run, its tasks and the inbox. |
 | [`orch answer`](#orch-answer) | Answer a question. |
 | [`orch retry`, `orch skip`, `orch merge`, `orch stop-task`](#task-commands) | Act on one task. |
+| [`orch docs-update`](#orch-docs-update) | Print or acknowledge a finished run's "Update project docs" item. |
 | [`orch archive-events`](#orch-archive-events) | Archive old runs' agent logs now. |
 | [`orch help`](#orch-help) | Show the list of commands. |
 | [`orch decide`](#orch-decide) | For agents: record a decision. |
@@ -222,6 +223,21 @@ orch stop-task <task-key>
 | `orch stop-task` | Stops a running or validating task and returns it to pending. | **Stop** in the **Task** panel |
 
 If the key isn't in the run, the command fails with "task `<key>` not found in `<project-id>` run `<run-id>`".
+
+## orch docs-update
+
+Prints the text of a finished run's **Update project docs** item: the input of the `orch-spec` skill's fold-back mode. See [Update the project docs after a run](../how-to/work-with-the-inbox.md#update-the-project-docs-after-a-run).
+
+```bash
+orch docs-update [<run-id>] [--ack]
+```
+
+| Argument or option | Description |
+| :--- | :--- |
+| `<run-id>` | The run. Without it, the project's newest item that you haven't acknowledged. |
+| `--ack` | Acknowledge the item instead of printing it, so it leaves the inbox. Prints "run `<run-id>`: "Update project docs" acknowledged". |
+
+Without a run ID and with nothing to acknowledge, it fails with "project `<project-id>` has no unacknowledged "Update project docs" item". For a run that didn't finish, or in which no task merged, it fails with "run `<run-id>` has no "Update project docs" item (it has not completed, or no task merged)".
 
 ## orch archive-events
 

@@ -1,5 +1,5 @@
 # TASK-23: "Update project docs" inbox item at the end of a run
-**Status:** todo · **Wave:** 16 · **Depends on:** TASK-22 · **Parallel:** No
+**Status:** done (2026-11-09; the fold-back real run is recorded in the PR) · **Wave:** 16 · **Depends on:** TASK-22 · **Parallel:** No
 
 ## Goal
 When a run completes, orch tells the owner what to fold back into the project record: the REQ IDs the merged tasks covered, the decisions made during the run, the plan edits made in the dashboard, and the contracts the merged tasks named. It is an inbox item with a notification, built from stored facts with no LLM, and it closes when acknowledged. Its text is what the `orch-spec` fold-back mode takes as input.
