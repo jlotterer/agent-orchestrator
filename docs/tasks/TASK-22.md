@@ -1,5 +1,5 @@
 # TASK-22: Plan from briefs; rules and contracts for every agent
-**Status:** done (2026-11-09; real run recorded in the PR) · **Wave:** 15 · **Depends on:** TASK-20, TASK-21 · **Parallel:** No
+**Status:** done (2026-11-09; real run recorded below) · **Wave:** 15 · **Depends on:** TASK-20, TASK-21 · **Parallel:** No
 
 ## Goal
 Wire TASK-20 and TASK-21 into the orchestrator. With briefs, `orch plan` builds the plan without an agent; the planner runs only for brief-less tasks or on `--review`. Workers, task validators and phase validators receive the brief, cited requirements, contracts and project rules. Conflicts, cuts and overrides are recorded as decisions.
@@ -43,3 +43,16 @@ The end-of-run inbox item (TASK-23). The user guide page (TASK-24). Dashboard ch
 - Manual: one real run of the `full` fixture (or a real feature folder written with the skill) on a scratch repo; the PR records the worker's and validator's prompts.
 - `npm run check` passes (no LLM call on the deterministic path; no vendor names outside adapters).
 - `npm run typecheck && npm test` pass; architecture §6, §9, §10 and README are updated; this brief's status line and the task index are updated in the same PR.
+
+## Real run (2026-11-09)
+TASK-22 was merged without a PR, so the run is recorded here. orch assembled the prompts from the `full` fixture (copied into a repo with `docs/requirements.md` = `test/fixtures/requirements.sample.md` and `AGENTS.md` = `test/fixtures/spec-dir/AGENTS.sample.md`; captured with the fake agent's `FAKE_PROMPT_DIR`). Three real model agents, one per role, each followed one prompt exactly; nobody else touched the work.
+
+| Role | Prompt | Result |
+| :--- | :--- | :--- |
+| Planner (`orch plan --review`) | review note, every brief, `### Rules: AGENTS.md`, the four tasks with `brief`, `from_brief` and their criteria | Kept every brief criterion verbatim and in order; added 3 criteria (T001 exact type exports and no clock reads, T002 the contract's 400 and 401); kept the briefs' merge policies; raised 4 questions about the fixture itself (T003 boundary `<=` against criterion 2, T003's owned files, no task implements `TokenCodec` or `/api/me`, T002's no-JavaScript form against the JSON contract). |
+| Worker (T001) | `## Brief` → `## Requirements covered` (REQ-AUTH-01 row, edge case, criterion) → contracts (`SessionStore` section of spec.md) → `## Project rules` → hand-off | Built `src/auth/types.ts`, `store.ts`, the fixture table and its tests on a scratch sample app; changed only the four owned files; `npm test` 11 pass, 5 skipped (the touch cases, as the brief asks), 0 fail. Typecheck could not run (TypeScript's Windows binary missing, no network). |
+| Validator (T001) | the same parts after the criteria, the worker's real diff, no hand-off or worker log | PASS, with evidence per criterion and an explicit check of every project rule and of the `SessionStore` contract's rules; noted typecheck as an environment limit, not a broken rule. |
+
+Changes made because of the run: the reviewing planner returned T004's brief list `[T002, T003]`, which would have dropped T001, an earlier-phase dependency (REQ-INTAKE-02); `plan` now always keeps the tasks of earlier phases (unit case in `test/unit/plan.test.mjs`, fake marker `PLANNER_DROP_DEPS`). `prompts/planner.md`: the 2–6 criteria count and the generic guidance (manual for auth, UI wording) apply only to values a brief leaves open, the JSON `depends_on` is the effective list, and a brief that contradicts itself gets a question. `prompts/validator*.md`: quote the broken sentence; a check that cannot run for a reason outside the change is not a broken rule. In the follow-up, orch's contracts group is headed `## Named contracts (full text)`, because two `## Contracts` headings (the brief's own and orch's) confused both the worker and the validator. A second validator run on the same diff with that heading and the new step 4 (PASS) found the brief and orch's parts easy to tell apart and the contract text where expected, and handled the typecheck it could not run as the prompt says.
+
+Left for later: the fixture questions above (the `full` folder is owner-reviewed, decision 0020); duplicated criteria (the prompt's list and the brief's own section; they are the same text when the plan comes from the brief); the hand-off's "Decisions so far" listing plan-time decisions about other tasks.

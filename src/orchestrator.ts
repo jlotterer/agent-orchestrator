@@ -295,7 +295,7 @@ export class Orchestrator extends EventEmitter {
       const after = (extra: SpecContextInput) => assembleSpecContext({ brief: input.brief, ...extra }, B).text.slice(brief.length + 2);
       section("Brief", brief);
       section("Requirements covered", after({ reqRows: input.reqRows }));
-      section("Contracts", after({ contracts: input.contracts }));
+      section("Named contracts (full text)", after({ contracts: input.contracts }));
     } else {
       section("Project context (from the spec)", assembleSpecContext({ specFiles: input.specFiles, contextFiles: input.contextFiles }, B).text);
     }
