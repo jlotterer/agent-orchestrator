@@ -130,16 +130,17 @@ orch project remove <project-id>
 
 ## orch plan
 
-Imports a feature folder's `tasks.md` into a new run and, by default, runs the planner. The command waits for the planner, then prints the run ID, title and status.
+Imports a feature folder's `tasks.md` into a new run. When every task has a brief with acceptance criteria (`tasks/T001.md` beside `tasks.md`), the plan is built from the briefs and no agent runs; otherwise the planner runs for the tasks without criteria. The command waits for the planner, then prints the run ID, title and status.
 
 ```bash
-orch plan <spec-folder> [--no-llm] [--dry-run] [--allow-open]
+orch plan <spec-folder> [--no-llm] [--review] [--dry-run] [--allow-open]
 ```
 
 | Argument | Description |
 | :--- | :--- |
 | `<spec-folder>` | The feature folder, for example `specs/003-checkout`. |
 | `--no-llm` | Import the tasks without running the planner. |
+| `--review` | Run the planner over the whole plan, including tasks whose briefs already have criteria. It may add criteria and correct dependencies, never remove or rewrite a brief's criteria, and each change is recorded as a decision. Can't be combined with `--no-llm`. |
 | `--dry-run` | Print the phases, tasks, `[P]` markers, each task's brief and the fields it sets, the dependencies and the folder checks, without creating a run or calling an agent. Exits with code 1 when a check reports an error. |
 | `--allow-open` | Plan (or preview) a folder whose checks report an error, such as an unresolved `TBD`, `TODO` or `[NEEDS CLARIFICATION` marker in `spec.md`, a brief or a contract file. The errors are listed as warnings. |
 

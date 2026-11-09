@@ -75,7 +75,7 @@ In this quickstart, you register a repo with orch, give it a two-task feature, a
 
    T002 depends on T001, because it has no `[P]` marker.
 
-In real use, Spec Kit's `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` commands write these files for you.
+In real use, the `orch-spec` skill writes these files for you, with a brief per task so that orch can plan without the planner. See [Write specs with the orch-spec skill](how-to/write-specs-with-orch-spec.md). Spec Kit's `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` commands work too; see [Import a Spec Kit folder](how-to/import-a-spec-kit-folder.md).
 
 ## Plan the feature
 

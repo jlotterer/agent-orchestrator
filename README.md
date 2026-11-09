@@ -8,8 +8,7 @@ validator**, opens the PR, merges it, and moves on. Every decision an agent make
 Anything that needs *you* lands in an inbox and pings your phone.
 
 **User manual:** [docs/user-guide/](docs/user-guide/index.md) covers installation, concepts, how-to guides and
-reference for every shipped feature. [Feature status](docs/user-guide/feature-status.md) lists what's coming next:
-authored task briefs read by orch itself ([decision 0023](docs/decisions/0023-orch-owns-spec-skill.md)); the `orch-spec` skill that writes them has shipped ([skills/README.md](skills/README.md)).
+reference for every shipped feature; [Feature status](docs/user-guide/feature-status.md) sums it up.
 
 ```
 spec.md / plan.md / tasks.md  ──►  orch plan  ──►  [you approve]  ──►  orch run
@@ -191,8 +190,9 @@ sudo systemctl enable --now orch
 
 ## Daily use
 
-1. Write the spec with Spec Kit as usual: `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`.
-   You end up with `specs/003-thing/{spec.md,plan.md,tasks.md}`.
+1. Write the spec with the `orch-spec` skill (`/orch-spec Feature F03 …`, see [Writing specs](#writing-specs)) or with
+   Spec Kit (`/speckit.specify`, `/speckit.plan`, `/speckit.tasks`). You end up with `specs/003-thing/tasks.md`
+   beside `spec.md`, plus a brief per task (`tasks/T001.md`) when the skill wrote it.
 2. `orch plan specs/003-thing` (or **New plan…** in the dashboard). The plan goes to the project
    whose repo contains the folder. Each project has at most one unfinished run (planning, awaiting
    approval, ready, running or paused); planning or starting another is refused with the name of
@@ -468,12 +468,14 @@ first few runs; the JSON extractor is forgiving (last fenced block, else last ob
 
 ## Writing specs
 
-orch reads a `tasks.md` task list and, when they exist, one brief per task under `tasks/`. Two ways to write them:
+orch reads a `tasks.md` task list and, when they exist, one brief per task under `tasks/`. The manual page
+[Write specs with the orch-spec skill](docs/user-guide/how-to/write-specs-with-orch-spec.md) walks through the whole
+process; [Import a Spec Kit folder](docs/user-guide/how-to/import-a-spec-kit-folder.md) covers the other path.
 
-* **The `orch-spec` skill** (ships in [skills/orch-spec/](skills/orch-spec/); install and modes in [skills/README.md](skills/README.md)). In Claude Code, `/orch-spec New project. …` interviews you once and writes the project record (`AGENTS.md`, `docs/requirements.md` with REQ IDs, `docs/architecture.md`, `docs/decisions/`, `docs/roadmap.md`); `/orch-spec Feature F02` writes `specs/002-<name>/` with `spec.md`, `tasks.md` and a self-contained brief per task, then checks the folder with `skills/orch-spec/scripts/check-feature.mjs`. After a run, `/orch-spec Fold back …` brings the record up to date. The folder contract is [architecture §6.4](docs/architecture.md#64-feature-folder-and-brief-contract); the workflow is [proposals/spec-workflow.md](docs/proposals/spec-workflow.md).
-* **GitHub Spec Kit** or any tool that writes the `tasks.md` format above. `/orch-spec adopt specs/NNN-<name>` adds briefs to such a folder without changing its task keys or ticks.
+* **The `orch-spec` skill** (ships in [skills/orch-spec/](skills/orch-spec/); install and modes in [skills/README.md](skills/README.md)). In Claude Code, `/orch-spec New project. …` interviews you once and writes the project record (`AGENTS.md`, `docs/requirements.md` with REQ IDs, `docs/architecture.md`, `docs/decisions/`, `docs/roadmap.md`); `/orch-spec Feature F02` writes `specs/002-<name>/` with `spec.md`, `tasks.md` and a self-contained brief per task, acceptance criteria included, then checks the folder with `skills/orch-spec/scripts/check-feature.mjs`. After a run, `/orch-spec Fold back …` with the **Update project docs** text brings the record up to date. The folder contract is [architecture §6.4](docs/architecture.md#64-feature-folder-and-brief-contract).
+* **GitHub Spec Kit** or any tool that writes the `tasks.md` format above. Workers then get excerpts of `spec.md`, `data-model.md` and `plan.md` instead of a brief. `/orch-spec adopt specs/NNN-<name>` adds briefs to such a folder without changing its task keys or ticks.
 
-`orch plan --dry-run` reads the briefs and runs the same folder checks as the script (markers, parallel overlap, oversized briefs, test-only tasks). When every task has a brief with acceptance criteria, `orch plan` builds the plan from the briefs and calls no agent; the planner writes criteria only for tasks without them. `orch plan --review` has the planner review the whole plan: it may add criteria and correct dependencies, never remove or rewrite a brief's criteria, and each change is a decision. The `[P]` conflicts, the warnings and an `--allow-open` override are recorded as decisions too. Workers and validators get the task's brief, the requirement rows it cites (from `docs/requirements.md`, setting `handoff.requirementsFile`), the contracts it names and the project rules file (`AGENTS.md`, `handoff.projectFiles`); the validator rejects a change that breaks a rule or a contract and quotes it.
+`orch plan --dry-run` reads the briefs and runs the same folder checks as the skill's script (markers, parallel overlap, oversized briefs, test-only tasks). When every task has a brief with acceptance criteria, `orch plan` builds the plan from the briefs and calls no agent. `--review` has the planner review the whole plan: it may add criteria and correct dependencies, never remove or rewrite a brief's criteria, and each change is a decision. The `[P]` conflicts, the warnings and an `--allow-open` override are recorded as decisions too. Workers and validators get the task's brief, the requirement rows it cites (from `docs/requirements.md`, setting `handoff.requirementsFile`), the contracts it names and the project rules file (`AGENTS.md`, `handoff.projectFiles`); the validator rejects a change that breaks a rule or a contract and quotes it.
 
 ## Testing
 

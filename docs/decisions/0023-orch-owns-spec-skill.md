@@ -1,6 +1,6 @@
 # 0023: orch owns its spec skill; Spec Kit remains a compatible import
 
-- **Status:** Accepted, 2026-11-08 (implementation pending: TASK-18..24 in the proposal)
+- **Status:** Accepted, 2026-11-08; implemented in TASK-18..26 (TASK-25 and TASK-26 are follow-ups from the TASK-19 review). Owner's guide: [Write specs with the orch-spec skill](../user-guide/how-to/write-specs-with-orch-spec.md)
 - **Requirements affected:** REQ-INTAKE-11..15, REQ-WORK-09..11, REQ-VAL-10, REQ-VAL-11, REQ-HITL-08, REQ-SPEC-01..04 (drafts in [docs/proposals/spec-workflow.md](../proposals/spec-workflow.md))
 
 ## Context
