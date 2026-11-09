@@ -1,5 +1,5 @@
 # TASK-19: The orch-spec skill
-**Status:** todo · **Wave:** 14 · **Depends on:** TASK-18 · **Parallel:** Yes
+**Status:** done (2026-11-08; one real run of project mode and one of feature mode on a scratch repo, recorded in the PR) · **Wave:** 14 · **Depends on:** TASK-18 · **Parallel:** Yes
 
 ## Goal
 Ship the skill that writes what orch reads: `skills/orch-spec/`, forked from the owner's requirements-architect skill, with project, feature, fold-back and adopt modes, and a check script that verifies a feature folder against the brief contract.

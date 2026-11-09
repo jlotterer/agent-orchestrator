@@ -10,6 +10,7 @@ orch is a self-hosted orchestrator for AI coding agents, used by one owner acros
 | [docs/decisions/](docs/decisions/) | **Why** key choices were made. Read these before proposing to change the stack or the approach. |
 | [docs/tasks/](docs/tasks/) | One brief per task, plus [the index](docs/tasks/README.md). Same tasks for orch itself: `specs/001-orch-roadmap/`. |
 | `test/fixtures/` | Executable spec for the risky logic (parser, readiness, transitions, PR poll). Created by TASK-01. |
+| [skills/orch-spec/](skills/orch-spec/) | The skill that writes what orch reads (project record, feature folders with briefs); its check scripts verify a folder against architecture §6.4. [skills/README.md](skills/README.md) explains the modes. |
 | [README.md](README.md), [docs/docker.md](docs/docker.md) | User manual and container guide. |
 
 **Code is the source of truth for contracts:** `src/types.ts`, `src/db.ts` (schema), `src/config.ts` (settings), `src/server.ts` (HTTP API), `prompts/*.md` (agent JSON contracts), `src/core/*` (decision logic). If code and architecture.md disagree, follow the code and fix the doc in the same PR.
@@ -36,7 +37,7 @@ orch is a self-hosted orchestrator for AI coding agents, used by one owner acros
 - Every autonomous choice orch makes is recorded with `decide()`. Every situation needing the owner appears in the inbox **and** sends a notification.
 - Never write ticks or orch state into task branches; base branch or DB only.
 - Secrets (tokens, adapter env) never go into the DB, the event log, or prompts.
-- Prompts are product: changes to `prompts/*.md` need one real run, not only the fake agent.
+- Prompts and the skill are product: changes to `prompts/*.md` or `skills/orch-spec/**` need one real run (per affected mode for the skill), not only the fake agent or the unit tests.
 - Keep e2e green; add a `fake-agent.mjs` marker or a `fake-gh.mjs` case for every new lifecycle path.
 - Scripts keep LF line endings (`.gitattributes`). Executables need the git exec bit (`git update-index --chmod=+x`).
 
