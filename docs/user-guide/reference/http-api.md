@@ -45,7 +45,7 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 | `POST /api/projects` | `{path, name?}` | The project, with `configCreated` set to the starter settings path if one was created |
 | `DELETE /api/projects/:id` | None | `{ok}`. Archives the project. |
 | `GET /api/projects/:id/state` | `?run=<run-id>` | The state of the project and run: tasks, decisions, questions, phases, inbox, runs, settings, and `totals` with the cost and agent time of the run and the project (`{costUsd, agentMs}`; `costUsd` is `null` when no agent reported a cost) |
-| `POST /api/projects/:id/plan` | `{specDir, llm, dryRun?}` | The new run. With `dryRun`, the parsed tasks instead. |
+| `POST /api/projects/:id/plan` | `{specDir, llm, dryRun?}` | The new run. With `dryRun`, the preview instead: `{dir, title, tasks, hasBriefs, conflicts, problems, cycle}`, where each task carries its brief fields (`brief`, `fromBrief`, the effective `depends_on`) and `problems` are the folder checks (`{kind, rule, file, line, message}`). |
 | `GET /api/inbox` | None | Inbox items from every project, each with `project_id` and `project_name` |
 
 ## Runs and state

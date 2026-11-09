@@ -202,7 +202,10 @@ sudo systemctl enable --now orch
    asks instead of guessing: a question about the spec as a whole shows in the inbox with a **Plan**
    label, and no task starts until you answer it (you can still approve and start the run).
    To preview first, `orch plan specs/003-thing --dry-run` prints the phases, tasks, `[P]` flags and
-   dependencies without creating a run or calling an agent.
+   dependencies without creating a run or calling an agent. If the folder has task briefs (`tasks/T001.md`
+   beside `tasks.md`), the preview also shows which fields each brief sets and the folder checks: an
+   unresolved `TBD`, `TODO` or `[NEEDS CLARIFICATION` marker is an error that stops `orch plan` unless you
+   pass `--allow-open`; two parallel tasks sharing a file, an oversized brief or a tests-only task are warnings.
 3. Open the dashboard. **Plan** tab: read the acceptance criteria, click any task to edit them,
    its dependencies, merge policy or owned files. **Approve plan**. Approval is refused if the dependencies form a
    cycle; the error names the tasks in it, so edit one of them and approve again.

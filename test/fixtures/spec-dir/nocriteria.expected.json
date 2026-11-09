@@ -1,0 +1,29 @@
+{
+  "folder": "nocriteria",
+  "description": "One brief that is valid but has no `## Acceptance criteria` section (the REQ-INTAKE-11 edge case): the brief's other fields apply, `acceptance` is empty, `fromBrief` lists no `acceptance`, and there are no problems. The planner writes this task's criteria at plan time (TASK-22). No context expectation: `full` and `bad` cover context assembly.",
+  "tasks": [
+    {
+      "key": "T001",
+      "title": "Health page that polls /healthz",
+      "phase": "Phase 1: Page",
+      "done": false,
+      "brief": "tasks/T001.md",
+      "briefChars": 785,
+      "orch": 1,
+      "depends_on": [],
+      "parallel": false,
+      "merge_policy": "auto",
+      "validate_mode": "standard",
+      "validate_cmd": null,
+      "files_owned": ["src/pages/health.html", "src/server.ts", "test/health.test.ts"],
+      "acceptance": [],
+      "cites": ["REQ-OPS-01"],
+      "contracts": [],
+      "fromBrief": ["depends_on", "parallel", "merge_policy", "validate_mode", "files_owned"],
+      "tasksMd": { "parallel": false, "depends_on": [] }
+    }
+  ],
+  "conflicts": [],
+  "problems": [],
+  "context": null
+}
