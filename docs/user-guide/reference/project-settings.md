@@ -86,7 +86,7 @@ These keys apply only in pull request mode. See [Use the pull request feedback l
 
 Text over a limit is cut with a visible marker, not dropped.
 
-The brief, requirement, contract and rules settings take effect when task briefs ship; see [Coming later](../feature-status.md#coming-later). Until then, a worker receives the `contextFiles` excerpt as one block of up to `handoff.specChars` characters. After that, each file and each part has its own limit, so a long `plan.md` can't cut `spec.md`, and every cut is recorded as a decision.
+Each file and each part has its own limit, so a long `plan.md` can't cut `spec.md`, and every cut is recorded as a decision. The brief, requirement and contract limits apply to tasks with a brief; `specChars` and `contextFiles` apply to tasks without one. The requirements file and the rules files are read from the base branch.
 
 ## Agent roles (`roles`)
 

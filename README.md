@@ -196,8 +196,9 @@ sudo systemctl enable --now orch
 2. `orch plan specs/003-thing` (or **New plan…** in the dashboard). The plan goes to the project
    whose repo contains the folder. Each project has at most one unfinished run (planning, awaiting
    approval, ready, running or paused); planning or starting another is refused with the name of
-   the unfinished one. The planner reads the spec,
-   writes acceptance criteria for every task, checks the dependency graph, lists the files each
+   the unfinished one. If every task has a brief with acceptance criteria (`tasks/T001.md`, see
+   [Writing specs](#writing-specs)), the plan comes from the briefs and no agent runs; otherwise the planner reads the spec,
+   writes acceptance criteria for every task without them, checks the dependency graph, lists the files each
    task owns, flags risky tasks as manual-merge, and logs its decisions. If something in the spec is ambiguous enough to matter it
    asks instead of guessing: a question about the spec as a whole shows in the inbox with a **Plan**
    label, and no task starts until you answer it (you can still approve and start the run).
@@ -470,7 +471,7 @@ orch reads a `tasks.md` task list and, when they exist, one brief per task under
 * **The `orch-spec` skill** (ships in [skills/orch-spec/](skills/orch-spec/); install and modes in [skills/README.md](skills/README.md)). In Claude Code, `/orch-spec New project. …` interviews you once and writes the project record (`AGENTS.md`, `docs/requirements.md` with REQ IDs, `docs/architecture.md`, `docs/decisions/`, `docs/roadmap.md`); `/orch-spec Feature F02` writes `specs/002-<name>/` with `spec.md`, `tasks.md` and a self-contained brief per task, then checks the folder with `skills/orch-spec/scripts/check-feature.mjs`. After a run, `/orch-spec Fold back …` brings the record up to date. The folder contract is [architecture §6.4](docs/architecture.md#64-feature-folder-and-brief-contract); the workflow is [proposals/spec-workflow.md](docs/proposals/spec-workflow.md).
 * **GitHub Spec Kit** or any tool that writes the `tasks.md` format above. `/orch-spec adopt specs/NNN-<name>` adds briefs to such a folder without changing its task keys or ticks.
 
-`orch plan --dry-run` already reads the briefs and runs the same folder checks as the script (markers, parallel overlap, oversized briefs, test-only tasks). Planning from the briefs without an agent, and the full brief in every worker's and validator's context, arrive with the remaining tasks of [decision 0023](docs/decisions/0023-orch-owns-spec-skill.md); until then the planner writes the criteria from `tasks.md`.
+`orch plan --dry-run` reads the briefs and runs the same folder checks as the script (markers, parallel overlap, oversized briefs, test-only tasks). When every task has a brief with acceptance criteria, `orch plan` builds the plan from the briefs and calls no agent; the planner writes criteria only for tasks without them. `orch plan --review` has the planner review the whole plan: it may add criteria and correct dependencies, never remove or rewrite a brief's criteria, and each change is a decision. The `[P]` conflicts, the warnings and an `--allow-open` override are recorded as decisions too. Workers and validators get the task's brief, the requirement rows it cites (from `docs/requirements.md`, setting `handoff.requirementsFile`), the contracts it names and the project rules file (`AGENTS.md`, `handoff.projectFiles`); the validator rejects a change that breaks a rule or a contract and quotes it.
 
 ## Testing
 

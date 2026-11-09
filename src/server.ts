@@ -36,7 +36,7 @@ export function startServer(orch: Orchestrator) {
   route("POST", "/api/projects/:id/plan", async (_r, _s, p, b) => {
     if (typeof b.specDir !== "string" || !b.specDir) throw new Error("specDir is required");
     if (b.dryRun) return orch.previewPlan(b.specDir, p.id); // REQ-INTAKE-10: no run, no agent, nothing written
-    return orch.plan(p.id, b.specDir, { llm: b.llm !== false });
+    return orch.plan(p.id, b.specDir, planOptions(b));
   });
   route("GET", "/api/inbox", () => orch.globalInbox());
 
@@ -71,7 +71,7 @@ export function startServer(orch: Orchestrator) {
     if (b.dryRun) return orch.previewPlan(specDir);
     const project = b.project ? String(b.project) : orch.projectForPath(path.resolve(specDir))?.id;
     if (!project) throw new Error("no projects registered");
-    return orch.plan(project, specDir, { llm: b.llm !== false });
+    return orch.plan(project, specDir, planOptions(b));
   });
   route("POST", "/api/runs/:id/approve", (_r, _s, p) => { orch.approvePlan(p.id); return { ok: true }; });
   route("POST", "/api/runs/:id/start", (_r, _s, p) => { orch.start(p.id); return { ok: true }; });
@@ -173,6 +173,11 @@ export function startServer(orch: Orchestrator) {
     console.log(`orch dashboard: http://${host === "0.0.0.0" ? "localhost" : host}:${port}  (data: ${orch.home}; projects: ${projects.join(", ") || "none"}; auth ${token ? "on" : "off"})`);
   });
   return server;
+}
+
+/** Body of the plan routes (§15.1): `llm` (default true), `review` (REQ-INTAKE-12), `allowOpen` (REQ-INTAKE-13). */
+function planOptions(b: any): { llm: boolean; review: boolean; allowOpen: boolean } {
+  return { llm: b.llm !== false, review: b.review === true, allowOpen: b.allowOpen === true };
 }
 
 function readJson(req: http.IncomingMessage): Promise<any> {
