@@ -30,6 +30,7 @@ Every feature in this manual is available in the current release. One larger cha
 | [Key concepts](concepts.md) | Projects, runs, tasks, agents, the test gate, the validator, the inbox, and decisions |
 | [Install orch](install.md) | Prerequisites, installation, running as a service, upgrading, and uninstalling |
 | [Run in Docker](how-to/run-in-docker.md) | Running orch in a container instead of directly on the server |
+| [Set up orch on a home server](how-to/set-up-a-home-server.md) | End-to-end walkthrough: keys, Docker, credentials, your first project, your first plan |
 | [Quickstart: your first run](quickstart.md) | From a registered repo to a merged task in one sitting |
 
 ### Use orch

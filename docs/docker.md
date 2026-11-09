@@ -189,6 +189,9 @@ Once the run history looks right, you can delete `work/.orch/`.
 * **Root.** The image runs as the non-root user `orch` (uid 1000), because Claude Code refuses
   `bypassPermissions` as root. Don't override `user:` in compose. Agents still have full
   permissions inside their worktree and the container.
+* **Init.** The compose file sets `init: true`, so an init process is PID 1 and reaps orphaned
+  processes. Keep it: `orch serve` doesn't reap, and a test command that kills background
+  processes (orch's own `e2e-lifecycle` suite, for example) hangs without it.
 * **Exposure.** With `ORCH_TOKEN` set, every API call, the live stream and the dashboard need the
   token; without it, `orch serve` exits with an error rather than listen on `0.0.0.0`. There is no
   TLS, so the token crosses the network in clear text: reach the dashboard over SSH, Tailscale or

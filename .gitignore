@@ -4,3 +4,6 @@ dist/
 orch.config.json
 .env
 work/
+# The owner's personal runbook (server address, paths). The generic version is
+# docs/user-guide/how-to/set-up-a-home-server.md.
+docs/orch-home-server-setup.md
