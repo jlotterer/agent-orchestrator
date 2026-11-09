@@ -62,7 +62,7 @@ Feature mode covers only the feature: the detail behind each REQ it covers (exac
 When asked to choose ("help me decide"): recommend, compare briefly, record it as a decision with its reasons and the alternatives rejected.
 
 ### Step 4: Push back
-When an answer is ambiguous, contradicts a decision, or creates debt, say so and offer concrete options. Do not just record it.
+When an answer is ambiguous, contradicts a decision, or creates debt, say so and offer concrete options. Do not just record it. In feature mode, a wrong or contradictory row in `docs/requirements.md` is not fixed silently: pin the correct behaviour in the fixtures and briefs, list the row under `spec.md` **Assumptions** for fold-back, and tell the user.
 
 ### Step 5: Keep a working draft
 After every round update `REQUIREMENTS.draft.md` in the project root from `templates/draft.template.md` (project mode) or `specs/NNN-<name>/DRAFT.md` (feature mode; the same template minus Domains and Workflow): decisions with **why** and **alternatives rejected**, assumptions, open questions, non-goals, riskiest logic. Long interviews get compacted; this file is your memory. Tell the user it exists and that they can edit it. Delete it when you finish, after asking.
