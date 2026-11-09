@@ -132,16 +132,17 @@ orch project remove <project-id>
 Imports a feature folder's `tasks.md` into a new run and, by default, runs the planner. The command waits for the planner, then prints the run ID, title and status.
 
 ```bash
-orch plan <spec-folder> [--no-llm] [--dry-run]
+orch plan <spec-folder> [--no-llm] [--dry-run] [--allow-open]
 ```
 
 | Argument | Description |
 | :--- | :--- |
 | `<spec-folder>` | The feature folder, for example `specs/003-checkout`. |
 | `--no-llm` | Import the tasks without running the planner. |
-| `--dry-run` | Print the phases, tasks, `[P]` markers and dependencies without creating a run or calling an agent. |
+| `--dry-run` | Print the phases, tasks, `[P]` markers, each task's brief and the fields it sets, the dependencies and the folder checks, without creating a run or calling an agent. Exits with code 1 when a check reports an error. |
+| `--allow-open` | Plan (or preview) a folder whose checks report an error, such as an unresolved `TBD`, `TODO` or `[NEEDS CLARIFICATION` marker in `spec.md`, a brief or a contract file. The errors are listed as warnings. |
 
-Refused while the project has an unfinished run. See [Plan a feature](../how-to/plan-a-feature.md#preview-a-plan-without-creating-a-run) for the preview output.
+Refused while the project has an unfinished run, and refused when the folder checks report an error unless you pass `--allow-open`. See [Plan a feature](../how-to/plan-a-feature.md#preview-a-plan-without-creating-a-run) for the preview output and the checks.
 
 ## orch approve
 

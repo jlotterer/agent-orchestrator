@@ -74,11 +74,19 @@ These keys apply only in pull request mode. See [Use the pull request feedback l
 
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `handoff.contextFiles` | list of file names | `["plan.md", "spec.md"]` | The feature files excerpted into each worker's brief. |
-| `handoff.specChars` | integer | `12000` | The size limit of that excerpt, in characters. The planner gets twice this. |
+| `handoff.contextFiles` | list of file names | `["spec.md", "data-model.md", "plan.md"]` | The feature files given to a worker whose task has no brief, in this order. Files that don't exist are skipped. `tasks.md` is never included. |
+| `handoff.specChars` | integer | `12000` | The size limit of the feature file excerpt, in characters. The planner gets twice this. |
 | `handoff.historyChars` | integer | `6000` | The size limit of the summary of earlier tasks, decisions and answers, in characters. |
+| `handoff.briefChars` | integer | `8000` | The size limit of a task brief (`tasks/T001.md`), in characters. |
+| `handoff.reqChars` | integer | `4000` | The size limit of the requirement rows and acceptance criteria for the requirement IDs a brief cites, in characters. |
+| `handoff.contractChars` | integer | `6000` | The size limit of each contract a brief names, in characters. |
+| `handoff.rulesChars` | integer | `6000` | The size limit of each project rules file, in characters. |
+| `handoff.requirementsFile` | path | `docs/requirements.md` | The requirements file, relative to the repository, that cited rows are taken from. A row that isn't found is noted in the worker's context, not treated as an error. |
+| `handoff.projectFiles` | list of paths | `["AGENTS.md"]` | Project rules files, relative to the repository, given to agents when they exist. |
 
 Text over a limit is cut with a visible marker, not dropped.
+
+The brief, requirement, contract and rules settings take effect when task briefs ship; see [Coming later](../feature-status.md#coming-later). Until then, a worker receives the `contextFiles` excerpt as one block of up to `handoff.specChars` characters. After that, each file and each part has its own limit, so a long `plan.md` can't cut `spec.md`, and every cut is recorded as a decision.
 
 ## Agent roles (`roles`)
 

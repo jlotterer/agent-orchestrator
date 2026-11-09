@@ -14,6 +14,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { readFeature, type FeatureResult, type ParsedBrief, type CheckOptions } from "./core/brief.js";
 
 export interface ImportedTask {
   key: string;
@@ -24,21 +25,34 @@ export interface ImportedTask {
   done: boolean;
   depends_on: string[];
   order_idx: number;
+  /** The authored brief `tasks/<key>.md`, when the folder has one (§6.4; set by `importFeature`). */
+  brief?: ParsedBrief;
 }
 
 export interface SpecDir {
   dir: string;
   title: string;
-  files: Record<string, string>; // filename -> contents (spec.md, plan.md, tasks.md, ...)
+  /**
+   * Relative path → contents: the root `*.md` files (spec.md, plan.md, tasks.md, …) and the `.md` files one
+   * level down (`tasks/T001.md`, `contracts/auth-api.md`), always with `/` separators.
+   */
+  files: Record<string, string>;
 }
 
 export function readSpecDir(dir: string): SpecDir {
   const abs = path.resolve(dir);
   if (!fs.existsSync(abs)) throw new Error(`spec dir not found: ${abs}`);
   const files: Record<string, string> = {};
-  for (const f of fs.readdirSync(abs)) {
+  for (const f of fs.readdirSync(abs).sort()) {
     const p = path.join(abs, f);
-    if (fs.statSync(p).isFile() && f.endsWith(".md")) files[f] = fs.readFileSync(p, "utf8");
+    const st = fs.statSync(p);
+    if (st.isFile() && f.endsWith(".md")) files[f] = fs.readFileSync(p, "utf8");
+    else if (st.isDirectory()) {
+      for (const g of fs.readdirSync(p).sort()) {
+        const q = path.join(p, g);
+        if (g.endsWith(".md") && fs.statSync(q).isFile()) files[`${f}/${g}`] = fs.readFileSync(q, "utf8");
+      }
+    }
   }
   let title = path.basename(abs);
   const spec = files["spec.md"] ?? files["plan.md"] ?? "";
@@ -96,6 +110,24 @@ export function parseTasksMd(md: string): ImportedTask[] {
   // Only keep edges to the *latest* tasks needed (transitive reduction is unnecessary for
   // correctness, but keeping the raw set is fine and makes the graph explicit). Keep raw.
   return tasks;
+}
+
+/**
+ * Read a feature folder as `orch plan` sees it (§6.4): parse `tasks.md`, apply each `tasks/<key>.md` brief
+ * (frontmatter wins over the `[P]` marks), and check the folder. Pure apart from `spec` having been read.
+ * Each returned `ImportedTask` carries its parsed `brief` when it has one. Throws when `tasks.md` is missing or empty.
+ */
+export function importFeature(spec: SpecDir, opts: CheckOptions = {}): { tasks: ImportedTask[]; feature: FeatureResult } {
+  const tasksMd = spec.files["tasks.md"];
+  if (!tasksMd) throw new Error(`no tasks.md in ${spec.dir}. Run /speckit.tasks first.`);
+  const tasks = parseTasksMd(tasksMd);
+  if (!tasks.length) throw new Error(`no tasks found in ${path.join(spec.dir, "tasks.md")}`);
+  const feature = readFeature(spec.files, tasks, opts);
+  for (const t of tasks) {
+    const b = feature.briefs.get(t.key);
+    if (b) t.brief = b;
+  }
+  return { tasks, feature };
 }
 
 /** Mark a task as done in tasks.md ("- [ ] T001" -> "- [x] T001"). Returns true if changed. */

@@ -1,5 +1,5 @@
 # TASK-20: Read authored briefs and check the feature folder
-**Status:** todo · **Wave:** 14 · **Depends on:** TASK-18 · **Parallel:** Yes
+**Status:** done (2026-11-08) · **Wave:** 14 · **Depends on:** TASK-18 · **Parallel:** Yes
 
 ## Goal
 orch imports a feature folder's `tasks/T00N.md` briefs: frontmatter and sections become task fields, problems become errors or warnings, and the preview shows all of it. Pure parsing lives in `src/core/`; file reading stays in `src/speckit.ts`.

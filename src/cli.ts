@@ -4,7 +4,7 @@
  *
  *   orch serve                        start the daemon + dashboard (run this under systemd)
  *   orch project add <path> [--name n] | project list [--archived] | project remove <id>
- *   orch plan <specDir> [--no-llm] [--dry-run]   import a Spec Kit feature dir and draft a plan (or preview it)
+ *   orch plan <specDir> [--no-llm] [--dry-run] [--allow-open]   import a feature dir and draft a plan (or preview it)
  *   orch approve [runId]              approve the pending plan
  *   orch run | pause | stop           control the project's current run
  *   orch status                       print the board
@@ -28,6 +28,8 @@ import { orchHome, serverConfigPath, dbPath } from "./paths.js";
 import { registerProject, resolveProjectForCwd } from "./projects.js";
 import type { Store } from "./db.js";
 import type { Project } from "./types.js";
+import type { PlanPreview } from "./orchestrator.js";
+import type { Problem } from "./core/brief.js";
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -43,7 +45,7 @@ function flag(name: string): string | undefined {
   return v;
 }
 function has(name: string) { return argv.includes(`--${name}`); }
-const BOOL_FLAGS = new Set(["--no-llm", "--archived", "--help", "--dry-run"]);
+const BOOL_FLAGS = new Set(["--no-llm", "--archived", "--help", "--dry-run", "--allow-open"]);
 /** Arguments after the command, without flags and their values. */
 function positional(): string[] {
   const out: string[] = [];
@@ -123,8 +125,9 @@ const HELP = `orch — orchestrator/worker/validator runner
   orch project add <path> [--name n]   register a git repository
   orch project list [--archived]       list projects with run status and inbox count
   orch project remove <id>             archive a project (repo and history are kept)
-  orch plan <specDir> [--no-llm]       import Spec Kit tasks.md and draft a plan
-       [--dry-run]                     only print phases, tasks and dependencies; create nothing
+  orch plan <specDir> [--no-llm]       import a feature folder (tasks.md + tasks/*.md briefs) and draft a plan
+       [--dry-run]                     only print phases, tasks, briefs, dependencies and checks; create nothing
+       [--allow-open]                  plan despite unresolved markers (TBD, TODO, [NEEDS CLARIFICATION) in the folder
   orch approve [runId]                 approve the plan
   orch run | pause | stop              control the project's current run
   orch status                          show the board and inbox
@@ -209,14 +212,23 @@ async function main() {
     }
     case "plan": {
       const dir = positional()[0];
-      if (!dir) throw new UsageError("usage: orch plan <specDir> [--no-llm] [--dry-run]");
+      if (!dir) throw new UsageError("usage: orch plan <specDir> [--no-llm] [--dry-run] [--allow-open]");
       const specDir = path.resolve(dir);
       const project = await resolveProject(specDir);
+      const allowOpen = has("allow-open");
+      const pv: PlanPreview = await api("POST", `/api/projects/${encodeURIComponent(project.id)}/plan`, { specDir, dryRun: true });
+      const errors = pv.problems.filter((p) => p.kind === "error");
       if (has("dry-run")) {
-        const pv = await api("POST", `/api/projects/${encodeURIComponent(project.id)}/plan`, { specDir, dryRun: true });
-        console.log(formatPreview(pv, project.id));
+        console.log(formatPreview(pv, project.id, allowOpen));
+        if (errors.length && !allowOpen) process.exitCode = 1; // REQ-INTAKE-13: the folder cannot be planned as it is
         return;
       }
+      // The folder checks run before anything is created (REQ-INTAKE-13): errors refuse the plan unless overridden.
+      if (errors.length && !allowOpen) {
+        console.error(formatProblems(pv.problems, false));
+        throw new Error(`${count(errors.length, "error")} in ${pv.dir}; fix ${errors.length === 1 ? "it" : "them"} or pass --allow-open to plan anyway`);
+      }
+      if (pv.problems.length) console.log(formatProblems(pv.problems, allowOpen));
       console.log(has("no-llm") ? `importing tasks into ${project.id}…` : `importing tasks into ${project.id} and running the planner (this takes a minute)…`);
       const run = await api("POST", `/api/projects/${encodeURIComponent(project.id)}/plan`, { specDir, llm: !has("no-llm") });
       console.log(`run ${run.id} "${run.title}" → ${run.status}. Review the plan in the dashboard, then: orch approve`);
@@ -314,16 +326,46 @@ async function main() {
 
 function pad(s: string, n: number) { return s.padEnd(n); }
 
-/** `orch plan --dry-run` output (REQ-INTAKE-10): phases, tasks with `[P]` and done marks, dependencies. */
-function formatPreview(pv: { dir: string; title: string; tasks: any[]; cycle: string[] | null }, projectId: string): string {
+const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
+
+/**
+ * `orch plan --dry-run` output (REQ-INTAKE-10, REQ-INTAKE-15): phases, tasks with `[P]` and done marks, each
+ * task's brief and the fields it set (or "brief: no"), the effective dependencies, then the `[P]`-versus-brief
+ * conflicts and the folder checks (architecture §6.4).
+ */
+function formatPreview(pv: PlanPreview, projectId: string, allowOpen: boolean): string {
   const lines = [`dry run: "${pv.title}" (${pv.dir}) for project ${projectId}: ${pv.tasks.length} tasks; nothing was created`];
   let phase: string | null | undefined;
   for (const t of pv.tasks) {
     if (t.phase !== phase) { phase = t.phase; lines.push("", phase ?? "(no phase)"); }
     const flags = `${t.done ? "[x]" : "[ ]"} ${t.parallel ? "[P]" : "   "}`;
-    lines.push(`  ${flags} ${t.key}  ${t.title}`, `            depends on: ${t.depends_on.length ? t.depends_on.join(", ") : "none"}`);
+    const brief = t.brief ? `${t.brief}${t.fromBrief.length ? ` (fields: ${t.fromBrief.join(", ")})` : " (no fields applied)"}` : "no";
+    lines.push(`  ${flags} ${t.key}  ${t.title}`, `            brief: ${brief}`, `            depends on: ${t.depends_on.length ? t.depends_on.join(", ") : "none"}`);
   }
+  if (pv.conflicts.length) {
+    lines.push("", "conflicts (the brief wins; each is recorded as a decision at plan time):");
+    for (const c of pv.conflicts) lines.push(`  ${c.decision}`);
+  }
+  lines.push("", formatProblems(pv.problems, allowOpen));
   if (pv.cycle) lines.push("", `warning: dependency cycle ${pv.cycle.join(" → ")}; approval will be refused until it is removed`);
+  return lines.join("\n");
+}
+
+/**
+ * The folder checks, one line each: `error   spec.md:15  unresolved marker "TBD"`. With `allowOpen`, errors are
+ * listed as warnings (the override lets the plan proceed; TASK-22 records it as a decision).
+ */
+function formatProblems(problems: Problem[], allowOpen: boolean): string {
+  const errors = problems.filter((p) => p.kind === "error").length;
+  const warnings = problems.length - errors;
+  if (!problems.length) return "checks: no problems";
+  const lines = [`checks: ${[errors ? count(errors, "error") : "", warnings ? count(warnings, "warning") : ""].filter(Boolean).join(", ")}`];
+  for (const p of problems) {
+    const kind = p.kind === "error" && allowOpen ? "warning" : p.kind;
+    const note = p.kind === "error" && allowOpen ? " (error; allowed by --allow-open)" : "";
+    lines.push(`  ${kind.padEnd(7)} ${p.file}:${p.line}  ${p.message}${note}`);
+  }
+  if (errors) lines.push(allowOpen ? `  ${count(errors, "error")} allowed by --allow-open` : `  fix the ${count(errors, "error")} or pass --allow-open to plan anyway`);
   return lines.join("\n");
 }
 

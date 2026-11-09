@@ -77,10 +77,40 @@ try {
   for (const k of ["T001", "T002", "T003", "T004", "[P]", "Phase 1: Setup", "Phase 2: Core"]) {
     if (!dry.stdout.includes(k)) throw new Error(`dry run output lacks ${k}:\n${dry.stdout}`);
   }
-  if (!/T004 .*\n\s+depends on: T001, T003/.test(dry.stdout)) throw new Error("dry run output lacks T004's dependencies:\n" + dry.stdout);
+  if (!/T004 .*\n\s+brief: no\n\s+depends on: T001, T003/.test(dry.stdout)) throw new Error("dry run output lacks T004's dependencies:\n" + dry.stdout);
+  if (!/T001 .*\n\s+brief: no\n/.test(dry.stdout)) throw new Error("dry run output lacks 'brief: no' for a plain Spec Kit folder:\n" + dry.stdout);
+  if (!dry.stdout.includes("checks: no problems")) throw new Error("dry run output lacks the folder checks:\n" + dry.stdout);
   const afterDry = await api("GET", "/api/state");
   if (afterDry.run || afterDry.runs.length) throw new Error("dry run created a run: " + JSON.stringify(afterDry.runs));
   console.log("dry run ok:", dry.stdout.split("\n")[0]);
+
+  // TASK-20 (REQ-INTAKE-13/14/15, REQ-SPEC-03): feature folders with briefs. The fixture folders of §6.4 are copied
+  // into the repo: `bad` has one error and three warnings and cannot be planned without --allow-open; `full` is clean.
+  const cliEnv = { ...process.env, ORCH_HOME: home, ORCH_URL: `http://127.0.0.1:${PORT}`, ORCH_TOKEN: "", ORCH_PROJECT: "" };
+  const plan = (...args) => spawnSync("node", [path.join(ROOT, "dist/cli.js"), "plan", ...args], { cwd: repo, encoding: "utf8", env: cliEnv });
+  for (const f of ["bad", "full"]) fs.cpSync(path.join(ROOT, "test/fixtures/spec-dir", f), path.join(repo, "specs", f), { recursive: true });
+  const bad = plan("--dry-run", path.join(repo, "specs/bad"));
+  if (bad.status !== 1) throw new Error(`orch plan --dry-run on the bad folder exited ${bad.status}, expected 1\n${bad.stdout}\n${bad.stderr}`);
+  for (const k of ['error   spec.md:15  unresolved marker "TBD"', "warning tasks/T003.md:22  T002 and T003 are both parallel and both list src/auth/session.ts",
+    "warning tasks/T004.md:1  brief is 8265 characters; handoff.briefChars is 8000", "warning tasks/T005.md:9  task appears to add only tests", "checks: 1 error, 3 warnings",
+    "brief: tasks/T001.md (fields: depends_on, parallel, merge_policy, validate_mode, files_owned, acceptance)"]) {
+    if (!bad.stdout.includes(k)) throw new Error(`bad dry run lacks ${k}:\n${bad.stdout}`);
+  }
+  const allowed = plan("--dry-run", "--allow-open", path.join(repo, "specs/bad"));
+  if (allowed.status !== 0) throw new Error(`--allow-open dry run exited ${allowed.status}\n${allowed.stdout}\n${allowed.stderr}`);
+  if (!allowed.stdout.includes('warning spec.md:15  unresolved marker "TBD" (error; allowed by --allow-open)')) throw new Error("--allow-open did not list the error as a warning:\n" + allowed.stdout);
+  const planBad = plan("--no-llm", path.join(repo, "specs/bad"));
+  if (planBad.status !== 1 || !/1 error in .*; fix it or pass --allow-open/.test(planBad.stderr)) throw new Error(`orch plan on the bad folder should refuse: ${planBad.status}\n${planBad.stdout}\n${planBad.stderr}`);
+  const afterBad = await api("GET", "/api/state");
+  if (afterBad.run || afterBad.runs.length) throw new Error("a refused plan created a run: " + JSON.stringify(afterBad.runs));
+  const full = plan("--dry-run", path.join(repo, "specs/full"));
+  if (full.status !== 0) throw new Error(`orch plan --dry-run on the full folder exited ${full.status}\n${full.stdout}\n${full.stderr}`);
+  for (const k of ["checks: no problems", "T004: tasks.md marks [P] but the brief says parallel: false; the brief wins",
+    "brief: tasks/T002.md (fields: depends_on, parallel, merge_policy, validate_mode, validate_cmd, files_owned, acceptance)"]) {
+    if (!full.stdout.includes(k)) throw new Error(`full dry run lacks ${k}:\n${full.stdout}`);
+  }
+  if (!/T004 .*\n\s+brief: [^\n]*\n\s+depends on: T001, T002, T003/.test(full.stdout)) throw new Error("full dry run lacks T004's effective dependencies:\n" + full.stdout);
+  console.log("brief dry runs ok (bad refused, --allow-open passes, full clean)");
 
   const run = await api("POST", "/api/plan", { specDir, llm: true });
   console.log("planned:", run.id, run.status);

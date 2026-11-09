@@ -1,5 +1,5 @@
 # TASK-21: Context assembly with per-part budgets
-**Status:** todo · **Wave:** 14 · **Depends on:** TASK-18 · **Parallel:** Yes
+**Status:** done (2026-11-08; `src/core/context.ts` and the `handoff.*` settings; the orchestrator calls it in TASK-22) · **Wave:** 14 · **Depends on:** TASK-18 · **Parallel:** Yes
 
 ## Goal
 A pure function builds the spec part of a worker's or validator's context: brief, cited requirement rows, named contracts, project rules, in that order, each within its own budget, with explicit truncation markers and a list of cuts for the orchestrator to record. Without a brief, the old excerpt is rebuilt with `spec.md` first and per-file budgets. New settings carry the budgets and file locations.

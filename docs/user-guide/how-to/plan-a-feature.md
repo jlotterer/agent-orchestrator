@@ -64,7 +64,7 @@ To answer:
 
 ## Preview a plan without creating a run
 
-Preview shows how orch reads a `tasks.md`: phases, tasks, `[P]` markers and dependencies. It doesn't create a run or call an agent, so it's a fast way to check a task list before you plan it.
+Preview shows how orch reads a feature folder: phases, tasks, `[P]` markers, each task's brief, dependencies and the folder checks. It doesn't create a run or call an agent, so it's a fast way to check a folder before you plan it.
 
 - Run:
 
@@ -72,21 +72,51 @@ Preview shows how orch reads a `tasks.md`: phases, tasks, `[P]` markers and depe
   orch plan <spec-folder> --dry-run
   ```
 
-  orch prints each phase with its tasks and what each task depends on:
+  orch prints each phase with its tasks, whether the task has a brief (`tasks/T001.md` beside `tasks.md`) and which fields the brief sets, and what each task depends on:
 
   ```text
   dry run: "Checkout" (/home/you/projects/shop/specs/003-checkout) for project shop: 3 tasks; nothing was created
 
   Phase 1: Setup
     [ ]     T001  Add the cart model
+              brief: tasks/T001.md (fields: depends_on, parallel, merge_policy, validate_mode, files_owned, acceptance)
               depends on: none
 
   Phase 2: Core
     [ ] [P] T002  Add the checkout endpoint
+              brief: no
               depends on: T001
+
+  checks: no problems
   ```
 
+  A task without a brief shows `brief: no`; the planner writes its acceptance criteria. When a brief's `parallel` value differs from the `[P]` marker in `tasks.md`, the brief wins and the preview lists the difference under `conflicts`.
+
   If the dependencies form a loop, the preview ends with a warning naming the tasks in it.
+
+### Folder checks
+
+The preview, and `orch plan` itself, check the folder and list each problem with its file and line:
+
+| Problem | Kind | What to do |
+| :--- | :--- | :--- |
+| `unresolved marker "TBD"` in `spec.md`, a brief or a file under `contracts/` (`TBD`, `TODO` or `[NEEDS CLARIFICATION`) | error | Resolve the open point, or pass `--allow-open` to plan anyway. Other files, such as `plan.md`, aren't scanned. |
+| `unsupported brief format orch: 2; this orch reads orch: 1` | error | The brief was written for another version of the brief format. Change its `orch:` line. |
+| `T002 and T003 are both parallel and both list src/auth/session.ts` | warning | Two tasks that may run at the same time change the same file. Make one of them depend on the other, or give the file to one task. |
+| `brief is 8265 characters; handoff.briefChars is 8000` | warning | Workers get the brief cut to the limit. Shorten it or raise the `handoff.briefChars` setting. |
+| `task appears to add only tests: every target file is a test path` | warning | Check whether the task should also change code. Files under a `fixtures/` folder don't count as tests. |
+
+With an error, `orch plan --dry-run` exits with code 1 and `orch plan` refuses to create the run:
+
+```text
+checks: 1 error, 3 warnings
+  error   spec.md:15  unresolved marker "TBD"
+  warning tasks/T003.md:22  T002 and T003 are both parallel and both list src/auth/session.ts
+  ...
+  fix the 1 error or pass --allow-open to plan anyway
+```
+
+To go ahead regardless, add `--allow-open`. The errors are then listed as warnings and the plan proceeds.
 
 ## Errors when planning
 
@@ -96,5 +126,6 @@ Preview shows how orch reads a `tasks.md`: phases, tasks, `[P]` markers and depe
 | "no tasks.md in `<path>`. Run /speckit.tasks first." | The folder has no `tasks.md`. Create it. |
 | "no tasks found in `<path>/tasks.md`" | No line matches the `- [ ] T001 …` format. See [Task file format](../reference/tasks-file.md). |
 | "project '`<id>`' already has an unfinished run `<run-id>` (`<status>`, "`<title>`"); finish or stop it first" | Approve and finish that run, or stop it, then plan again. |
+| "1 error in `<path>`; fix it or pass --allow-open to plan anyway" | A folder check found an unresolved marker or an unsupported brief. The lines above the message name the file and line. Fix them, or run again with `--allow-open`. |
 
 If every task in `tasks.md` is already ticked (`- [x]`), orch imports them as done. The run finishes as soon as you start it.

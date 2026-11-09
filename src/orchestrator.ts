@@ -10,7 +10,8 @@ import { runAgent, getAdapter } from "./adapters/index.js";
 import type { RoleName, RoleConfig } from "./config.js";
 import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
 import { notify, type NotifyOptions } from "./notify.js";
-import { readSpecDir, parseTasksMd, markTaskDoneInFile, type ImportedTask } from "./speckit.js";
+import { readSpecDir, parseTasksMd, importFeature, markTaskDoneInFile } from "./speckit.js";
+import { DEFAULT_BRIEF_CHARS, type Conflict, type FeatureTask, type Problem } from "./core/brief.js";
 import type { Decision, Phase, Project, Question, Run, Task, TaskStatus } from "./types.js";
 import { newPhaseRows, phaseName, phaseLabel, phasesToValidate, planFixup, type PhaseVerdict } from "./core/phases.js";
 import { formatReviewFeedback, formatCiFeedback } from "./prfeedback.js";
@@ -23,6 +24,17 @@ import { UNFINISHED_RUN_STATUSES, resolveProjectForCwd, registerProject, archive
 import { orchHome, runDir } from "./paths.js";
 import { startApp, killLeftovers, AppStartError, APP_OUTPUT_CHARS, type AppProcess } from "./appserver.js";
 import { addRunUsage, addTaskUsage, projectTotals, runTotals } from "./costs.js";
+
+/** What `orch plan --dry-run` prints (§6.3, §6.4). */
+export interface PlanPreview {
+  dir: string;
+  title: string;
+  tasks: FeatureTask[];
+  hasBriefs: boolean;
+  conflicts: Conflict[];
+  problems: Problem[];
+  cycle: string[] | null;
+}
 
 const FINISHED: TaskStatus[] = ["done", "skipped"];
 const ACTIVE: TaskStatus[] = ["running", "validating"];
@@ -421,17 +433,24 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
-   * Dry run (REQ-INTAKE-10): parse a Spec Kit dir and derive dependencies as `plan` would, without creating a
-   * run, calling an agent or writing anything. `cycle` is the first dependency cycle (§6.3), else null.
+   * Dry run (REQ-INTAKE-10, REQ-INTAKE-15): read the feature folder as `plan` would, without creating a run,
+   * calling an agent or writing anything. Tasks carry their brief fields (§6.4: `brief`, `fromBrief`, effective
+   * `depends_on`), `conflicts` the `[P]`-versus-brief differences, `problems` the folder checks (errors and
+   * warnings). `cycle` is the first dependency cycle over the effective dependencies (§6.3), else null.
    */
-  previewPlan(specDir: string, projectId?: string): { dir: string; title: string; tasks: ImportedTask[]; cycle: string[] | null } {
-    if (projectId !== undefined) this.requireProject(projectId); // 404 for an unknown project, like the real plan
+  previewPlan(specDir: string, projectId?: string): PlanPreview {
+    let briefChars = DEFAULT_BRIEF_CHARS;
+    if (projectId !== undefined) {
+      this.requireProject(projectId); // 404 for an unknown project, like the real plan
+      briefChars = this.context(projectId).cfg.handoff.briefChars;
+    }
     const spec = readSpecDir(specDir);
-    const tasksMd = spec.files["tasks.md"];
-    if (!tasksMd) throw new Error(`no tasks.md in ${spec.dir}. Run /speckit.tasks first.`);
-    const tasks = parseTasksMd(tasksMd);
-    if (!tasks.length) throw new Error(`no tasks found in ${path.join(spec.dir, "tasks.md")}`);
-    return { dir: spec.dir, title: spec.title, tasks, cycle: findCycle(tasks.map((t) => ({ key: t.key, dependsOn: t.depends_on }))) };
+    const { feature } = importFeature(spec, { briefChars });
+    return {
+      dir: spec.dir, title: spec.title, tasks: feature.tasks, hasBriefs: feature.hasBriefs,
+      conflicts: feature.conflicts, problems: feature.problems,
+      cycle: findCycle(feature.tasks.map((t) => ({ key: t.key, dependsOn: t.depends_on }))),
+    };
   }
 
   /** Human edits to the plan before approval (also allowed later for pending tasks). */
