@@ -2,14 +2,14 @@
 
 An orchestrator / worker / validator runner for Claude Code, with a live dashboard.
 
-You write a spec with GitHub Spec Kit, or any tool that produces a `tasks.md` task list. `orch` turns `tasks.md` into a plan, runs each task
+You write a spec with the `orch-spec` skill that ships here ([Writing specs](#writing-specs)), with GitHub Spec Kit, or with any tool that produces a `tasks.md` task list. `orch` turns `tasks.md` into a plan, runs each task
 in its own git worktree with a **fresh-context worker**, checks the result with an **independent
 validator**, opens the PR, merges it, and moves on. Every decision an agent makes is logged.
 Anything that needs *you* lands in an inbox and pings your phone.
 
 **User manual:** [docs/user-guide/](docs/user-guide/index.md) covers installation, concepts, how-to guides and
-reference for every shipped feature. [Feature status](docs/user-guide/feature-status.md) lists what's coming next,
-including the `orch-spec` skill and authored task briefs ([decision 0023](docs/decisions/0023-orch-owns-spec-skill.md)).
+reference for every shipped feature. [Feature status](docs/user-guide/feature-status.md) lists what's coming next:
+authored task briefs read by orch itself ([decision 0023](docs/decisions/0023-orch-owns-spec-skill.md)); the `orch-spec` skill that writes them has shipped ([skills/README.md](skills/README.md)).
 
 ```
 spec.md / plan.md / tasks.md  ──►  orch plan  ──►  [you approve]  ──►  orch run
@@ -462,6 +462,15 @@ written against Gemini CLI 0.67's stream-json event schema (read from the CLI so
 tested with a fake agent that speaks that dialect, but it has not yet been run against a live
 Gemini account here. Expect to tune `prompts/validator.md` slightly for Gemini's style on the
 first few runs; the JSON extractor is forgiving (last fenced block, else last object).
+
+## Writing specs
+
+orch reads a `tasks.md` task list and, when they exist, one brief per task under `tasks/`. Two ways to write them:
+
+* **The `orch-spec` skill** (ships in [skills/orch-spec/](skills/orch-spec/); install and modes in [skills/README.md](skills/README.md)). In Claude Code, `/orch-spec New project. …` interviews you once and writes the project record (`AGENTS.md`, `docs/requirements.md` with REQ IDs, `docs/architecture.md`, `docs/decisions/`, `docs/roadmap.md`); `/orch-spec Feature F02` writes `specs/002-<name>/` with `spec.md`, `tasks.md` and a self-contained brief per task, then checks the folder with `skills/orch-spec/scripts/check-feature.mjs`. After a run, `/orch-spec Fold back …` brings the record up to date. The folder contract is [architecture §6.4](docs/architecture.md#64-feature-folder-and-brief-contract); the workflow is [proposals/spec-workflow.md](docs/proposals/spec-workflow.md).
+* **GitHub Spec Kit** or any tool that writes the `tasks.md` format above. `/orch-spec adopt specs/NNN-<name>` adds briefs to such a folder without changing its task keys or ticks.
+
+`orch plan --dry-run` already reads the briefs and runs the same folder checks as the script (markers, parallel overlap, oversized briefs, test-only tasks). Planning from the briefs without an agent, and the full brief in every worker's and validator's context, arrive with the remaining tasks of [decision 0023](docs/decisions/0023-orch-owns-spec-skill.md); until then the planner writes the criteria from `tasks.md`.
 
 ## Testing
 

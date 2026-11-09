@@ -22,7 +22,7 @@ This page summarizes what orch does in the current release, what's coming next, 
 
 Today, a worker starts each task from a one-line entry in `tasks.md`, plus whatever the planner agent and a spec excerpt add. That's the weakest point in the process: the spec is often cut short, and the validator sees even less. The next group of releases replaces it with *task briefs* that you write once and that orch reads directly.
 
-None of this is in the current release. Names, commands and settings may change before they ship. The reasoning is recorded in [decision 0023](../decisions/0023-orch-owns-spec-skill.md).
+The `orch-spec` skill, the brief preview and the folder checks are in the current release; the rest is not yet. Names, commands and settings may change before they ship. The reasoning is recorded in [decision 0023](../decisions/0023-orch-owns-spec-skill.md).
 
 | Area | What's planned |
 | :--- | :--- |
@@ -32,7 +32,7 @@ None of this is in the current release. Names, commands and settings may change 
 | More context for agents | Workers receive the brief in full, the requirements it cites, the interfaces it names, and a project rules file (`AGENTS.md` by default). Validators receive the same, but never the worker's transcript. Without a brief, workers get `spec.md` before `plan.md`, each within its own size limit. |
 | Validation against project rules | The validator rejects a change that breaks a project rule or a named interface, and quotes the rule in its verdict. |
 | Fold-back after a run | When a run completes, an inbox item named **Update project docs** lists the requirements the merged tasks covered, the decisions made during the run, the plan edits you made in the dashboard, and the interfaces that changed. You use it to bring the project's documents up to date. |
-| The `orch-spec` skill | A Claude Code skill that ships with orch and writes everything orch reads. Its project mode interviews you once per project and writes requirements, architecture, decision records, project rules and a roadmap. Its feature mode writes the feature folder and its briefs. Its fold-back mode updates the project documents after a run. Its adopt mode adds briefs to an existing Spec Kit folder without changing its tasks. |
+| The `orch-spec` skill | **Shipped** (see [skills/README.md](../../skills/README.md)). A Claude Code skill that ships with orch and writes everything orch reads. Its project mode interviews you once per project and writes requirements, architecture, decision records, project rules and a roadmap. Its feature mode writes the feature folder and its briefs, and its check script verifies the folder. Its fold-back mode updates the project documents after a run. Its adopt mode adds briefs to an existing Spec Kit folder without changing its tasks. The folders it writes import today and `orch plan --dry-run` already reads their briefs; workers and validators get the briefs when planning from briefs ships. |
 
 Spec Kit folders keep working as they do today, with or without briefs.
 
@@ -40,7 +40,7 @@ Spec Kit folders keep working as they do today, with or without briefs.
 
 These are outside orch's scope:
 
-- Writing specs inside orch. orch starts from a `tasks.md` task list. Writing it is the job of a separate tool: Spec Kit today, and the `orch-spec` skill when it ships.
+- Writing specs inside orch. orch starts from a `tasks.md` task list. Writing it is the job of a separate tool: GitHub Spec Kit, or the `orch-spec` skill that ships in this repository ([skills/README.md](../../skills/README.md)).
 - Running agents in a vendor's cloud. orch runs agents on your own machine.
 - Several users or teams with roles. orch has one owner.
 - Spending limits. orch shows cost but doesn't enforce limits.
