@@ -73,7 +73,7 @@ Dockerfile, docker-compose, orch.service
 
 ### Config highlights
 - Server (`server.json`): `host`, `port`, `publicUrl`, `auth.{token,allowInsecure}`, `notify.{ntfyUrl,ntfyToken}`, `agents.{timeoutMinutes,adapters.<name>,roles.<role>}`, `scheduler.{maxAgents,tickSeconds}`, `retention.eventDays`, `defaults.*`.
-- Project (`orch.config.json`): `baseBranch`, `scheduler.{maxParallel,maxAttempts,resumeOnRetry}`, `validation.{command,agent,phase.*,ui.*}`, `git.{pr,mergePolicy,squash,copyFiles,setupCommand,tickTasksMd,feedback.*}`, `handoff.{specChars,historyChars,contextFiles}`, `roles.{planner,worker,validator,phaseValidator}`.
+- Project (`orch.config.json`): `baseBranch`, `scheduler.{maxParallel,maxAttempts,resumeOnRetry}`, `validation.{command,agent,phase.*,ui.*}`, `git.{pr,mergePolicy,squash,copyFiles,setupCommand,tickTasksMd,feedback.*}`, `handoff.{specChars,historyChars,contextFiles,briefChars,reqChars,contractChars,rulesChars,requirementsFile,projectFiles}`, `roles.{planner,worker,validator,phaseValidator}`.
 
 ### Spec layer
 Reads Spec Kit `tasks.md` (phases from headings, `[P]`, "depends on T00X", `- [x]` imported as done); any markdown with `- [ ] T001 …` lines works. 15 parser fixtures cover CRLF, h3 headings, forward references, self and unknown dependencies, and key widths.

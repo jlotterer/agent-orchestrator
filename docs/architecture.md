@@ -288,7 +288,8 @@ Fix-up tasks (`synthetic`, built: TASK-15) use the same machine; the shell never
 
 ## 9. Worker & Hand-off Brief
 - Worktree: `git worktree add -b orch/<key>-<slug> <dir> <baseRef>`; `baseRef` = `origin/<base>` after `fetch --prune` when a remote exists, else `<base>`. Reuse existing branch. Copy `git.copyFiles`, run `git.setupCommand` (15 min timeout). A failing setup removes the new worktree (branch kept) and fails the attempt with the command's exit code and output, so the next attempt recreates the worktree and reruns setup.
-- Prompt `prompts/worker.md` vars: task key/title/description, acceptance bullets, spec excerpt (`handoff.contextFiles`, clipped to `handoff.specChars`), hand-off, branch/base, validate hint, feedback section. `files_owned`: the owned list, or "(none declared…)" (built: TASK-14).
+- Prompt `prompts/worker.md` vars: task key/title/description, acceptance bullets, spec context, hand-off, branch/base, validate hint, feedback section. `files_owned`: the owned list, or "(none declared…)" (built: TASK-14).
+- Spec context (`src/core/context.ts`, pure; built: TASK-21; the orchestrator calls it from TASK-22, until then `specContext()` joins `handoff.contextFiles` and clips the whole to `specChars`): `assembleSpecContext({brief, reqRows, contracts, rules, specFiles, contextFiles}, budgets)` builds the parts and headers of §6.4, each clipped on its own with the `clip` marker, and returns `{text, parts, cuts}`; the caller records one decision per cut with `cutDecision(key, cut)` (`T004: brief cut from 8265 to 8000 characters (handoff.briefChars)`). Budgets: `handoff.briefChars`, `reqChars`, `contractChars`, `rulesChars` (one part each), `specChars` (per spec file). Helpers: `extractReqRows({text, name}, cites)` (rows and bullets from `handoff.requirementsFile`; `REQ-X-NN: not found in <name>` for a missing ID), `resolveContracts(folder, names, brief)` (a `spec.md` section wins over a `contracts/*` file, with a warning; neither → a warning and a one-line note in the context), `specFileOrder(files, contextFiles)` (the order for a task without a brief; never `tasks.md` or `tasks/*`). Rules files come from `handoff.projectFiles`; the caller passes only the ones that exist.
 - Hand-off (clipped to `handoff.historyChars`): completed tasks with lower `order_idx` (direct deps: full summary; others: 200 chars; up to 8 files), last 25 decisions, all answered Q/A.
 - Resume prompt: answers (if any) + `last_feedback` + "continue, commit, same JSON block".
 - Agent env: `ORCH_URL`, `ORCH_TASK_ID`, `ORCH_RUN_ID`, `ORCH_ACTOR`, `ORCH_TOKEN` (when a token is set; built: TASK-08), `PATH` prefixed with `<pkg>/bin`.
@@ -457,7 +458,9 @@ _(→ code: `src/costs.ts`, built: TASK-17)_
 | `git.pr` / `git.mergePolicy` / `git.squash` | project | bool / enum / bool | true / auto / true | §11 |
 | `git.copyFiles` / `git.setupCommand` / `git.tickTasksMd` | project | list / string / bool | [] / `""` / true | §9, §11 |
 | `git.feedback.enabled` / `waitForChecks` / `pollSeconds` / `maxRounds` / `checksTimeoutMinutes` / `noChecksGraceSeconds` / `trigger` / `ignoreAuthors` / `logChars` | project | — | true / true / 60 / 3 / 60 / 90 / `/orch` / [] / 6000 | §12 |
-| `handoff.specChars` / `historyChars` / `contextFiles` | project | int / int / list | 12000 / 6000 / `[plan.md, spec.md]` | §9 |
+| `handoff.specChars` / `historyChars` / `contextFiles` | project | int / int / list | 12000 / 6000 / `[spec.md, data-model.md, plan.md]` | §6.4, §9 (`specChars` per file since TASK-21; the orchestrator applies it from TASK-22) |
+| `handoff.briefChars` / `reqChars` / `contractChars` / `rulesChars` | project | int | 8000 / 4000 / 6000 / 6000 | §6.4, §9 (built: TASK-21; wired: TASK-22) |
+| `handoff.requirementsFile` / `projectFiles` | project | path / list | `docs/requirements.md` / `[AGENTS.md]` | §6.4, §9 |
 | `roles.<role>` | project | `{adapter, model}` | server roles (`phaseValidator`: effective `validator`) | §5.2 |
 
 ## 20. Data Model & Persistence

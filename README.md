@@ -283,7 +283,7 @@ Any markdown file that follows the `- [ ] T001 …` convention works, Spec Kit o
 
 ### What the agents see
 
-* **Worker**: the task, acceptance criteria, `plan.md` + `spec.md` (capped by `handoff.specChars`),
+* **Worker**: the task, acceptance criteria, the feature's `spec.md`, `data-model.md` and `plan.md` (`handoff.contextFiles`, capped by `handoff.specChars`),
   the hand-off brief, the files it owns, and any feedback from a failed attempt. Prompt: `prompts/worker.md`.
 * **Validator**: the task, criteria, the worker's summary (as claims to check), the diff, the test
   gate's output, and the changed files outside the task's owned files, which it reports as `findings`

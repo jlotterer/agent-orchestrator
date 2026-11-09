@@ -44,8 +44,17 @@
     "specChars": 12000,
     "historyChars": 6000,
     "contextFiles": [
-      "plan.md",
-      "spec.md"
+      "spec.md",
+      "data-model.md",
+      "plan.md"
+    ],
+    "briefChars": 8000,
+    "reqChars": 4000,
+    "contractChars": 6000,
+    "rulesChars": 6000,
+    "requirementsFile": "docs/requirements.md",
+    "projectFiles": [
+      "AGENTS.md"
     ]
   },
   "roles": {
