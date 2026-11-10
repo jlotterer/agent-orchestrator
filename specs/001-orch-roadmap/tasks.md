@@ -61,3 +61,12 @@ Generated from docs/tasks/. One phase per wave; [P] = may run in parallel within
 
 ## Phase 17: Wave 17
 - [ ] T024 Document the spec workflow. Brief: docs/tasks/TASK-24.md.
+
+## Phase 18: Wave 18
+- [ ] T027 Antigravity and Codex adapters; retire the Gemini CLI adapter. Brief: tasks/T027.md. Owner review required before merge (real runs need the owner's accounts).
+
+## Phase 19: Wave 19
+- [ ] T028 Agent accounts: sign in to every CLI from the dashboard. Brief: tasks/T028.md. Owner review required before merge (real sign-ins need the owner's accounts).
+
+## Phase 20: Wave 20
+- [ ] T029 Settings forms in the dashboard, driven by one settings schema. Brief: tasks/T029.md. Owner review required before merge.
