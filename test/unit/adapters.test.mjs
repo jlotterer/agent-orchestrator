@@ -68,23 +68,30 @@ describe("antigravity adapter", () => {
     assert.equal(events[0].data.model, init.init.model);
     assert.equal(state.sessionId, init.conversation_id);
 
-    const toolSteps = fixture.filter((m) => m.event === "step_update" && m.step_update.step_type === "tool");
+    // A tool step is one ACTIVE line (the call) and one DONE line (call + result); the adapter emits on DONE only.
+    const toolSteps = fixture.filter((m) => m.event === "step_update" && m.step_update.step_type === "tool" && m.step_update.state === "DONE");
+    assert.ok(fixture.some((m) => m.event === "step_update" && m.step_update.step_type === "tool" && m.step_update.state === "ACTIVE"), "the recording has ACTIVE tool lines");
     const tools = ofKind(events, "tool"), results = toolResults(events);
     assert.equal(tools.length, toolSteps.length, "one tool event per tool step");
     assert.equal(results.length, toolSteps.length, "one tool_result per tool step");
     toolSteps.forEach((step, i) => {
-      assert.equal(tools[i].data.name, step.step_update.tool_info.name);
-      assert.deepEqual(tools[i].data.input, step.step_update.tool_info.parameters);
+      const info = step.step_update.tool_info;
+      assert.equal(tools[i].data.name, info.name);
+      assert.deepEqual(tools[i].data.input, info.parameters);
       assert.equal(tools[i].data.id, results[i].data.id, "call and result share an id");
-      assert.equal(results[i].data.is_error, !!step.step_update.tool_info.error);
-      if (step.step_update.tool_info.output) assert.equal(results[i].data.output, step.step_update.tool_info.output);
-      else assert.match(results[i].data.output, new RegExp(step.step_update.tool_info.error.message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      // is_error from tool_info.error, or from a non-zero "Command exited with code N." in the output (how agy 1.5.3 reports a failed command).
+      const failed = !!info.error || /^Command exited with code [1-9]/.test(info.output ?? "");
+      assert.equal(results[i].data.is_error, failed, `step ${step.step_update.step_index}`);
+      assert.equal(results[i].data.output, info.output);
     });
+    assert.deepEqual(results.map((r) => r.data.is_error), [false, true], "cat of a missing file is the failed one");
 
-    const textSteps = new Set(fixture.filter((m) => m.event === "step_update" && m.step_update.step_type === "agent_response").map((m) => m.step_update.step_index));
+    // agent_response steps: deltas of one step become one text event; thinking-only steps (no text_delta) yield none.
+    const byStep = new Map();
+    for (const m of fixture) if (m.event === "step_update" && m.step_update.step_type === "agent_response" && m.step_update.text_delta) byStep.set(m.step_update.step_index, (byStep.get(m.step_update.step_index) ?? "") + m.step_update.text_delta);
     const texts = ofKind(events, "text");
-    assert.equal(texts.length, textSteps.size, "deltas of one agent_response step become one text event");
-    assert.equal(texts[0].data.text, "Checking the implementation file.");
+    assert.deepEqual(texts.map((t) => t.data.text), [...byStep.values()], "one text event per agent_response step with text, deltas concatenated");
+    assert.equal(texts.at(-1).data.text, result.response, "the recorded response equals the concatenated deltas of the last step");
 
     assert.equal(state.sawResult, true);
     assert.equal(state.finalText, result.response);
@@ -95,6 +102,15 @@ describe("antigravity adapter", () => {
     assert.equal(last.kind, "info");
     assert.equal(last.data.subtype, "success");
     assert.deepEqual(last.data.usage, result.usage);
+  });
+
+  test("a tool_info.error marks the result failed and its message is the output", () => {
+    const state = { sessionId: null, finalText: "", currentText: "", isError: false, costUsd: null, sawResult: false };
+    const ev = adapter.parseLine({ event: "step_update", step_update: { step_index: 6, state: "DONE", step_type: "tool", tool_name: "view_file", tool_info: { name: "view_file", parameters: { AbsolutePath: "/x" }, error: { type: "NOT_FOUND", message: "no such file: /x" } } } }, state);
+    assert.deepEqual(ev.map((e) => e.kind), ["tool", "agent"]);
+    assert.equal(ev[1].data.is_error, true);
+    assert.equal(ev[1].data.output, "NOT_FOUND: no such file: /x");
+    assert.equal(state.isError, false, "a failed tool does not fail the run");
   });
 
   test("recorded ERROR result sets isError and yields an error event with result.error", () => {

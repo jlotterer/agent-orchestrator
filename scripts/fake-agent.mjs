@@ -119,8 +119,9 @@ const orch = (cmdline) => {
   tool("Bash", { command: `orch ${cmdline}` }, out);
   return out;
 };
+// Neither real CLI reports its model in the first event (agy 1.5.3's init has cwd, tools and permission_mode only;
+// codex's thread.started has the thread_id only); the fakes add one so e2e can tell the streams apart.
 if (agy) emit({ event: "init", conversation_id: sessionId, init: { cwd: process.cwd(), tools: ["run_command", "write_to_file"], permission_mode: "always-proceed", model: "fake-antigravity" } });
-// The real `codex exec --json` reports no model in thread.started; the fake adds one so e2e can tell the streams apart.
 else if (codex) { emit({ type: "thread.started", thread_id: sessionId, model: "fake-codex" }); emit({ type: "turn.started" }); }
 else emit({ type: "system", subtype: "init", model: "fake", session_id: sessionId });
 await new Promise((r) => setTimeout(r, 200));

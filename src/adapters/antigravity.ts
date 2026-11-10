@@ -9,10 +9,13 @@
  *
  * Stream shape (one JSON object per line, top-level `event`); contract: specs/001-orch-roadmap/contracts/antigravity-cli.md,
  * recorded in test/fixtures/adapters/antigravity.jsonl:
- *   {event:"init", conversation_id, init:{cwd, tools, permission_mode, model}}
+ *   {event:"init", conversation_id, init:{cwd, tools, permission_mode}}        // no model in the recorded 1.5.3 stream
  *   {event:"step_update", step_update:{conversation_id, step_index, state:"ACTIVE"|"DONE", step_type, ...}}
- *     step_type "agent_response": text_delta per line; the step's deltas concatenate into one message
- *     step_type "tool": call and result together: tool_name, tool_info:{name, parameters, output, error?:{type,message}}
+ *     step_type "agent_response": text_delta per line; the step's deltas concatenate into one message. A thinking-only
+ *       step arrives as one DONE line with usage and no text_delta: no text event.
+ *     step_type "tool": an ACTIVE line with the call (tool_name, tool_info:{name, parameters}), then a DONE line with the
+ *       call and the result (tool_info.output, or tool_info.error:{type,message}). Events are emitted on DONE only. A failed
+ *       shell command has no `error`; its output starts "Command exited with code N." (N ≠ 0), which also marks the result.
  *     other step types (user_input, checkpoint, subagent_info, …) are skipped
  *   {event:"result", result:{conversation_id, status:"SUCCESS"|"ERROR"|"CANCELED"|"INTERRUPTED"|"INVALID", response, error?, duration_seconds, num_turns, usage}}
  * No cost is reported (tokens only), so costUsd stays null and the dashboard shows n/a.
@@ -82,7 +85,8 @@ export const antigravityAdapter: AgentAdapter = {
         } else if (su.step_type === "tool" && su.state === "DONE") {
           const info = su.tool_info ?? {};
           const id = `step-${idx}`;
-          const isError = !!info.error;
+          const exit = /^Command exited with code (\d+)\./.exec(String(info.output ?? ""));
+          const isError = !!info.error || (exit !== null && exit[1] !== "0");
           out.push({ kind: "tool", data: { name: info.name ?? su.tool_name, input: summarizeInput(info.parameters), id } });
           const output = info.output ?? (isError ? `${info.error.type ? info.error.type + ": " : ""}${info.error.message ?? ""}` : "");
           out.push({ kind: "agent", data: { kind: "tool_result", id, is_error: isError, output: String(output).slice(0, 1500) } });
