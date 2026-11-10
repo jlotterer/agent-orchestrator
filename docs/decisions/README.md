@@ -28,6 +28,7 @@ Short records of significant decisions and **why** they were made. Agents: read 
 | [0022](0022-node-22-floor.md) | Raise the Node floor to 22 (better-sqlite3 13 needs it) | Accepted |
 | [0023](0023-orch-owns-spec-skill.md) | orch owns its spec skill (`orch-spec`); Spec Kit remains a compatible import | Accepted |
 | [0024](0024-retire-gemini-add-antigravity-codex.md) | Retire the Gemini CLI adapter (Google ended its individual sign-in); add Antigravity CLI and Codex CLI adapters | Accepted |
+| [0025](0025-dashboard-sign-in.md) | The dashboard signs the agent CLIs in by driving their own login flows; orch holds no tokens | Accepted |
 
 New records use [the template](#template).
 

@@ -346,7 +346,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-UI-06 | The dashboard MUST show cost and agent time per task, per run and per project where the agent CLI reports them, and "n/a" where it doesn't. | built (TASK-17) |
 | REQ-UI-07 | The CLI MUST offer the owner's main actions: register, list and archive projects; plan (and preview); approve; run, pause, stop; status; answer; retry, skip, merge. Commands MUST act on the project given explicitly, else the project whose repo contains the current directory, else the only project. Otherwise they fail, listing the projects. | built (actions; projects and scoping, TASK-10; plan preview `--dry-run`, TASK-13) |
 | REQ-UI-08 | CLI commands MUST exit 0 on success, 1 on failure (with the error on stderr), and 2 on usage errors. `[ASSUMED]` | built (TASK-10) |
-| REQ-UI-09 | The dashboard MUST show, for every configured agent CLI and for the GitHub CLI, whether it is installed and signed in, and MUST let the owner run that CLI's own sign-in flow from the browser: the URL and code the CLI prints appear in the page, and anything the flow asks the owner to type is sent back to it. Credentials stay in the CLI's own store. | new (T028) |
+| REQ-UI-09 | The dashboard MUST show, for every configured agent CLI and for the GitHub CLI, whether it is installed and signed in, and MUST let the owner run that CLI's own sign-in flow from the browser: the URL and code the CLI prints appear in the page, and anything the flow asks the owner to type is sent back to it. Credentials stay in the CLI's own store. | built (T028) |
 | REQ-UI-10 | The dashboard MUST let the owner view and change server settings and the selected project's settings in forms validated by the same rules as the files, with secrets never displayed, and MUST say which changes need a restart. Saving writes the same two files orch reads; a project's file is committed to its base branch. | new (T029) |
 | REQ-UI-11 | Every setting MUST be described once (name, type, default, scope, description, restart needed), and that description MUST drive the loader defaults, the forms and the documented settings table, so they cannot drift. | new (T029) |
 
@@ -380,7 +380,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-OPS-05 | Stored data from earlier versions MUST be upgraded automatically on start, without data loss. | built (`user_version` migrations, TASK-07) |
 | REQ-OPS-06 | orch MUST run as a systemd service and in Docker, keeping all of its state in one data directory. | built (ORCH_HOME layout TASK-05; daemon keeps all state there TASK-09) |
 | REQ-OPS-07 | The access token and notification credentials MUST NOT be written to the store, the event log, or agent prompts. | built (TASK-08) |
-| REQ-OPS-08 | Sign-in flows run from the dashboard MUST NOT write their output or the owner's input to the store, the event log or any file orch owns; the output is streamed to open dashboards only, and credentials are written only by the CLI itself. | new (T028) |
+| REQ-OPS-08 | Sign-in flows run from the dashboard MUST NOT write their output or the owner's input to the store, the event log or any file orch owns; the output is streamed to open dashboards only, and credentials are written only by the CLI itself. | built (T028) |
 
 **Edge cases:**
 - The token is wrong → 401, with no detail about why.

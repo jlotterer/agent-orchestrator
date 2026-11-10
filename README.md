@@ -222,7 +222,10 @@ sudo systemctl enable --now orch
      tasks covered, the run's decisions, your plan edits and the named contracts. **Copy** it into the
      `orch-spec` skill's fold-back mode, commit, then **Acknowledge** (`orch docs-update [--ack]`)
 5. **Decisions** tab is the audit trail: every planner, worker, validator and human decision with
-   its rationale, in order. **Activity** is the run-level event stream. Past runs of the project are
+   its rationale, in order. **Activity** is the run-level event stream. **Agents** is not per project: it lists the agent CLIs and
+   `gh` on the server with their installed version and signed-in state, and **Sign in** runs a CLI's own
+   login there, showing its address and code and sending back what you type (nothing is stored; see
+   [decision 0025](docs/decisions/0025-dashboard-sign-in.md)). Past runs of the project are
    in the run selector next to the run controls.
 
 The tile in the top bar shows what the selected run and its project cost and how much agent time
@@ -459,7 +462,7 @@ The validator is the natural place for a second vendor: it only reads the diff a
 and a model from a different lab shares fewer blind spots with the worker than another Claude
 model does. Workers are better left on Claude Code, since that is the harness your skills,
 hooks and `CLAUDE.md` are written for. Each CLI authenticates on its own, as the user that runs
-orch: `agy` once interactively (Google account; or `GEMINI_API_KEY` plus `"modelProvider": "gemini"`
+orch. Sign each one in from the dashboard's **Agents** tab (it also shows which are installed and signed in), or from a terminal: `agy` once interactively (Google account; or `GEMINI_API_KEY` plus `"modelProvider": "gemini"`
 in `~/.gemini/antigravity-cli/settings.json`), `codex login --device-auth` (ChatGPT subscription; or
 `CODEX_API_KEY` / `OPENAI_API_KEY`). In Docker, see [docs/docker.md](docs/docker.md).
 

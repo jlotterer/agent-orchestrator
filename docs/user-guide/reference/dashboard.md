@@ -57,6 +57,27 @@ The **Decisions** tab is the audit trail of the run: every decision made by the 
 
 The **Activity** tab is the run's event stream: status changes, git actions, agent starts and ends, errors and notices. When nothing can move forward without you, it shows one "waiting on you" entry that lists the blocked tasks.
 
+## Agents tab
+
+The **Agents** tab shows the agent programs in `agents.adapters` and the GitHub CLI (`gh`) on the server that runs orch. It doesn't depend on the selected project. Each card shows:
+
+| Item | Meaning |
+| :--- | :--- |
+| Name, type, command and version | The adapter name, its type, the program orch runs and its installed version. A program orch can't start shows "not installed". |
+| **signed in**, **signed out** or **unknown** | The result of the program's own status check. **unknown** means orch couldn't tell, for example because the program isn't installed or the check timed out. |
+| **Sign in** (or **Sign in again**) | Runs the program's own login on the server and opens a panel under the card. Disabled while a sign-in runs or when the program isn't installed. |
+| **Refresh** (top right) | Checks every program again. The Antigravity check sends one tiny request to the model. |
+| **Or sign in by hand** | The command to run in a terminal on the server, and its Docker form. |
+
+In the panel:
+
+- Lines the program prints appear as they arrive. Addresses (`https://…`) are links. A one-time code has a **copy** button.
+- When the program asks you to type something, such as a code shown after you sign in, enter it in the text box and select **Send**. Select **Send** with an empty box to press **Enter**.
+- **Cancel** stops the sign-in. A sign-in that is still running after 10 minutes is stopped.
+- When the sign-in ends, the panel says whether it finished, and the card shows the new state without reloading the page.
+
+orch shows the output and your input only in your open browsers. It doesn't save them in its database, logs or any file, and the program saves the credentials in its own store. On a server that isn't Linux or macOS, **Sign in** shows the command to run by hand instead.
+
 ## Task panel
 
 The right column shows the selected task. When no task is selected, it shows "Select a task to see its plan, log, and actions."

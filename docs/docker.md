@@ -79,6 +79,8 @@ If the host user isn't uid 1000, `chown -R 1000:1000 work` (the container runs a
 
 ## 3. Credentials
 
+**Sign in from the dashboard (recommended).** Once orch is running, open the **Agents** tab. It lists every CLI in `agents.adapters` plus `gh`, with its installed version and whether it is signed in. **Sign in** runs that CLI's own login on the server and shows its address and one-time code in the page; anything the flow asks you to type goes in the box under it. The login is saved in the CLI's own volume (`claude-home`, `codex-home`, `gemini-home`, `gh-config`); orch stores nothing about it. This needs a Linux image (the one in this guide). The `docker compose run` commands below do the same thing from a terminal and remain the fallback, for example before the first start. If `GH_TOKEN` is set in `.env`, `gh` ignores the stored login and the card says so.
+
 **Claude Code: subscription or API key.** orch only launches the `claude` CLI, so it bills the
 same way Claude Code does in your editor. You do *not* need an API key; a Claude subscription
 login works and is usually the cheaper, more predictable option. Pick one:

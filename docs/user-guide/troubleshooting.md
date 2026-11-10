@@ -28,6 +28,18 @@ Find your symptom or error message, then follow the fix. Error messages from the
 
 **Fix:** In `server.json`, change the adapter to `{ "type": "antigravity", "command": "agy", "extraArgs": ["--dangerously-skip-permissions"], "env": {} }` or to `{ "type": "codex", "command": "codex", "extraArgs": ["--dangerously-bypass-approvals-and-sandbox"], "env": {} }`, or remove it and point every role at `claude`. Then sign in to the new program. See [Choose agents and models](how-to/configure-agents.md#sign-in-to-the-agent-programs).
 
+### Sign in on the Agents tab shows a command instead of starting
+
+**Cause:** The server isn't running on Linux or macOS. Orch runs each program's login under a pseudo-terminal, which needs the `script` program.
+
+**Fix:** Run the command the card shows in a terminal on the server. In Docker, run it with `docker compose run --rm orch <command>`.
+
+### A sign-in on the Agents tab ends with an error
+
+**Cause:** The program's own login failed. The panel keeps what the program printed and adds a hint for that program. For Codex CLI, your ChatGPT account must allow device authorization in its security settings. For Antigravity CLI, the container may have no keyring.
+
+**Fix:** Read the last lines in the panel, fix the cause and select **Sign in** again. If a sign-in waits for input, type what the program asks for and select **Send**.
+
 ### Antigravity reports a keyring error
 
 **Cause:** Antigravity CLI stores its session in the operating system's keyring when one is available. On a server without a desktop session, or in Docker, there is none.

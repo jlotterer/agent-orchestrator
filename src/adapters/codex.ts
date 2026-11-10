@@ -23,7 +23,7 @@
  * Top-level `error` lines also appear for transient reconnects, so an `error` marks the run failed until a
  * later `turn.completed` clears it. No cost is reported (tokens only): costUsd stays null, the dashboard shows n/a.
  */
-import type { AdapterConfig, AgentAdapter, LaunchOptions, LaunchSpec, NormalizedEvent, StreamState } from "./types.js";
+import type { AccountStatus, AdapterConfig, AgentAdapter, LaunchOptions, LaunchSpec, NormalizedEvent, StreamState } from "./types.js";
 import { summarizeInput } from "./runner.js";
 
 /** Item types that become a `tool` event (on item.started) and a `tool_result` (on item.completed). */
@@ -141,5 +141,20 @@ export const codexAdapter: AgentAdapter = {
 
   finish(state: StreamState): void {
     if (!state.finalText) state.finalText = s(state).lastText || state.currentText;
+  },
+
+  // Sign-in (T028; contracts sign-in-flows.md and codex-cli.md). Device code: prints a URL and a one-time code and
+  // exits once the device is approved. The file store keeps credentials in $CODEX_HOME/auth.json (no keyring).
+  account: {
+    status: (cfg: AdapterConfig): LaunchSpec => ({ command: cfg.command, args: ["login", "status"], stdin: null }),
+    parseStatus(output: string, exitCode: number | null): AccountStatus {
+      const line = output.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? "";
+      if (exitCode === 0) return { signedIn: true, detail: line || "signed in" };
+      return { signedIn: false, detail: exitCode === null ? "status check timed out" : (line || "not signed in") };
+    },
+    login: (cfg: AdapterConfig): LaunchSpec => ({
+      command: cfg.command, args: ["login", "--device-auth", "-c", "cli_auth_credentials_store=file"], stdin: null,
+    }),
+    failureHint: "Device authorization must be enabled in your ChatGPT security settings (Settings > Security).",
   },
 };

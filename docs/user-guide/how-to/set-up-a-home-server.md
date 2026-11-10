@@ -191,6 +191,8 @@ Leave `ANTHROPIC_API_KEY` out. You sign in with your Claude subscription in the 
 
 ### Sign in to Claude Code and Antigravity
 
+You can skip this section and sign in from the dashboard later: after you start orch, open the **Agents** tab and click **Sign in** on each card (Claude Code, Antigravity CLI, Codex CLI and `gh`). The steps below do the same from a terminal.
+
 Sign in to Claude Code:
 
 1. Run:

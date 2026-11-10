@@ -77,7 +77,7 @@ Keep repos and working copies on the same mount. git records working copy paths 
    # CODEX_API_KEY=<key>       only if a role uses Codex CLI with an API key instead of a ChatGPT account
    ```
 
-2. Sign in to Claude Code with your subscription. The sign-in is saved in a Docker volume and survives rebuilds:
+2. Sign in to Claude Code with your subscription. You can also do this from the dashboard after you start orch: open the **Agents** tab and click **Sign in** on the `claude` card. The sign-in is saved in a Docker volume and survives rebuilds. From a terminal:
 
    ```bash
    docker compose run --rm orch claude auth login

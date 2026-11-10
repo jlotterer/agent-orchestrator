@@ -145,6 +145,17 @@ ul.acc { margin: 0; padding-left: 18px; } ul.acc li { margin: 2px 0; }
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: min(420px, calc(100vw - 32px)); max-width: calc(100vw - 32px); }
 dialog::backdrop { background: rgba(0,0,0,.5); }
 label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+/* agents tab: installed / signed-in state and the CLIs' own sign-in flows (T028, decision 0025) */
+.acct .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.acct .head .t { margin-bottom: 0; } .acct .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.acct .notice { color: var(--warn); font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
+.acct details { margin-top: 6px; font-size: 12px; color: var(--muted); } .acct details code { overflow-wrap: anywhere; }
+.acct-panel { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.acct-lines { font-family: var(--mono); font-size: 12px; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 2.4em; }
+.acct-lines div { padding: 1px 0; }
+.acct-send { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .acct-send input { flex: 1 1 200px; min-width: 0; font-family: var(--mono); }
+.acct-end { font-size: 12px; margin-top: 6px; } .acct-end.bad { color: var(--bad); } .acct-end.ok { color: var(--ok); }
+button.copy { margin-left: 4px; padding: 0 6px; font-size: 11px; }
 /* review: diff viewer + send back (decision 0018) */
 .diffsum { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
 .n-add { color: var(--add-fg); font-family: var(--mono); font-size: 12px; } .n-del { color: var(--del-fg); font-family: var(--mono); font-size: 12px; }
@@ -211,11 +222,13 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
       <button data-tab="plan">Plan</button>
       <button data-tab="decisions">Decisions</button>
       <button data-tab="activity">Activity</button>
+      <button data-tab="agents">Agents</button>
     </div>
     <div id="tab-board"><div id="projectError" hidden></div><div id="board"></div></div>
     <div id="tab-plan" hidden></div>
     <div id="tab-decisions" hidden></div>
     <div id="tab-activity" hidden><div class="activity" id="activity"></div></div>
+    <div id="tab-agents" hidden></div>
   </div>
 
   <div id="detail" class="col">
@@ -789,7 +802,130 @@ function closeDetail() {
   $("#detailBody").className = "empty"; $("#detailBody").innerHTML = "Select a task to see its plan, log, and actions.";
 }
 $("#closeDetail").onclick = () => { closeDetail(); renderBoard(); };
-document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b)); for (const t of ["board", "plan", "decisions", "activity"]) $(`#tab-${t}`).hidden = t !== b.dataset.tab; });
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b)); for (const t of ["board", "plan", "decisions", "activity", "agents"]) $(`#tab-${t}`).hidden = t !== b.dataset.tab; if (b.dataset.tab === "agents") act(loadAccounts); });
+
+// Agents tab (T028, decision 0025): one card per configured CLI plus gh, rendered from GET /api/accounts so a new
+// adapter needs no change here. Sign in streams the CLI's own login flow; nothing from a flow is stored or kept
+// beyond this page's memory.
+let accounts = null;          // rows from GET /api/accounts; null = not loaded yet
+const flows = {};             // account id -> { lines: [string], active, exit, hint, cancelled, timedOut, draft }
+const acctErr = {};           // account id -> last refused sign-in (e.g. 501 with the command to run by hand)
+const acctBusy = () => (accounts || []).some(r => flows[r.id] && flows[r.id].active);
+const acctById = (id) => [...document.querySelectorAll("#tab-agents .acct")].find(e => e.dataset.id === id);
+const STATUS_LABEL = { signed_in: ["signed in", "s-done"], signed_out: ["signed out", "s-needs_human"], unknown: ["unknown", "s-pending"] };
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    // No clipboard API (plain http on another host): copy through a selected textarea.
+    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } finally { ta.remove(); }
+  }
+  toast("copied");
+}
+// One output line as HTML: https:// tokens become links; on a line that mentions a code, a code-shaped token gets a Copy button.
+function acctLineHtml(line) {
+  const mentionsCode = /code/i.test(line);
+  return line.split(/(\s+)/).map((tok) => {
+    if (!tok.trim()) return esc(tok);
+    const m = tok.match(/^([("'\[]*)(.*?)([)"'\].,;:!?]*)$/);
+    const pre = m[1], core = m[2], post = m[3];
+    if (/^https:\/\/\S+$/i.test(core)) return `${esc(pre)}<a href="${esc(core)}" target="_blank" rel="noopener noreferrer">${esc(core)}</a>${esc(post)}`;
+    const codeLike = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(core) || (/^[A-Za-z0-9_-]{8,}$/.test(core) && /[0-9_-]/.test(core));
+    if (mentionsCode && codeLike) return `${esc(pre)}<b class="mono">${esc(core)}</b><button type="button" class="copy small" data-copy="${esc(core)}" title="copy this code">copy</button>${esc(post)}`;
+    return esc(tok);
+  }).join("");
+}
+function acctPanelHtml(r) {
+  const f = flows[r.id];
+  if (!f) return "";
+  const end = f.active ? "" : `<div class="acct-end ${f.exit === 0 ? "ok" : "bad"}">${f.cancelled ? "Cancelled." : f.timedOut ? "Stopped after 10 minutes." : f.exit === 0 ? "Finished." : `Ended with exit code ${esc(f.exit ?? "none")}.`}${f.hint ? " " + esc(f.hint) : ""}</div>`;
+  return `<div class="acct-panel">
+    <div class="acct-lines" aria-live="polite">${f.lines.map(l => `<div>${acctLineHtml(l)}</div>`).join("") || `<div class="meta">Waiting for the CLI to print…</div>`}</div>
+    ${f.active ? `<form class="acct-send" data-id="${esc(r.id)}"><input name="text" autocomplete="off" spellcheck="false" placeholder="Type what the CLI asks for, then Send (empty sends Enter)" value="${esc(f.draft || "")}"><button class="primary" type="submit">Send</button><button type="button" class="danger" data-act="cancel">Cancel</button></form>` : `<button type="button" class="small" data-act="close" style="margin-top:6px">Close</button>`}
+    ${end}</div>`;
+}
+function acctCardHtml(r) {
+  const [label, cls] = STATUS_LABEL[r.status] || STATUS_LABEL.unknown;
+  const f = flows[r.id], active = !!(f && f.active) || r.loginActive;
+  const installed = r.version !== null || !String(r.detail).startsWith("not installed");
+  const btn = !r.canLogin ? "" : `<button type="button" class="${r.status === "signed_in" ? "" : "primary"}" data-act="login" ${active || !installed ? "disabled" : ""}>${r.status === "signed_in" ? "Sign in again" : "Sign in"}</button>`;
+  return `<div class="card acct" data-id="${esc(r.id)}">
+    <div class="head"><span class="t">${esc(r.id)}</span><span class="pill ${cls}">${label}</span>
+      <span class="meta mono">${esc(r.type)} · ${esc(r.command)}${r.version ? " · " + esc(r.version) : ""}</span><span style="margin-left:auto">${btn}</span></div>
+    <div class="meta">${esc(r.detail)}</div>
+    ${!r.canLogin && r.loginNotice ? `<div class="notice">${esc(r.loginNotice)}</div>` : ""}
+    ${acctErr[r.id] ? `<div class="err">${esc(acctErr[r.id])}</div>` : ""}
+    ${acctPanelHtml(r)}
+    ${r.manualCommand ? `<details><summary>Or sign in by hand</summary>Run <code>${esc(r.manualCommand)}</code> on the server (in Docker: <code>docker compose run --rm orch ${esc(r.manualCommand)}</code>).</details>` : ""}
+  </div>`;
+}
+function renderAccounts() {
+  const el = $("#tab-agents");
+  if (!accounts) { el.innerHTML = `<div class="empty">Checking the installed CLIs…</div>`; return; }
+  el.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><span class="meta" style="color:var(--muted);font-size:12px">Agent CLIs and the GitHub CLI on the orch server. Sign in runs each CLI's own login there; orch stores no credentials.</span><button type="button" class="small" data-act="refresh" style="margin-left:auto">Refresh</button></div>${accounts.map(acctCardHtml).join("")}`;
+  const lines = el.querySelectorAll(".acct-lines"); lines.forEach(l => { l.scrollTop = l.scrollHeight; });
+}
+async function loadAccounts() {
+  if (acctBusy() && accounts) return; // never re-render under a flow the owner is typing into
+  const first = !accounts;
+  if (first) renderAccounts();
+  accounts = await api("GET", "/api/accounts");
+  // A flow started before this page was opened (or before a reload): fetch what it printed so far.
+  for (const r of accounts) if (r.loginActive && !(flows[r.id] && flows[r.id].active)) {
+    const j = await api("GET", `/api/accounts/${enc(r.id)}/login`).catch(() => null);
+    if (j && j.active) flows[r.id] = { lines: j.lines, active: true };
+  }
+  renderAccounts();
+}
+function onAccountEvent(ev) {
+  const id = ev.id;
+  if (ev.line !== undefined) {
+    const f = flows[id] || (flows[id] = { lines: [], active: true });
+    f.lines.push(ev.line); if (f.lines.length > 300) f.lines.shift();
+    const box = acctById(id)?.querySelector(".acct-lines");
+    if (box) {
+      if (f.lines.length === 1) box.innerHTML = "";
+      box.insertAdjacentHTML("beforeend", `<div>${acctLineHtml(ev.line)}</div>`); box.scrollTop = box.scrollHeight;
+    } else if (accounts && $("#tab-agents").hidden === false) renderAccounts();
+  } else if (ev.done) {
+    const f = flows[id] || (flows[id] = { lines: [], active: true });
+    Object.assign(f, { active: false, exit: ev.exitCode, hint: ev.hint, cancelled: !!ev.cancelled, timedOut: !!ev.timedOut });
+    if (accounts && $("#tab-agents").hidden === false) renderAccounts();
+  } else if (ev.account && accounts) {
+    const i = accounts.findIndex(r => r.id === ev.account.id);
+    if (i >= 0) accounts[i] = ev.account; else accounts.push(ev.account);
+    if ($("#tab-agents").hidden === false) renderAccounts();
+  }
+}
+$("#tab-agents").addEventListener("click", async (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.copy) return copyText(b.dataset.copy);
+  const card = b.closest(".acct"), id = card && card.dataset.id, a = b.dataset.act;
+  if (a === "refresh") return act(async () => { accounts = null; await loadAccounts(); });
+  if (!id) return;
+  if (a === "login") {
+    delete acctErr[id]; flows[id] = { lines: [], active: true };
+    try { await api("POST", `/api/accounts/${enc(id)}/login`); }
+    catch (err) { delete flows[id]; acctErr[id] = err.message; }
+    renderAccounts();
+  } else if (a === "cancel") {
+    await act(() => api("POST", `/api/accounts/${enc(id)}/login/cancel`));
+  } else if (a === "close") {
+    delete flows[id]; renderAccounts();
+  }
+});
+$("#tab-agents").addEventListener("input", (e) => {
+  const form = e.target.closest(".acct-send"); if (form && flows[form.dataset.id]) flows[form.dataset.id].draft = e.target.value;
+});
+$("#tab-agents").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target.closest(".acct-send"); if (!form) return;
+  const id = form.dataset.id, input = form.elements.text, text = input.value;
+  input.value = ""; if (flows[id]) flows[id].draft = "";
+  await act(() => api("POST", `/api/accounts/${enc(id)}/login/input`, { text }));
+  input.focus();
+});
 
 // Activity: the shown run's notable events; reloaded when the shown run changes (project or run switch, reconnect).
 const ACTIVITY_KINDS = ["state", "git", "error", "verdict", "decision", "question"];
@@ -829,6 +965,7 @@ function connect() {
     clearTimeout(retryTimer); retryTimer = setTimeout(reconnect, wait);
   };
   src.addEventListener("change", () => scheduleRefresh());
+  src.addEventListener("account", (m) => onAccountEvent(JSON.parse(m.data)));
   src.addEventListener("event", (m) => {
     const ev = JSON.parse(m.data);
     if (!state.run || ev.run_id !== state.run.id) return;

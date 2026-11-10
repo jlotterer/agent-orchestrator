@@ -6,6 +6,8 @@
  *      built-in defaults in src/config.ts below.
  *   3. src/core/ is pure (decision 0020): no node:fs, node:child_process or ../db imports, no
  *      Date.now() / new Date() without arguments.
+ *   4. The retired Gemini CLI adapter file does not exist (decision 0024).
+ *   5. src/accounts.ts uses no store, decide() or file writes (decision 0025, REQ-OPS-08).
  *   npm run check
  */
 import fs from "node:fs";
@@ -87,8 +89,21 @@ for (const file of fs.existsSync(coreDir) ? walk(coreDir) : []) {
 // 4. The Gemini CLI adapter is retired (T027, decision 0024).
 if (fs.existsSync(path.join(ROOT, "src", "adapters", "gemini.ts"))) errors.push("src/adapters/gemini.ts exists; the Gemini CLI adapter was retired in T027 (decision 0024)");
 
+// 5. Sign-in flows are not orchestration events (T028, decision 0025, REQ-OPS-08): src/accounts.ts never touches
+//    the store, decide() or files, so a flow's output and the owner's input cannot be persisted.
+const accountsFile = path.join(ROOT, "src", "accounts.ts");
+if (fs.existsSync(accountsFile)) {
+  fs.readFileSync(accountsFile, "utf8").split(/\r?\n/).forEach((line, i) => {
+    const code = line.replace(/\/\/.*$/, "").trim();
+    if (!code || /^(\*|\/\*)/.test(code)) return;
+    if (/\bfrom\s+["'](node:)?(fs|fs\/promises)["']|\.\/db(\.js)?["']|\bdecide\s*\(|\bstore\b|\bwriteFile|\bappendFile/.test(code)) {
+      errors.push(`src/accounts.ts:${i + 1}: must not use the store, decide() or files (REQ-OPS-08, decision 0025): ${line.trim()}`);
+    }
+  });
+}
+
 if (errors.length) {
   console.error("Invariant check FAILED:\n  " + errors.join("\n  "));
   process.exit(1);
 }
-console.log("Invariant check passed: 1 runtime dependency, vendor names only in src/adapters/, src/core is pure, no retired adapter.");
+console.log("Invariant check passed: 1 runtime dependency, vendor names only in src/adapters/, src/core is pure, no retired adapter, sign-in flows never persist.");

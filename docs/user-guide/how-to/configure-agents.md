@@ -64,6 +64,8 @@ For phase validation, set the `phaseValidator` role. If you don't, it uses the v
 
 orch launches the programs as the user that runs orch, so they use that user's sign-in.
 
+**Sign in from the dashboard.** Open the **Agents** tab. Each program in `agents.adapters` has a card with its installed version and whether it is signed in. Open the dashboard's **Agents** tab, click **Sign in** on the card, open the address it shows, and enter the code (or paste the code you get back) in the box under it. The card updates when the sign-in ends. The commands below do the same from a terminal and are the fallback. They also work when orch runs on Windows, where the dashboard shows the command to run instead of a sign-in.
+
 - **Claude Code:** sign in once with `claude` as that user. A subscription sign-in works. An orchestrated run starts several fresh sessions per task, so it reaches subscription usage limits faster than interactive use.
 - **Antigravity CLI:** run `agy` once as that user and sign in with your Google account. Over SSH, it prints an address. Open it in a browser, sign in, and paste the code it shows back into the terminal. The program keeps the session in the operating system's keyring when there is one, and in a file under `~/.gemini/antigravity-cli/` otherwise. Or use a Gemini API key: set `"modelProvider": "gemini"` in `~/.gemini/antigravity-cli/settings.json` and put the key in the adapter's `env`. The key alone has no effect.
 
