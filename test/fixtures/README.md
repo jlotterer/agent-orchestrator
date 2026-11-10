@@ -156,6 +156,9 @@ Expected JSON shape:
 
 Runner (TASK-20, `brief.test.mjs`): `readSpecDir(folder)` then `importFeature(spec, {briefChars: 8000})` (`src/speckit.ts`), project each task to the fields above, `deepStrictEqual` the tasks, conflicts and problems with the JSON. Runner (TASK-21, `context.test.mjs`): assemble the context for `context.task` with `context.budgets`, using `requirements.sample.md` and `AGENTS.sample.md` as the project files, and compare the part headers, sizes, cuts and decisions. It takes `cites`, `brief` and the contract names from the expected JSON itself, so it does not depend on the brief parser, and compares `parts` (without `handoff`), `cuts` and `decisions` exactly; a folder whose `context` is `null` (`version`, `nocriteria`) is skipped.
 
+### `adapters/<cli>.jsonl` + `adapters/<cli>-error.jsonl`
+Runner: `test/unit/adapters.test.mjs` (T027). Each line is one stream event recorded from the real CLI running inside the orch Docker image on a subscription login (`antigravity.jsonl`: `agy --output-format stream-json`; `codex.jsonl`: `codex exec --json`), paths and ids redacted but shapes exact. The `-error` files are the CLIs' output when not signed in. The runner feeds every line through the adapter's `parseLine` and `finish`, as `src/adapters/runner.ts` does, and checks the normalized events and the final state (session id, tool calls and results, text, final text, `isError`, `costUsd` null). The contracts the adapters were written against are `specs/001-orch-roadmap/contracts/antigravity-cli.md` and `codex-cli.md`; when a recording and a contract disagree, the recording wins and the contract is corrected.
+
 ## Behaviour changes
 
 Cases whose expected output differs from what the code did when the fixtures were written. TASK-03 (or the task named) makes the code match. TASK-03 is done: the `extract-json`, T14 and readiness `maxAgents`/`busyAgents` rows below now pass; the `pending` rows wait for their tasks.

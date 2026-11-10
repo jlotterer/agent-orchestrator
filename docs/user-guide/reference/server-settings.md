@@ -26,16 +26,16 @@ For a full example, see `examples/server.example.json` in the orch source.
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `agents.timeoutMinutes` | integer | `90` | The longest an agent session may run before orch ends it and counts the attempt as failed. |
-| `agents.adapters.<name>.type` | `claude` or `gemini` | Not applicable | Which kind of adapter this is. |
-| `agents.adapters.<name>.command` | string | `claude` or `gemini` | The program to run. |
-| `agents.adapters.<name>.extraArgs` | list of strings | `claude`: `["--permission-mode", "bypassPermissions"]`; `gemini`: `["--yolo", "--skip-trust"]` | Arguments added to every launch. |
-| `agents.adapters.<name>.env` | object | `{}` | Extra environment variables for the program, such as `GEMINI_API_KEY`. Never stored or logged. |
+| `agents.adapters.<name>.type` | `claude`, `antigravity` or `codex` | Not applicable | Which kind of adapter this is. `gemini` is no longer accepted. |
+| `agents.adapters.<name>.command` | string | `claude`, `agy` or `codex` | The program to run. |
+| `agents.adapters.<name>.extraArgs` | list of strings | `claude`: `["--permission-mode", "bypassPermissions"]`; `antigravity`: `["--dangerously-skip-permissions"]`; `codex`: `["--dangerously-bypass-approvals-and-sandbox"]` | Arguments added to every launch. |
+| `agents.adapters.<name>.env` | object | `{}` | Extra environment variables for the program, such as `GEMINI_API_KEY` or `CODEX_API_KEY`. Never stored or logged. |
 | `agents.roles.planner` | `{ "adapter", "model" }` | `claude`, default model | The default agent for planning. |
 | `agents.roles.worker` | `{ "adapter", "model" }` | `claude`, default model | The default agent for writing code. |
 | `agents.roles.validator` | `{ "adapter", "model" }` | `claude`, default model | The default agent for validation. |
 | `agents.roles.phaseValidator` | `{ "adapter", "model" }` | The validator's setting | The default agent for phase validation. |
 
-The adapters `claude` and `gemini` are defined by default. A role's `adapter` must name a defined adapter, or orch refuses to start. See [Choose agents and models](../how-to/configure-agents.md).
+The adapters `claude`, `antigravity` and `codex` are defined by default. A role's `adapter` must name a defined adapter, or orch refuses to start. An adapter with `"type": "gemini"` also stops orch from starting; the Gemini CLI adapter was retired. See [Choose agents and models](../how-to/configure-agents.md).
 
 ## Scheduling
 

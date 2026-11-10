@@ -20,7 +20,19 @@ Find your symptom or error message, then follow the fix. Error messages from the
 
 **Cause:** A role in `server.json` names an adapter that isn't defined.
 
-**Fix:** Use `claude` or `gemini`, or define the adapter under `agents.adapters`.
+**Fix:** Use `claude`, `antigravity` or `codex`, or define the adapter under `agents.adapters`.
+
+### "agents.adapters.`<name>` has type "gemini", retired in T027"
+
+**Cause:** Your `server.json` still defines the Gemini CLI adapter. Google ended Gemini CLI's Google-account sign-in for individuals on June 18, 2026, and orch replaced the adapter with Antigravity CLI and Codex CLI.
+
+**Fix:** In `server.json`, change the adapter to `{ "type": "antigravity", "command": "agy", "extraArgs": ["--dangerously-skip-permissions"], "env": {} }` or to `{ "type": "codex", "command": "codex", "extraArgs": ["--dangerously-bypass-approvals-and-sandbox"], "env": {} }`, or remove it and point every role at `claude`. Then sign in to the new program. See [Choose agents and models](how-to/configure-agents.md#sign-in-to-the-agent-programs).
+
+### Antigravity reports a keyring error
+
+**Cause:** Antigravity CLI stores its session in the operating system's keyring when one is available. On a server without a desktop session, or in Docker, there is none.
+
+**Fix:** Sign in again with `agy`. Without a keyring, the program keeps the session in a file under `~/.gemini/antigravity-cli/`. If it keeps failing, use a Gemini API key instead: set `"modelProvider": "gemini"` in `~/.gemini/antigravity-cli/settings.json` and `GEMINI_API_KEY` in the adapter's `env`.
 
 ### The dashboard doesn't load from another machine
 

@@ -1,5 +1,5 @@
 /**
- * Adapter layer: each coding-agent CLI (Claude Code, Gemini CLI, …) is wrapped by an adapter
+ * Adapter layer: each coding-agent CLI (Claude Code, Antigravity CLI, Codex CLI, …) is wrapped by an adapter
  * that knows how to launch it headlessly and how to translate its event stream into the
  * small set of normalized events the orchestrator and dashboard understand.
  */
@@ -19,6 +19,11 @@ export interface LaunchSpec {
   args: string[];
   /** Text written to the process's stdin (closed afterwards). Null = nothing. */
   stdin: string | null;
+  /**
+   * Keep stdin open after writing: the runner ends it when the adapter sets `state.sawResult` or the
+   * process exits. For CLIs that treat a closed stdin as "abort the turn".
+   */
+  holdStdin?: boolean;
 }
 
 export interface LaunchOptions {

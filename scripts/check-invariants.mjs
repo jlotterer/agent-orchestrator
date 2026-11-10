@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Stack invariants (REQ-NFR-02, REQ-NFR-04, REQ-NFR-05; decisions 0007, 0009 and 0020). Exits non-zero on any violation.
+ * Stack invariants (REQ-NFR-02, REQ-NFR-04, REQ-NFR-05; decisions 0007, 0009, 0020 and 0024). Exits non-zero on any violation.
  *   1. package.json `dependencies` is exactly { better-sqlite3 }.
  *   2. Agent-vendor names appear in src/**\/*.ts only inside src/adapters/, plus the allowlisted
  *      built-in defaults in src/config.ts below.
@@ -14,19 +14,21 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ALLOWED_DEPENDENCIES = ["better-sqlite3"];
-const VENDOR = /claude|gemini|anthropic/i;
+const VENDOR = /claude|gemini|anthropic|antigravity|\bagy\b|codex|openai/i;
 
 /**
  * Lines outside src/adapters/ that may name a vendor. Keep this list short and specific:
- * src/config.ts ships the built-in adapter definitions (`agents.adapters.claude|gemini`), the default
- * role → adapter mapping, and the pre-0.2 `agent` block migration, which by nature name vendors.
+ * src/config.ts ships the built-in adapter definitions (`agents.adapters.claude|antigravity|codex`), the
+ * default role → adapter mapping, the pre-0.2 `agent` block migration, and the upgrade error for the
+ * retired `gemini` type (T027, decision 0024), which by nature name vendors.
  * Matched against the trimmed line. Anything else naming a vendor belongs in src/adapters/.
  */
 const ALLOWLIST = {
   "src/config.ts": [
     /^(\/\/|\/\*|\*)/,                                                     // comments in the config module
-    /^(claude|gemini): \{$/,                                               // default adapter keys
-    /^(type|command): "(claude|gemini)",$/,                                // default adapter type / CLI command
+    /^(claude|antigravity|codex): \{$/,                                    // default adapter keys
+    /^(type|command): "(claude|antigravity|agy|codex)",$/,                 // default adapter type / CLI command
+    /^const RETIRED_ADAPTER_(TYPE = "gemini"|MESSAGE = 'has type "gemini", retired in T027 \(decision 0024\); use type "antigravity" \(command agy\) or "codex", or remove it and point roles at claude');$/, // retired-adapter upgrade error
     /^(planner|worker|validator): \{ adapter: "claude", model: (""|a\.\w+ \?\? "") \},$/, // default roles + legacy migration
     /^adapters: \{ claude: \{ type: "claude", command: a\.command \?\? "claude", /,        // legacy `agent` block migration
   ],
@@ -82,8 +84,11 @@ for (const file of fs.existsSync(coreDir) ? walk(coreDir) : []) {
   });
 }
 
+// 4. The Gemini CLI adapter is retired (T027, decision 0024).
+if (fs.existsSync(path.join(ROOT, "src", "adapters", "gemini.ts"))) errors.push("src/adapters/gemini.ts exists; the Gemini CLI adapter was retired in T027 (decision 0024)");
+
 if (errors.length) {
   console.error("Invariant check FAILED:\n  " + errors.join("\n  "));
   process.exit(1);
 }
-console.log("Invariant check passed: 1 runtime dependency, vendor names only in src/adapters/, src/core is pure.");
+console.log("Invariant check passed: 1 runtime dependency, vendor names only in src/adapters/, src/core is pure, no retired adapter.");

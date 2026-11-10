@@ -14,7 +14,7 @@ Success looks like this:
 
 ## 2. Users & Context
 - **One owner** (the only user). They author specs with Spec Kit, run orch on an always-on Linux server (or WSL2/Docker), and use it from a browser on a laptop or phone over a private network.
-- **AI agents** (Claude Code primarily; Gemini CLI as an alternative, typically for validation). They are not users, but they call orch's agent-facing commands from inside a task.
+- **AI agents** (Claude Code primarily; Antigravity CLI and Codex CLI as alternatives, typically for validation). They are not users, but they call orch's agent-facing commands from inside a task.
 - The owner accepts subscription usage limits rather than API billing. They accept that agents run with full permissions inside their isolated working copy. They want no vendor lock-in: open code they own, any agent CLI.
 
 ## 3. Core Workflow
@@ -222,7 +222,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - `REQ-VAL-01`: Given a test command `sh check.sh` that exits 1, Then the attempt fails and the feedback contains the script's output.
 - `REQ-VAL-02`: Given a gate that passes with output "12 tests passed", Then the validator's prompt contains that output, the diff and the worker's summary, and contains none of the worker's assistant messages.
 - `REQ-VAL-03`: Given a validator verdict FAIL with one unmet criterion, Then the next attempt's feedback lists that criterion as UNMET.
-- `REQ-VAL-04`: Given the worker on Claude and the validator on Gemini, Then the activity stream shows the validator started on the Gemini adapter.
+- `REQ-VAL-04`: Given the worker on Claude and the validator on a second adapter, Then the activity stream shows the validator started on that adapter.
 - `REQ-VAL-05`: Given T002 owns `src/auth/**` and its diff also edits `README.md`, Then the verdict lists `README.md` as out of scope, and a PASS stays PASS.
 - `REQ-VAL-06`: Given phase "Core" with tasks all done, Then a phase validation runs once on the base branch, and its result appears as a decision.
 - `REQ-VAL-07`: Given phase validation of "Core" fails, Then a fix-up task appears in the plan with the failure as its description, and tasks of the next phase do not start until it is done.
@@ -319,7 +319,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
 | REQ-ADAPT-01 | The planner, worker and validator roles (and the phase validator) MUST each be assignable to an agent CLI and model independently, at server level, with per-project overrides choosing among the server's configured CLIs. | built (server level; project overrides TASK-09); phase validator role, TASK-15) |
-| REQ-ADAPT-02 | orch MUST run Claude Code and Gemini CLI headlessly in a working copy, with the prompt, an optional model, and session resume. | built |
+| REQ-ADAPT-02 | orch MUST run Claude Code, Antigravity CLI and Codex CLI headlessly in a working copy, with the prompt, an optional model, and session resume. | built (Gemini CLI retired, Antigravity and Codex added: T027, decision 0024) |
 | REQ-ADAPT-03 | Agent output MUST be shown live in the task view as one uniform stream: agent text, tool calls, tool results, errors, and session info including reported cost. | built |
 | REQ-ADAPT-04 | Agents MUST be able to use orch's agent-facing commands (decide, ask) from inside a task without any installation step, and those commands MUST act on the right task. | built |
 
@@ -328,7 +328,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - The CLI emits a malformed line → shown as raw text; the run continues.
 
 **Acceptance criteria:**
-- `REQ-ADAPT-01`: Given the server sets the validator to Gemini and project X overrides the validator to Claude, Then X's validators run on Claude and other projects' on Gemini.
+- `REQ-ADAPT-01`: Given the server sets the validator to a second adapter and project X overrides the validator to Claude, Then X's validators run on Claude and other projects' on the second adapter.
 - `REQ-ADAPT-02`: Given each adapter, Then an end-to-end run with the matching fake CLI completes planning, work, validation and resume.
 - `REQ-ADAPT-03`: Given a running worker, Then its tool calls appear in the task view while it runs, without reloading.
 - `REQ-ADAPT-04`: Given a worker runs `orch ask "…"`, Then the question is attached to that worker's task.
@@ -434,14 +434,14 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | :--- | :--- | :--- | :--- |
 | A1 | Product | One owner, many projects; no multi-user. | Auth model and inbox ownership change. |
 | A2 | Product | Deployed on an always-on Linux server reached over a private network. | Auth hardening (TLS, rate limiting) becomes required. |
-| A3 | Product | Claude Code is the primary worker; Gemini mainly validates. | Adapter test priority. |
+| A3 | Product | Claude Code is the primary worker; a second adapter mainly validates. | Adapter test priority. |
 | A5 | Product `[ASSUMED]` | Single-repo installs upgrade automatically (REQ-PROJ-10). | Manual migration steps needed. |
 | A6 | Product `[ASSUMED]` | Non-local bind requires a token unless overridden (REQ-OPS-02). | First-run friction, or exposure. |
 | A7 | Product `[ASSUMED]` | Cost is display-only. | Spend caps need requirements. |
 | A8 | Product `[ASSUMED]` | CLI exit codes 0/1/2 (REQ-UI-08). | Scripts relying on other codes. |
 | A9 | Product `[ASSUMED]` | Health check is unauthenticated (REQ-OPS-03). | Leaks version string. |
 | A10 | Product `[ASSUMED]` | A plan with a dependency cycle cannot be approved. | Runs that deadlock instead. |
-| Q1 | Open | The Gemini adapter has not run against a live Gemini account. | Validator prompt tuning; not blocking. |
+| Q1 | Closed (T027, 2026-11-09) | The Gemini adapter never ran against a live account and was retired when Google ended its individual sign-in (decision 0024). Its replacements, Antigravity CLI and Codex CLI, each completed a real task in the Docker image on a subscription login. | Validator prompt tuning for the new agents, if any, is a later task. |
 
 Design-level assumptions are tracked in [architecture.md](architecture.md#22-design-assumptions).
 

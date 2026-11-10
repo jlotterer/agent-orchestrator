@@ -1,6 +1,6 @@
-# orch — orchestrator / worker / validator runner for Claude Code
+# orch — orchestrator / worker / validator runner for coding agents
 #
-# The image contains: node, git, gh, Claude Code, and orch itself.
+# The image contains: node, git, gh, Claude Code, Antigravity CLI (agy), Codex CLI, and orch itself.
 # Your repos, worktrees, database and settings live on a mounted volume (/work = ORCH_HOME).
 # Add your project's own toolchain (python, go, …) in the marked section below,
 # because validation commands and setup commands run inside this container.
@@ -24,14 +24,20 @@ RUN apt-get update \
 #   RUN curl -fsSL https://bun.sh/install | bash
 # ------------------------------------------------------------------------------
 
-# --- Claude Code + Gemini CLI ---------------------------------------------------
-ARG GEMINI_CLI_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @google/gemini-cli@${GEMINI_CLI_VERSION}
+# --- Claude Code + Codex CLI + Antigravity CLI ----------------------------------
+# Gemini CLI is gone (T027, decision 0024): Google ended its Google-account sign-in for individuals.
+ARG CODEX_CLI_VERSION=latest
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_CLI_VERSION}
+# Antigravity CLI ships as one binary; its installer drops it in ~/.local/bin of the building user.
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash \
+ && mv /root/.local/bin/agy /usr/local/bin/agy && chmod 755 /usr/local/bin/agy && agy --version
 
 # --- non-root user (Claude Code refuses --dangerously-skip-permissions as root) -
 # The node image ships a 'node' user with uid 1000; rename it so files on the mount are uid 1000.
 RUN groupmod -n orch node && usermod -l orch -d /home/orch -m node \
- && mkdir -p /work /home/orch/.claude /home/orch/.gemini /home/orch/.config/gh \
+ && mkdir -p /work /home/orch/.claude /home/orch/.gemini/antigravity-cli /home/orch/.codex /home/orch/.config/gh \
+ # Codex: keep credentials in $CODEX_HOME/auth.json; there is no OS keyring in the container.
+ && printf 'cli_auth_credentials_store = "file"\n' > /home/orch/.codex/config.toml \
  && chown -R orch:orch /work /home/orch
 
 # --- orch ----------------------------------------------------------------------

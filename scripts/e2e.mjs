@@ -8,8 +8,9 @@
  * has no task and holds every start until answered; approval refuses a dependency cycle.
  * TASK-14: the planner gives T002 and T003 overlapping files_owned; they never run at the same time and an
  * orchestrator decision names both. T001's out-of-scope edit (notes/T001.md) is a finding, and T001 still passes.
- * TASK-17: the fake Claude reports $0.01 per call and the fake Gemini no cost. The run total is the number of
- * Claude-adapter calls x 0.01; the run row (planner and phase validators, Gemini only) has agent time but cost n/a.
+ * TASK-17: the fake Claude reports $0.01 per call; the fake Codex (planner) and fake Antigravity (validators) report no cost.
+ * The run total is the number of Claude-adapter calls x 0.01; the run row (planner and phase validators, which never
+ * run on Claude here) has agent time but cost n/a. T027 re-targeted this from the retired Gemini adapter.
  *   node scripts/e2e.mjs
  */
 import fs from "node:fs";
@@ -45,11 +46,12 @@ writeConfig(repo, {
     timeoutMinutes: 2,
     adapters: {
       claude: { type: "claude", command: FAKE_AGENT, extraArgs: [], env: { FAKE_ACTIVE_DIR: ACTIVE_DIR } },
-      gemini: { type: "gemini", command: FAKE_AGENT, extraArgs: ["--yolo", "--skip-trust"], env: { FAKE_FLAVOR: "gemini", FAKE_ACTIVE_DIR: ACTIVE_DIR } },
+      antigravity: { type: "antigravity", command: FAKE_AGENT, extraArgs: ["--dangerously-skip-permissions"], env: { FAKE_FLAVOR: "antigravity", FAKE_ACTIVE_DIR: ACTIVE_DIR } },
+      codex: { type: "codex", command: FAKE_AGENT, extraArgs: ["--dangerously-bypass-approvals-and-sandbox"], env: { FAKE_FLAVOR: "codex", FAKE_ACTIVE_DIR: ACTIVE_DIR } },
     },
-    // Workers on one adapter, planning and validation on another: the mixed setup this test exists to exercise.
-    // Only the workers report a cost (TASK-17), so the run row's own spend is Gemini-only.
-    roles: { planner: { adapter: "gemini", model: "" }, worker: { adapter: "claude", model: "" }, validator: { adapter: "gemini", model: "pro" } },
+    // Workers on one adapter, planning and validation on two others: the mixed setup this test exists to exercise.
+    // Only the workers report a cost (TASK-17), so the run row's own spend has no Claude call in it.
+    roles: { planner: { adapter: "codex", model: "" }, worker: { adapter: "claude", model: "" }, validator: { adapter: "antigravity", model: "" } },
   },
   scheduler: { maxParallel: 2, tickSeconds: 1, maxAttempts: 2, resumeOnRetry: true },
   validation: { command: "sh check.sh", agent: true },
@@ -226,10 +228,14 @@ try {
   if (!t001v || t001v.data.verdict !== "PASS" || JSON.stringify(t001v.data.out_of_scope) !== JSON.stringify(["notes/T001.md"]) || !t001v.data.findings.some((f) => f.includes("notes/T001.md"))) {
     throw new Error("T001 verdict should PASS with notes/T001.md out of scope: " + JSON.stringify(t001v?.data));
   }
-  const vStart = evs.filter((e) => e.kind === "state" && /validator started \(gemini:pro\)/.test(e.data.message));
-  if (vStart.length < 4) throw new Error("validator did not run on the gemini adapter: " + vStart.length);
-  const vInit = evs.filter((e) => e.kind === "info" && e.data.role === "validator" && e.data.model === "fake-gemini");
-  if (!vInit.length) throw new Error("gemini stream not parsed (no init with fake-gemini model)");
+  const vStart = evs.filter((e) => e.kind === "state" && /validator started \(antigravity\)/.test(e.data.message));
+  if (vStart.length < 4) throw new Error("validator did not run on the antigravity adapter: " + vStart.length);
+  const vInit = evs.filter((e) => e.kind === "info" && e.data.role === "validator" && e.data.model === "fake-antigravity");
+  if (!vInit.length) throw new Error("antigravity stream not parsed (no init with fake-antigravity model)");
+  const pStart = evs.filter((e) => e.kind === "state" && /planner started \(codex\)/.test(e.data.message));
+  if (!pStart.length) throw new Error("planner did not run on the codex adapter");
+  const pInit = evs.filter((e) => e.kind === "info" && e.data.role === "planner" && e.data.model === "fake-codex");
+  if (!pInit.length) throw new Error("codex stream not parsed (no init with fake-codex model)");
   // TASK-17 (REQ-UI-06): cost and agent time, rolled up from rows.
   const claudeCalls = evs.filter((e) => e.kind === "state" && /^worker started \(claude[,:)]/.test(e.data.message ?? "")).length;
   const cents = (x) => Math.round(x * 100);
@@ -241,8 +247,8 @@ try {
   if (JSON.stringify(s.totals.project) !== JSON.stringify(s.totals.run)) throw new Error("one-run project total should equal the run total: " + JSON.stringify(s.totals));
   if (cents(s.tasks.reduce((a, t) => a + (t.cost_usd ?? 0), 0)) !== claudeCalls) throw new Error("task costs don't add up to the run total: " + s.tasks.map((t) => `${t.key}=${t.cost_usd}`).join(" "));
   if (!s.tasks.every((t) => t.cost_usd > 0 && t.agent_ms > 0)) throw new Error("every task ran a Claude worker, so has a cost and time: " + s.tasks.map((t) => `${t.key}=${t.cost_usd}/${t.agent_ms}`).join(" "));
-  // The planner and phase validators ran on Gemini only: time is counted, cost is unknown (n/a), not $0.
-  if (s.run.cost_usd !== null || !(s.run.agent_ms > 0)) throw new Error("Gemini-only run row should have agent time and cost null: " + JSON.stringify({ cost_usd: s.run.cost_usd, agent_ms: s.run.agent_ms }));
+  // The planner (Codex) and phase validators (Antigravity) never ran on Claude: time is counted, cost is unknown (n/a), not $0.
+  if (s.run.cost_usd !== null || !(s.run.agent_ms > 0)) throw new Error("run row without Claude calls should have agent time and cost null: " + JSON.stringify({ cost_usd: s.run.cost_usd, agent_ms: s.run.agent_ms }));
   if (!html.includes('id="usage"')) throw new Error("dashboard has no cost/time tile");
   console.log(`cost: run $${s.totals.run.costUsd} over ${claudeCalls} Claude calls, ${s.totals.run.agentMs} ms; planner/phase validators n/a`);
   const log = sh("git log --oneline").trim().split("\n");

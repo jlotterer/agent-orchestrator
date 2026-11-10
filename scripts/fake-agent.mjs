@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * A stand-in for `claude -p --output-format stream-json` used by the e2e test.
- * It reads the prompt from stdin, emits NDJSON like Claude Code does, and
+ * A stand-in for `claude -p --output-format stream-json` used by the e2e test. With FAKE_FLAVOR=antigravity
+ * or FAKE_FLAVOR=codex it speaks the Antigravity CLI (`agy`) or Codex CLI (`codex exec --json`) dialect instead
+ * (T027; shapes from specs/001-orch-roadmap/contracts/*.md), and exits 42 unless the launch carries that CLI's
+ * permission flag. It reads the prompt from stdin, emits NDJSON like the CLI does, and
  * performs scripted behaviour based on which role prompt it received:
  *   planner   -> returns acceptance criteria for every task
  *   worker    -> writes impl/<KEY>.txt and commits; T002 asks a question first;
@@ -56,25 +58,49 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 
 const args = process.argv.slice(2);
-const resumeIdx = args.indexOf("--resume");
+// FAKE_FLAVOR picks the dialect: claude (default), antigravity (`agy`, prompt as one NDJSON user event on stdin,
+// resume via --conversation) or codex (`codex exec [resume <id>] --json … -`, raw prompt on stdin).
+const flavor = process.env.FAKE_FLAVOR ?? "claude";
+const agy = flavor === "antigravity", codex = flavor === "codex";
+const resumeIdx = codex ? args.indexOf("resume") : args.indexOf(agy ? "--conversation" : "--resume");
 const sessionId = resumeIdx >= 0 ? args[resumeIdx + 1] : "sess-" + Math.random().toString(36).slice(2, 10);
-const prompt = fs.readFileSync(0, "utf8");
+let prompt = fs.readFileSync(0, "utf8");
+if (agy) {
+  if (!args.includes("--dangerously-skip-permissions")) { console.error("fake agy: expected --dangerously-skip-permissions"); process.exit(42); }
+  if (!args.includes("--input-format") || !args.includes("stream-json")) { console.error("fake agy: expected --input-format stream-json"); process.exit(1); }
+  const first = prompt.split("\n").find((l) => l.trim());
+  prompt = JSON.parse(first).message.content;
+}
+if (codex) {
+  if (!args.includes("--dangerously-bypass-approvals-and-sandbox")) { console.error("fake codex: expected --dangerously-bypass-approvals-and-sandbox"); process.exit(42); }
+  if (args[0] !== "exec" || !args.includes("--json") || args.at(-1) !== "-") { console.error("fake codex: expected `exec … --json … -`, got " + args.join(" ")); process.exit(1); }
+}
 if (process.env.FAKE_PROMPT_LOG) fs.appendFileSync(process.env.FAKE_PROMPT_LOG, prompt + "\n---\n");
 if (process.env.FAKE_PROMPT_DIR) {
   fs.mkdirSync(process.env.FAKE_PROMPT_DIR, { recursive: true });
   fs.writeFileSync(path.join(process.env.FAKE_PROMPT_DIR, `${Date.now()}-${process.pid}.txt`), prompt);
 }
-// FAKE_FLAVOR=gemini makes this script speak Gemini CLI's stream-json dialect instead of Claude Code's.
-const gemini = process.env.FAKE_FLAVOR === "gemini";
-if (gemini && !args.includes("--yolo")) { console.error("fake gemini: expected --yolo"); process.exit(42); }
-const emit = (o) => process.stdout.write(JSON.stringify(gemini ? o : { session_id: sessionId, ...o }) + "\n");
-const say = (text) => gemini
-  ? text.split(/(?<=\s)/).forEach((chunk, i) => emit({ type: "message", role: "assistant", content: chunk, delta: true }))   // Gemini streams deltas
-  : emit({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text }] } });
+const emit = (o) => process.stdout.write(JSON.stringify(agy || codex ? o : { session_id: sessionId, ...o }) + "\n");
+let step = 1; // agy step_index / codex item counter
+const say = (text) => {
+  if (agy) {
+    // Antigravity streams one agent_response step as text_delta lines, ACTIVE… then DONE.
+    const idx = step++, chunks = text.split(/(?<=\s)/);
+    chunks.forEach((chunk, i) => emit({ event: "step_update", step_update: { conversation_id: sessionId, step_index: idx, state: i === chunks.length - 1 ? "DONE" : "ACTIVE", step_type: "agent_response", text_delta: chunk } }));
+  } else if (codex) {
+    emit({ type: "item.completed", item: { id: `item_${step++}`, type: "agent_message", text } });
+  } else {
+    emit({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text }] } });
+  }
+};
 const tool = (name, input, output) => {
-  if (gemini) {
-    emit({ type: "tool_use", tool_name: name, tool_id: "t1", parameters: input });
-    emit({ type: "tool_result", tool_id: "t1", status: "success", output });
+  if (agy) {
+    // One `tool` step carries the call and its result.
+    emit({ event: "step_update", step_update: { conversation_id: sessionId, step_index: step++, state: "DONE", step_type: "tool", tool_name: name, duration_seconds: 0.05, tool_info: { name, parameters: input, output } } });
+  } else if (codex) {
+    const id = `item_${step++}`, command = input.command ?? `${name} ${JSON.stringify(input)}`;
+    emit({ type: "item.started", item: { id, type: "command_execution", command, status: "in_progress" } });
+    emit({ type: "item.completed", item: { id, type: "command_execution", command, status: "completed", exit_code: 0, aggregated_output: output } });
   } else {
     emit({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "tu1", name, input }] } });
     emit({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu1", content: output }] } });
@@ -83,7 +109,8 @@ const tool = (name, input, output) => {
 const finish = (obj, text = "Done.") => {
   const full = `${text}\n\n\`\`\`json\n${JSON.stringify(obj, null, 2)}\n\`\`\``;
   say(full);
-  if (gemini) emit({ type: "result", status: "success", stats: { duration_ms: 500 } });
+  if (agy) emit({ event: "result", result: { conversation_id: sessionId, status: "SUCCESS", response: full, duration_seconds: 0.5, num_turns: 1, usage: { input_tokens: 10, output_tokens: 20, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 30 } } });
+  else if (codex) emit({ type: "turn.completed", usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 20, reasoning_output_tokens: 0 } });
   else emit({ type: "result", subtype: "success", is_error: false, result: full, total_cost_usd: 0.01, duration_ms: 500, num_turns: 3 });
 };
 const orch = (cmdline) => {
@@ -92,7 +119,9 @@ const orch = (cmdline) => {
   tool("Bash", { command: `orch ${cmdline}` }, out);
   return out;
 };
-if (gemini) emit({ type: "init", timestamp: new Date().toISOString(), session_id: sessionId, model: "fake-gemini" });
+if (agy) emit({ event: "init", conversation_id: sessionId, init: { cwd: process.cwd(), tools: ["run_command", "write_to_file"], permission_mode: "always-proceed", model: "fake-antigravity" } });
+// The real `codex exec --json` reports no model in thread.started; the fake adds one so e2e can tell the streams apart.
+else if (codex) { emit({ type: "thread.started", thread_id: sessionId, model: "fake-codex" }); emit({ type: "turn.started" }); }
 else emit({ type: "system", subtype: "init", model: "fake", session_id: sessionId });
 await new Promise((r) => setTimeout(r, 200));
 

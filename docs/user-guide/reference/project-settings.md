@@ -114,6 +114,6 @@ Each file and each part has its own limit, so a long `plan.md` can't cut `spec.m
     "setupCommand": "npm ci",
     "feedback": { "maxRounds": 3, "ignoreAuthors": ["dependabot"] }
   },
-  "roles": { "validator": { "adapter": "gemini", "model": "pro" } }
+  "roles": { "validator": { "adapter": "antigravity", "model": "" } }
 }
 ```

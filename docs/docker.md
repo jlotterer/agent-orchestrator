@@ -49,7 +49,7 @@ For the first start, write the settings as one file, `work/orch.config.json` (th
   "port": 4800,
   "auth": { "token": "", "allowInsecure": false },
   "publicUrl": "http://my-server:4800",
-  "agents": { "roles": { "planner": { "adapter": "claude", "model": "" }, "worker": { "adapter": "claude", "model": "" }, "validator": { "adapter": "gemini", "model": "pro" } } },
+  "agents": { "roles": { "planner": { "adapter": "claude", "model": "" }, "worker": { "adapter": "claude", "model": "" }, "validator": { "adapter": "antigravity", "model": "" } } },
   "scheduler": { "maxParallel": 1, "tickSeconds": 5, "maxAttempts": 2, "resumeOnRetry": true },
   "validation": { "command": "npm test", "agent": true },
   "git": { "pr": true, "mergePolicy": "auto", "squash": true, "copyFiles": [], "setupCommand": "npm ci", "tickTasksMd": true },
@@ -104,8 +104,22 @@ so it reaches the caps faster than interactive use. When Claude Code is rate-lim
 an error; orch treats that as a failed attempt, retries once, then parks the task in the inbox.
 Pause the run and press Start again later; nothing is lost.
 
-**Gemini CLI** (only if a role uses the `gemini` adapter): set `GEMINI_API_KEY` in `.env`, or
-log in once with `docker compose run --rm orch gemini` (saved in the `gemini-home` volume).
+**Antigravity CLI** (only if a role uses the `antigravity` adapter): sign in once with your Google
+account, `docker compose run --rm orch agy`. Over SSH it prints an address; open it on your PC, sign
+in, and paste the code back. The session is saved in the `gemini-home` volume (Antigravity keeps its
+files under `~/.gemini/antigravity-cli/`). The CLI prefers the OS keyring and the container has none,
+so it falls back to a file in that directory; see the user guide if it reports a keyring error.
+Alternative: a Gemini API key, `GEMINI_API_KEY` in `.env` **and** `"modelProvider": "gemini"` in the
+volume's `antigravity-cli/settings.json` (the key alone has no effect).
+
+**Codex CLI** (only if a role uses the `codex` adapter): sign in once with your ChatGPT account,
+`docker compose run --rm orch codex login --device-auth`, and enter the printed code at the printed
+address on your PC. The login is saved as a file in the `codex-home` volume (the image sets
+`cli_auth_credentials_store = "file"`). Check with `docker compose run --rm orch codex login status`.
+Alternative: `CODEX_API_KEY` or `OPENAI_API_KEY` in `.env` for per-token billing.
+
+The Gemini CLI is no longer in the image (T027, decision 0024). If your `work/server.json` still has an
+adapter of type `gemini`, orch refuses to start and the message says what to change.
 
 <a id="access-token"></a>**Access token.** The dashboard, API, live stream and CLI all need it once
 a token is set. Generate one:

@@ -54,7 +54,7 @@ Each task has these properties, which you can review and edit in the plan:
 
 ## Agents and roles
 
-orch launches an AI coding agent program, such as Claude Code or Gemini CLI, for each piece of work. Each launch has one *role*:
+orch launches an AI coding agent program, such as Claude Code, Antigravity CLI or Codex CLI, for each piece of work. Each launch has one *role*:
 
 | Role | What it does |
 | :--- | :--- |
@@ -63,7 +63,7 @@ orch launches an AI coding agent program, such as Claude Code or Gemini CLI, for
 | Validator | Checks one task's changes against its acceptance criteria and runs the tests itself. It never sees the worker's reasoning. |
 | Phase validator | Checks a whole phase on the base branch after all of its tasks merge. |
 
-You choose the agent program and model for each role. For example, you can use Claude Code for workers and Gemini CLI for validators, so the checker shares fewer blind spots with the author. See [Choose agents and models](how-to/configure-agents.md).
+You choose the agent program and model for each role. For example, you can use Claude Code for workers and Antigravity CLI or Codex CLI for validators, so the checker shares fewer blind spots with the author. See [Choose agents and models](how-to/configure-agents.md).
 
 Every agent session starts with a fresh context. Instead of one long conversation, each worker gets a *hand-off brief*. It holds the task and its criteria, an excerpt of the spec and plan, summaries of earlier tasks, the decisions so far, your earlier answers, and feedback from any failed attempt.
 

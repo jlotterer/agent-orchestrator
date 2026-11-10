@@ -9,7 +9,7 @@ Install orch on the always-on machine where your agents work. That's usually a L
 - git.
 - [Claude Code](https://docs.claude.com/en/docs/claude-code), installed and signed in as the user that runs orch. A Claude subscription sign-in works. You don't need an API key.
 - The GitHub CLI, `gh`, signed in, if you want orch to open pull requests. You don't need it for local merge mode.
-- Optional: Gemini CLI, if you want to use it for some roles. See [Choose agents and models](how-to/configure-agents.md).
+- Optional: Antigravity CLI (`agy`) or Codex CLI, if you want to use them for some roles. See [Choose agents and models](how-to/configure-agents.md).
 
 > [!WARNING]
 > Agents run with full permissions inside their working copy, so a worker can run any command your user account can run. Run orch as a non-root user on a machine you don't mind an agent working in. Claude Code refuses to run with full permissions as root.

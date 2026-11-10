@@ -67,8 +67,8 @@
       "model": ""
     },
     "validator": {
-      "adapter": "gemini",
-      "model": "pro"
+      "adapter": "antigravity",
+      "model": ""
     }
   }
 }

@@ -110,6 +110,23 @@ describe("loadServerConfig", () => {
     assert.throws(() => loadServerConfig(home({ agents: { roles: { worker: { adapter: "nope", model: "" } } } })), /agents\.roles\.worker\.adapter 'nope'/);
   });
 
+  test("the built-in adapters are claude, antigravity and codex with their headless flags (T027)", () => {
+    const { adapters } = loadServerConfig(home()).agents;
+    assert.deepStrictEqual(Object.keys(adapters).sort(), ["antigravity", "claude", "codex"]);
+    assert.deepStrictEqual(adapters.antigravity, { type: "antigravity", command: "agy", extraArgs: ["--dangerously-skip-permissions"], env: {} });
+    assert.deepStrictEqual(adapters.codex, { type: "codex", command: "codex", extraArgs: ["--dangerously-bypass-approvals-and-sandbox"], env: {} });
+  });
+
+  test("an adapter of the retired gemini type gets the T027 upgrade error (decision 0024)", () => {
+    const h = home({ agents: { adapters: { x: { type: "gemini", command: "gemini", extraArgs: ["--yolo"], env: {} } } } });
+    assert.throws(() => loadServerConfig(h), (e) => {
+      assert.equal(e.message, `${path.join(h, "server.json")}: agents.adapters.x has type "gemini", retired in T027 (decision 0024); use type "antigravity" (command agy) or "codex", or remove it and point roles at claude`);
+      return true;
+    });
+    // The old default key is no longer defined, so a role still pointing at it fails too, naming the role.
+    assert.throws(() => loadServerConfig(home({ agents: { roles: { validator: { adapter: "gemini", model: "pro" } } } })), /agents\.roles\.validator\.adapter 'gemini' is not defined/);
+  });
+
   test("server-only keys under defaults are rejected", () => {
     assert.throws(() => loadServerConfig(home({ defaults: { agents: {} } })), /'defaults\.agents'/);
   });
@@ -199,11 +216,11 @@ describe("loadProjectConfig", () => {
   });
 
   test("roles start from the server's roles and accept a model-only override", () => {
-    const server = { agents: { roles: { validator: { adapter: "gemini", model: "pro" } } } };
+    const server = { agents: { roles: { validator: { adapter: "antigravity", model: "pro" } } } };
     const { config } = load({ roles: { worker: { model: "opus" } } }, server);
     assert.deepStrictEqual(config.roles.worker, { adapter: "claude", model: "opus" });
-    assert.deepStrictEqual(config.roles.validator, { adapter: "gemini", model: "pro" });
-    assert.deepStrictEqual(config.roles.phaseValidator, { adapter: "gemini", model: "pro" }); // falls back to validator
+    assert.deepStrictEqual(config.roles.validator, { adapter: "antigravity", model: "pro" });
+    assert.deepStrictEqual(config.roles.phaseValidator, { adapter: "antigravity", model: "pro" }); // falls back to validator
   });
 
   test("phaseValidator can be set explicitly", () => {
@@ -212,12 +229,12 @@ describe("loadProjectConfig", () => {
   });
 
   test("a role naming an adapter server.json does not define is rejected", () => {
-    assert.throws(() => load({ roles: { validator: { adapter: "codex", model: "" } } }), /roles\.validator\.adapter 'codex'/);
+    assert.throws(() => load({ roles: { validator: { adapter: "mistral", model: "" } } }), /roles\.validator\.adapter 'mistral'/);
   });
 
   test("an adapter defined only in server.json may be used by a project", () => {
-    const server = { agents: { adapters: { codex: { type: "codex", command: "codex", extraArgs: [], env: {} } } } };
-    assert.equal(load({ roles: { worker: { adapter: "codex", model: "" } } }, server).config.roles.worker.adapter, "codex");
+    const server = { agents: { adapters: { fast: { type: "codex", command: "codex", extraArgs: [], env: {} } } } };
+    assert.equal(load({ roles: { worker: { adapter: "fast", model: "" } } }, server).config.roles.worker.adapter, "fast");
   });
 
   test("the project file is re-read on every call (REQ-PROJ-06 groundwork)", () => {

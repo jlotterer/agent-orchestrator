@@ -10,7 +10,7 @@ Short records of significant decisions and **why** they were made. Agents: read 
 | [0004](0004-independent-validation.md) | A deterministic gate, then an independent validator | Accepted |
 | [0005](0005-decisions-and-inbox.md) | Decisions and questions are first-class records; one inbox | Accepted |
 | [0006](0006-worktree-branch-pr-per-task.md) | One worktree, one branch, one PR per task; risky work waits for the owner | Accepted |
-| [0007](0007-agent-adapters.md) | Adapters per agent CLI; vendor code only in adapters | Accepted |
+| [0007](0007-agent-adapters.md) | Adapters per agent CLI; vendor code only in adapters | Accepted; built-in CLIs changed by 0024 |
 | [0008](0008-speckit-input-contract.md) | Spec Kit tasks.md is the input contract, not a dependency | Accepted; extended by 0023 |
 | [0009](0009-locked-stack.md) | Locked stack: TypeScript, Node ≥ 20, one runtime dependency, no-build dashboard | Node floor superseded by 0022 |
 | [0010](0010-pr-feedback-loop.md) | PR feedback loop with a comment trigger and its own round budget | Accepted |
@@ -27,6 +27,7 @@ Short records of significant decisions and **why** they were made. Agents: read 
 | [0021](0021-docs-split-and-dogfooding.md) | Split the handoff doc; orch builds its own roadmap | Accepted |
 | [0022](0022-node-22-floor.md) | Raise the Node floor to 22 (better-sqlite3 13 needs it) | Accepted |
 | [0023](0023-orch-owns-spec-skill.md) | orch owns its spec skill (`orch-spec`); Spec Kit remains a compatible import | Accepted |
+| [0024](0024-retire-gemini-add-antigravity-codex.md) | Retire the Gemini CLI adapter (Google ended its individual sign-in); add Antigravity CLI and Codex CLI adapters | Accepted |
 
 New records use [the template](#template).
 
