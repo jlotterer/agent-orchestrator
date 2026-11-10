@@ -22,12 +22,19 @@
         ],
         "env": {}
       },
-      "gemini": {
-        "type": "gemini",
-        "command": "gemini",
+      "antigravity": {
+        "type": "antigravity",
+        "command": "agy",
         "extraArgs": [
-          "--yolo",
-          "--skip-trust"
+          "--dangerously-skip-permissions"
+        ],
+        "env": {}
+      },
+      "codex": {
+        "type": "codex",
+        "command": "codex",
+        "extraArgs": [
+          "--dangerously-bypass-approvals-and-sandbox"
         ],
         "env": {}
       }

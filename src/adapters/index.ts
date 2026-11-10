@@ -1,10 +1,12 @@
 import type { AgentAdapter } from "./types.js";
 import { claudeAdapter } from "./claude.js";
-import { geminiAdapter } from "./gemini.js";
+import { antigravityAdapter } from "./antigravity.js";
+import { codexAdapter } from "./codex.js";
 
 export const ADAPTERS: Record<string, AgentAdapter> = {
   claude: claudeAdapter,
-  gemini: geminiAdapter,
+  antigravity: antigravityAdapter,
+  codex: codexAdapter,
 };
 
 export function getAdapter(type: string): AgentAdapter {

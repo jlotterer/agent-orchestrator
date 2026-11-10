@@ -1,6 +1,6 @@
 # Choose agents and models
 
-orch launches an agent program for each role: planner, worker, validator, and phase validator. You choose which program and model each role uses. Two agent programs are supported: Claude Code and Gemini CLI.
+orch launches an agent program for each role: planner, worker, validator, and phase validator. You choose which program and model each role uses. Three agent programs are supported: Claude Code, Antigravity CLI and Codex CLI.
 
 ## Supported agent programs
 
@@ -9,12 +9,16 @@ orch calls each supported program through an *adapter*, a name you use in the se
 | Adapter | Program | Default extra arguments |
 | :--- | :--- | :--- |
 | `claude` | Claude Code (`claude`) | `--permission-mode bypassPermissions` |
-| `gemini` | Gemini CLI (`gemini`) | `--yolo --skip-trust` |
+| `antigravity` | Antigravity CLI (`agy`, from Google) | `--dangerously-skip-permissions` |
+| `codex` | Codex CLI (`codex`, from OpenAI) | `--dangerously-bypass-approvals-and-sandbox` |
 
-Both run without prompts inside the task's working copy, and both can resume an earlier session, so retries keep what the agent learned.
+All three run without prompts inside the task's working copy, and all three can resume an earlier session, so retries keep what the agent learned. The default arguments turn off each program's own approval prompts and sandbox. The task's working copy is the boundary instead.
 
 > [!NOTE]
-> The Claude Code adapter is tested end to end against the real program. The Gemini CLI adapter is tested against a simulated program but hasn't been run against a live Gemini account yet. Expect to adjust the validator prompt slightly the first few times you use it.
+> Gemini CLI is no longer supported. Google ended its Google-account sign-in for individuals on June 18, 2026, and Antigravity CLI replaces it. If your `server.json` still defines an adapter with `"type": "gemini"`, orch refuses to start and the message tells you what to change. See [Troubleshooting](../troubleshooting.md#agentsadaptersname-has-type-gemini-retired-in-t027).
+
+> [!NOTE]
+> Antigravity CLI and Codex CLI don't report a cost, so tasks they run show "n/a" for cost. See [Track cost and agent time](track-cost.md).
 
 ## Set the agent for each role on the server
 
@@ -27,12 +31,12 @@ Server-wide defaults live in `~/.orch/server.json`, under `agents.roles`. They a
      "roles": {
        "planner":   { "adapter": "claude", "model": "" },
        "worker":    { "adapter": "claude", "model": "" },
-       "validator": { "adapter": "gemini", "model": "pro" }
+       "validator": { "adapter": "antigravity", "model": "" }
      }
    }
    ```
 
-   An empty `model` uses the program's default model.
+   An empty `model` uses the program's default model. To see the models a program offers, run `agy models` or `codex --help` as the user that runs orch.
 
 2. Restart orch.
 
@@ -61,11 +65,13 @@ For phase validation, set the `phaseValidator` role. If you don't, it uses the v
 orch launches the programs as the user that runs orch, so they use that user's sign-in.
 
 - **Claude Code:** sign in once with `claude` as that user. A subscription sign-in works. An orchestrated run starts several fresh sessions per task, so it reaches subscription usage limits faster than interactive use.
-- **Gemini CLI:** run `gemini` once as that user to sign in. Or set `GEMINI_API_KEY` in the adapter's `env`:
+- **Antigravity CLI:** run `agy` once as that user and sign in with your Google account. Over SSH, it prints an address. Open it in a browser, sign in, and paste the code it shows back into the terminal. The program keeps the session in the operating system's keyring when there is one, and in a file under `~/.gemini/antigravity-cli/` otherwise. Or use a Gemini API key: set `"modelProvider": "gemini"` in `~/.gemini/antigravity-cli/settings.json` and put the key in the adapter's `env`. The key alone has no effect.
 
   ```json
-  "agents": { "adapters": { "gemini": { "env": { "GEMINI_API_KEY": "<key>" } } } }
+  "agents": { "adapters": { "antigravity": { "env": { "GEMINI_API_KEY": "<key>" } } } }
   ```
+
+- **Codex CLI:** run `codex login --device-auth` once as that user. It prints an address and a code. Open the address in a browser, sign in to your ChatGPT account, and enter the code. Your ChatGPT account must allow device authorization in its security settings. Check with `codex login status`. Or put `CODEX_API_KEY` or `OPENAI_API_KEY` in the adapter's `env` for per-token billing.
 
 orch never writes adapter `env` values to its database, its logs or agent prompts.
 
@@ -75,7 +81,7 @@ Each adapter in `agents.adapters` has these keys:
 
 | Key | Effect |
 | :--- | :--- |
-| `type` | Which adapter it is: `claude` or `gemini`. |
+| `type` | Which adapter it is: `claude`, `antigravity` or `codex`. |
 | `command` | The program to run, for example `claude` or a full path. |
 | `extraArgs` | Arguments added to every launch. |
 | `env` | Extra environment variables for the program. |

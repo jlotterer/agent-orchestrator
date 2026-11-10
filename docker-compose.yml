@@ -21,9 +21,16 @@ services:
       # long-lived token from `claude setup-token` here. Only set ANTHROPIC_API_KEY if you
       # want per-token API billing instead.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      # Gemini CLI (only if a role uses the gemini adapter): an API key, or log in once with
-      # `docker compose run --rm orch gemini` and the login is kept in the gemini-home volume.
+      # Antigravity CLI (only if a role uses the antigravity adapter): sign in once with
+      # `docker compose run --rm orch agy` (Google account; kept in the gemini-home volume), or use a
+      # Gemini API key: set GEMINI_API_KEY here AND "modelProvider": "gemini" in the volume's
+      # antigravity-cli/settings.json (the key alone has no effect). See docs/docker.md.
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Codex CLI (only if a role uses the codex adapter): sign in once with
+      # `docker compose run --rm orch codex login --device-auth` (ChatGPT subscription; kept in the
+      # codex-home volume), or set one of these for API billing instead.
+      - CODEX_API_KEY=${CODEX_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # GitHub (for git.pr: true): a token with repo scope
       - GH_TOKEN=${GH_TOKEN:-}
       # Git identity used by workers' commits
@@ -36,7 +43,10 @@ services:
       - ./work:/work
       # Claude Code login + settings (survives rebuilds)
       - claude-home:/home/orch/.claude
+      # Antigravity CLI settings and trust entries (~/.gemini/antigravity-cli; the directory name is Google's)
       - gemini-home:/home/orch/.gemini
+      # Codex CLI login (auth.json) and sessions, needed for resume
+      - codex-home:/home/orch/.codex
       # gh login (if you prefer `gh auth login` over GH_TOKEN)
       - gh-config:/home/orch/.config/gh
       # Uncomment to push over SSH instead of HTTPS:
@@ -45,4 +55,5 @@ services:
 volumes:
   claude-home:
   gemini-home:
+  codex-home:
   gh-config:

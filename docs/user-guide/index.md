@@ -51,7 +51,7 @@ Every feature in this manual is available in the current release. For a summary 
 | [Run tasks in parallel](how-to/run-in-parallel.md) | Per-project and global limits, fairness, and owned files |
 | [Validate whole phases](how-to/validate-phases.md) | Check each phase on the base branch and create fix-up tasks |
 | [Validate UI tasks in a browser](how-to/validate-ui-tasks.md) | Let the validator test a running copy of your app |
-| [Choose agents and models](how-to/configure-agents.md) | Pick Claude Code or Gemini CLI per role, set models, customize prompts |
+| [Choose agents and models](how-to/configure-agents.md) | Pick Claude Code, Antigravity CLI or Codex CLI per role, set models, customize prompts |
 | [Secure remote access](how-to/secure-access.md) | Access token, network address, health check |
 | [Get push notifications](how-to/set-up-notifications.md) | Send inbox alerts to your phone with ntfy |
 | [Track cost and agent time](how-to/track-cost.md) | See what each task, run and project cost |

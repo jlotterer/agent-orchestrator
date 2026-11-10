@@ -7,7 +7,7 @@ orch shows what each task, run and project cost, in money where the agent progra
 - In the top bar, the cost and time tile shows the totals for the selected run and project, for example **Run $0.42 · 6m 10s  Project $3.17 · 1h 2m**.
 - In the **Task** panel, the **Cost** row shows the task's own cost and agent time.
 
-A cost that no agent program reported shows "n/a", not $0. For example, Claude Code reports a cost for each session, but Gemini CLI doesn't, so a run whose planner and validators use Gemini CLI shows agent time for them but no cost. Agent time is always counted.
+A cost that no agent program reported shows "n/a", not $0. For example, Claude Code reports a cost for each session, but Antigravity CLI and Codex CLI don't, so a run whose planner and validators use those programs shows agent time for them but no cost. Agent time is always counted.
 
 ## How totals add up
 

@@ -35,7 +35,7 @@ export interface Config {
   agents: {
     /** Hard timeout for one agent invocation, minutes. */
     timeoutMinutes: number;
-    /** Named adapter configurations. `type` picks the implementation (claude, gemini). */
+    /** Named adapter configurations. `type` picks the implementation (claude, antigravity, codex). */
     adapters: Record<string, { type: string; command: string; extraArgs: string[]; env: Record<string, string> }>;
     /** Which adapter (and model) each role uses. Different adapters per role = independent judgement. */
     roles: {
@@ -155,12 +155,19 @@ export const DEFAULT_CONFIG: Config = {
         extraArgs: ["--permission-mode", "bypassPermissions"],
         env: {},
       },
-      gemini: {
-        type: "gemini",
-        command: "gemini",
-        // --yolo: otherwise tools needing approval are silently denied (exit 0, nothing done).
-        // --skip-trust: a fresh worktree is an untrusted folder; without this the CLI exits 55.
-        extraArgs: ["--yolo", "--skip-trust"],
+      antigravity: {
+        type: "antigravity",
+        command: "agy",
+        // Auto-approves every tool call; without it a tool needing approval is soft-denied and the
+        // run still exits 0 with nothing done. The worktree is the boundary (decision 0024).
+        extraArgs: ["--dangerously-skip-permissions"],
+        env: {},
+      },
+      codex: {
+        type: "codex",
+        command: "codex",
+        // No approvals and no sandbox: orch's worktree is the boundary, as with the other adapters.
+        extraArgs: ["--dangerously-bypass-approvals-and-sandbox"],
         env: {},
       },
     },
@@ -365,6 +372,14 @@ export interface ServerConfig {
 
 export const SERVER_CONFIG_FILENAME = "server.json";
 
+/**
+ * The Gemini CLI adapter was retired by T027 (decision 0024): Google ended its Google-account sign-in for
+ * individuals on 2026-06-18. A server.json that still names it gets an upgrade error instead of a silent
+ * remap (a wrong default would spend the owner's money without a decision).
+ */
+const RETIRED_ADAPTER_TYPE = "gemini";
+const RETIRED_ADAPTER_MESSAGE = 'has type "gemini", retired in T027 (decision 0024); use type "antigravity" (command agy) or "codex", or remove it and point roles at claude';
+
 export const DEFAULT_SERVER_CONFIG: ServerConfig = {
   host: "127.0.0.1",
   port: 4800,
@@ -496,6 +511,9 @@ export function loadServerConfig(home: string = orchHome()): ServerConfig {
   }
   const cfg = clone(deepMerge(DEFAULT_SERVER_CONFIG, raw));
   cfg.auth = { token: resolveToken(cfg.auth.token), allowInsecure: cfg.auth.allowInsecure === true };
+  for (const [name, a] of Object.entries(cfg.agents.adapters)) {
+    if (a?.type === RETIRED_ADAPTER_TYPE) throw new Error(`${p}: agents.adapters.${name} ${RETIRED_ADAPTER_MESSAGE}`);
+  }
   for (const [role, r] of Object.entries(cfg.agents.roles)) {
     if (r && !cfg.agents.adapters[r.adapter]) throw new Error(`${p}: agents.roles.${role}.adapter '${r.adapter}' is not defined in agents.adapters`);
   }

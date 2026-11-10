@@ -79,7 +79,9 @@ export function runAgent(opts: RunOptions): Promise<AgentResult> {
 
     child.stdin.on("error", () => { /* agent may exit before we finish writing */ });
     if (spec.stdin !== null) child.stdin.write(spec.stdin);
-    child.stdin.end();
+    let stdinOpen = true;
+    const endStdin = () => { if (stdinOpen) { stdinOpen = false; child.stdin.end(); } };
+    if (!spec.holdStdin) endStdin();
 
     child.stderr.on("data", (d) => { stderr += d.toString(); if (stderr.length > 20000) stderr = stderr.slice(-20000); });
 
@@ -92,12 +94,14 @@ export function runAgent(opts: RunOptions): Promise<AgentResult> {
       let events;
       try { events = adapter.parseLine(msg, state); } catch (e: any) { events = [{ kind: "error" as const, data: { message: `adapter parse error: ${e?.message ?? e}` } }]; }
       for (const ev of events) opts.onEvent(ev.kind, ev.data);
+      if (state.sawResult) endStdin();
     });
 
     const finish = (code: number | null, signal: NodeJS.Signals | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      endStdin();
       adapter.finish(state, code);
       if (code !== 0 && !state.isError) {
         state.isError = true;

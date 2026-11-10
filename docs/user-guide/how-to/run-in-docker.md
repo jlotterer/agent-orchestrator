@@ -73,7 +73,8 @@ Keep repos and working copies on the same mount. git records working copy paths 
    GIT_AUTHOR_NAME=<your name>
    GIT_AUTHOR_EMAIL=<your email>
    # ANTHROPIC_API_KEY=<key>   only if you use API billing instead of a subscription
-   # GEMINI_API_KEY=<key>      only if a role uses Gemini CLI
+   # GEMINI_API_KEY=<key>      only if a role uses Antigravity CLI with an API key instead of a Google account
+   # CODEX_API_KEY=<key>       only if a role uses Codex CLI with an API key instead of a ChatGPT account
    ```
 
 2. Sign in to Claude Code with your subscription. The sign-in is saved in a Docker volume and survives rebuilds:
@@ -94,7 +95,21 @@ Keep repos and working copies on the same mount. git records working copy paths 
 
    For SSH remotes instead, uncomment the `~/.ssh` mount in `docker-compose.yml`. The key must have no passphrase.
 
-4. If a role uses Gemini CLI and you didn't set `GEMINI_API_KEY`, sign in once with `docker compose run --rm orch gemini`.
+4. If a role uses Antigravity CLI, sign in once with your Google account:
+
+   ```bash
+   docker compose run --rm orch agy
+   ```
+
+   It prints an address. Open it on your laptop, sign in, and paste the code back. The session is saved in the `gemini-home` volume.
+
+5. If a role uses Codex CLI, sign in once with your ChatGPT account:
+
+   ```bash
+   docker compose run --rm orch codex login --device-auth
+   ```
+
+   It prints an address and a code. Open the address on your laptop and enter the code. The login is saved in the `codex-home` volume. Check it with `docker compose run --rm orch codex login status`.
 
 Local merge mode needs no GitHub credentials. The merged base branch stays in `work/repos/myapp`, and you push it yourself.
 

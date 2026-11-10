@@ -14,7 +14,7 @@ Replace these placeholders as you go:
 
 Sections marked **(on your PC)** happen in a browser on your PC. Everything else happens in an SSH session on the server.
 
-Keep a text file open while you work. You'll collect four values in it: a GitHub token, a Gemini key (optional), an ntfy topic, and an orch access token.
+Keep a text file open while you work. You'll collect four values in it: a GitHub token, a Gemini API key (optional), an ntfy topic, and an orch access token.
 
 ## Before you begin
 
@@ -35,14 +35,14 @@ orch uses it to push branches and open pull requests.
 5. Select **Generate token**.
 6. Copy the token into your text file. It starts with `ghp_`. GitHub shows it only once.
 
-### Choose how Gemini signs in
+### Choose how Antigravity signs in
 
-Skip this section if every role uses Claude Code. The example settings in this walkthrough use Gemini CLI as the validator, so a different model checks the worker's code.
+Skip this section if every role uses Claude Code. The example settings in this walkthrough use Antigravity CLI (`agy`, from Google) as the validator, so a different model checks the worker's code.
 
 | | Option A: API key | Option B: Google account |
 | :--- | :--- | :--- |
-| Uses | A key from Google AI Studio | Your Google account, free or on a Google AI plan |
-| When you set it up | Now | After the image is built, in [Sign in to Claude Code and Gemini](#sign-in-to-claude-code-and-gemini) |
+| Uses | A Gemini API key from Google AI Studio | Your Google account, free or on a Google AI plan |
+| When you set it up | Now, plus one settings file after the image is built | After the image is built, in [Sign in to Claude Code and Antigravity](#sign-in-to-claude-code-and-antigravity) |
 | Best for | No sign-in to keep alive | Using your Google account's quota |
 
 For Option A:
@@ -178,7 +178,7 @@ Copy the output into your text file as the **orch token**. The dashboard asks fo
    GIT_AUTHOR_EMAIL=<your email>
    ```
 
-   If you chose Option B for Gemini, or don't use Gemini, delete the `GEMINI_API_KEY` line.
+   If you chose Option B for Antigravity, or don't use Antigravity, delete the `GEMINI_API_KEY` line.
 
 3. Save and exit.
 4. Restrict the file to your user:
@@ -189,7 +189,7 @@ Copy the output into your text file as the **orch token**. The dashboard asks fo
 
 Leave `ANTHROPIC_API_KEY` out. You sign in with your Claude subscription in the next section.
 
-### Sign in to Claude Code and Gemini
+### Sign in to Claude Code and Antigravity
 
 Sign in to Claude Code:
 
@@ -205,19 +205,27 @@ Sign in to Claude Code:
 
 The sign-in is saved in a Docker volume and survives rebuilds.
 
-If you chose Option B for Gemini, sign in to Gemini:
+If you chose Option A for Antigravity, tell it to use the key:
+
+```bash
+docker compose run --rm orch sh -c 'echo "{\"modelProvider\": \"gemini\"}" > ~/.gemini/antigravity-cli/settings.json'
+```
+
+The key in `.env` alone has no effect without this setting.
+
+If you chose Option B for Antigravity, sign in with your Google account:
 
 1. Run:
 
    ```bash
-   docker compose run --rm -e NO_BROWSER=true orch gemini
+   docker compose run --rm orch agy
    ```
 
-2. If Gemini asks for a theme, choose any and press **Enter**.
-3. When it asks how to authenticate, choose **Login with Google**.
-4. Open the printed address in a browser on your PC and sign in with your Google account.
-5. Copy the code it shows, paste it into the SSH window, and press **Enter**.
-6. At the Gemini prompt, enter `/quit`.
+2. Open the printed address in a browser on your PC and sign in with your Google account.
+3. Copy the code it shows, paste it into the SSH window, and press **Enter**.
+4. When the prompt appears, enter `/quit`.
+
+The session is saved in the `gemini-home` volume. The container has no keyring, so Antigravity keeps the session in a file under `~/.gemini/antigravity-cli/`.
 
 ### Let git push with your GitHub token
 
@@ -267,7 +275,7 @@ On its first start, orch splits this one file into server settings and project s
      "agents": { "roles": {
        "planner":   { "adapter": "claude", "model": "" },
        "worker":    { "adapter": "claude", "model": "" },
-       "validator": { "adapter": "gemini", "model": "pro" } } },
+       "validator": { "adapter": "antigravity", "model": "" } } },
      "scheduler": { "maxParallel": 2, "tickSeconds": 5, "maxAttempts": 2, "resumeOnRetry": true },
      "validation": { "command": "npm test", "agent": true },
      "git": {
@@ -523,7 +531,7 @@ If `git pull` reports a conflict in `Dockerfile`, keep your toolchain block.
      "agents": { "roles": {
        "planner":   { "adapter": "claude", "model": "" },
        "worker":    { "adapter": "claude", "model": "" },
-       "validator": { "adapter": "gemini", "model": "pro" } } },
+       "validator": { "adapter": "antigravity", "model": "" } } },
      "scheduler": { "maxAgents": 2, "tickSeconds": 5 }
    }
    ```

@@ -132,7 +132,7 @@ that project.
 | `git.mergePolicy` | default `auto` (merge when validated) or `manual` (wait for you). The planner marks risky tasks `manual` on its own |
 | `git.feedback` | PR mode only: wait for CI before auto-merging, and send CI failures and `/orch` review comments back to the worker. See [Merging](#merging) |
 | `git.copyFiles` / `git.setupCommand` | e.g. `[".env"]` and `npm ci` for each new worktree |
-| `roles.{planner,worker,validator,phaseValidator}` | override which adapter and model a role uses in this project (`phaseValidator` defaults to the validator's), e.g. `{"adapter": "gemini", "model": "pro"}`. The adapter must be defined in `server.json` |
+| `roles.{planner,worker,validator,phaseValidator}` | override which adapter and model a role uses in this project (`phaseValidator` defaults to the validator's), e.g. `{"adapter": "antigravity", "model": ""}`. The adapter must be defined in `server.json` |
 
 A project file can't set server keys (`agents`, `host`, `port`, `publicUrl`, `auth`, `notify`,
 `dbPath`, `worktreeDir`, `repo`, `git.ghCommand`). orch refuses to plan or start a project whose
@@ -152,7 +152,8 @@ example: [orch.config.example.json](orch.config.example.json).
 | `scheduler.maxAgents` | agent sessions running at once across all projects (workers, validators, planners, phase validators). Default `2`; `1` = strictly one at a time |
 | `agents.roles.{planner,worker,validator,phaseValidator}` | default adapter and model per role for every project (`phaseValidator` falls back to `validator`) |
 | `agents.adapters.claude.extraArgs` | defaults to `--permission-mode bypassPermissions`. Tighten with `--allowedTools` if you prefer |
-| `agents.adapters.gemini.extraArgs` | defaults to `--yolo --skip-trust` (both required for headless runs in a worktree) |
+| `agents.adapters.antigravity.extraArgs` | defaults to `--dangerously-skip-permissions` (without it a tool needing approval is silently denied and the run still exits 0) |
+| `agents.adapters.codex.extraArgs` | defaults to `--dangerously-bypass-approvals-and-sandbox` (no approvals, no sandbox; the worktree is the boundary) |
 | `retention.eventDays` | archive the agent event logs of runs finished more than this many days ago. Default `30`; `0` = keep forever. See [Event log retention](#event-log-retention) |
 | `defaults` | project settings applied under every project's own file (same keys as `orch.config.json`) |
 
@@ -227,7 +228,7 @@ sudo systemctl enable --now orch
 The tile in the top bar shows what the selected run and its project cost and how much agent time
 they used (`Run $0.42 · 6m 10s  Project $3.17 · 1h 2m`); the task view's **Cost** row shows the same for one
 task, across all its attempts and fix rounds. A run's total is its tasks plus its planner and phase
-validators. Money is what the agent CLI reports (Claude Code does, Gemini CLI doesn't): a cost no
+validators. Money is what the agent CLI reports (Claude Code does; Antigravity CLI and Codex CLI report tokens only): a cost no
 agent reported shows "n/a", not $0. Cost is display-only; there are no spend caps. Totals are kept
 on the task and run rows, so archiving event logs never changes them.
 
@@ -424,15 +425,20 @@ It records an orchestrator decision ("Holding T003 until T002 finishes…"), and
 "not with" for each such pair. Tasks without owned files are unconstrained. If you still see
 conflicts, add dependency edges in the Plan tab.
 
-## Mixing agents (Claude for coding, Gemini for validation)
+## Mixing agents (Claude for coding, another vendor for validation)
 
 Each role runs through an *adapter*: a small module that knows how to launch one agent CLI
-headlessly and how to read its event stream. Two ship today:
+headlessly and how to read its event stream. Three ship today:
 
 | adapter | CLI | invocation | resume |
 |---|---|---|---|
-| `claude` | Claude Code | `claude -p --output-format stream-json --verbose` | `--resume <session>` |
-| `gemini` | Gemini CLI | `gemini -p … --output-format stream-json --yolo --skip-trust` | `--resume <session>` |
+| `claude` | Claude Code | `claude -p --output-format stream-json --verbose --permission-mode bypassPermissions` | `--resume <session>` |
+| `antigravity` | Antigravity CLI (`agy`, Google) | `agy --output-format stream-json --input-format stream-json --dangerously-skip-permissions`, prompt as one NDJSON user event on stdin | `--conversation <id>` |
+| `codex` | OpenAI Codex CLI | `codex exec --json --dangerously-bypass-approvals-and-sandbox -`, prompt on stdin | `codex exec resume <id>` |
+
+The Gemini CLI adapter was retired in T027 ([decision 0024](docs/decisions/0024-retire-gemini-add-antigravity-codex.md)):
+Google ended its Google-account sign-in for individuals on 2026-06-18. A `server.json` that still
+has an adapter of type `gemini` refuses to load and says what to change.
 
 Pick per role in `server.json` for every project:
 
@@ -441,30 +447,32 @@ Pick per role in `server.json` for every project:
   "roles": {
     "planner":   { "adapter": "claude", "model": "" },
     "worker":    { "adapter": "claude", "model": "" },
-    "validator": { "adapter": "gemini", "model": "pro" }
+    "validator": { "adapter": "antigravity", "model": "" }
   }
 }
 ```
 
 A project can choose differently among the adapters the server defines, with `roles` in its
-`orch.config.json`, for example `"roles": { "validator": { "adapter": "claude", "model": "opus" } }`.
+`orch.config.json`, for example `"roles": { "validator": { "adapter": "codex", "model": "" } }`.
 
 The validator is the natural place for a second vendor: it only reads the diff and runs tests,
 and a model from a different lab shares fewer blind spots with the worker than another Claude
 model does. Workers are better left on Claude Code, since that is the harness your skills,
-hooks and `CLAUDE.md` are written for. Gemini CLI authenticates on its own (`gemini` once
-interactively, or `GEMINI_API_KEY` in `agents.adapters.gemini.env`).
+hooks and `CLAUDE.md` are written for. Each CLI authenticates on its own, as the user that runs
+orch: `agy` once interactively (Google account; or `GEMINI_API_KEY` plus `"modelProvider": "gemini"`
+in `~/.gemini/antigravity-cli/settings.json`), `codex login --device-auth` (ChatGPT subscription; or
+`CODEX_API_KEY` / `OPENAI_API_KEY`). In Docker, see [docs/docker.md](docs/docker.md).
 
 Everything downstream of the adapter is shared: the prompts, the JSON contract at the end of
 each agent's final message, `orch decide` / `orch ask`, retries, resume, and the dashboard log.
-Adding another CLI (Codex, OpenCode, …) means one file in `src/adapters/` implementing
-`launch()` and `parseLine()`; see `src/adapters/gemini.ts` for the shape.
+Adding another CLI (OpenCode, …) means one file in `src/adapters/` implementing
+`launch()` and `parseLine()`; see `src/adapters/codex.ts` for the shape, and record its stream as a
+fixture in `test/fixtures/adapters/`.
 
-Status: the Claude adapter is exercised end to end against the real CLI. The Gemini adapter is
-written against Gemini CLI 0.67's stream-json event schema (read from the CLI source) and
-tested with a fake agent that speaks that dialect, but it has not yet been run against a live
-Gemini account here. Expect to tune `prompts/validator.md` slightly for Gemini's style on the
-first few runs; the JSON extractor is forgiving (last fenced block, else last object).
+Status: all three adapters have completed real tasks against their CLIs. The Antigravity and Codex
+adapters were written from the CLIs' documented headless interfaces
+(`specs/001-orch-roadmap/contracts/`) and their unit fixtures are streams recorded in the Docker
+image on the owner's subscriptions. Neither CLI reports a cost, so their rows show "n/a".
 
 ## Writing specs
 
@@ -493,7 +501,8 @@ Node 22 and 24 for every push to `main` and every pull request.
 the dashboard loads builds in under a second.
 
 `scripts/e2e.mjs` runs the whole loop against a fake agent (`scripts/fake-agent.mjs`) in a throwaway
-repo, with workers on the Claude adapter and the validator on the Gemini adapter: planning,
+repo, with workers on the Claude adapter, the planner on the Codex adapter and the validator on the
+Antigravity adapter: planning,
 approval, two parallel workers, a question answered mid-task with session resume, a gate failure
 retried, a validator rejection retried, a `--dry-run` preview that creates nothing, a plan question
 that holds every task until answered, a dependency cycle refused at approval, the review diff of a manual-merge task, sending it back
@@ -552,8 +561,9 @@ All e2e scripts use the shared helpers in `scripts/lib/e2e.mjs` (`makeRepo`, `wr
 A failed run keeps its throwaway repo and prints its path.
 
 `scripts/check-invariants.mjs` fails if `package.json` has any runtime dependency besides
-`better-sqlite3`, or if `claude`, `gemini` or `anthropic` appears in `src/**/*.ts` outside
-`src/adapters/` (the built-in adapter defaults in `src/config.ts` are allowlisted in the script), or if a
+`better-sqlite3`, or if `claude`, `gemini`, `anthropic`, `antigravity`, `agy`, `codex` or `openai` appears in `src/**/*.ts` outside
+`src/adapters/` (the built-in adapter defaults and the retired-adapter error in `src/config.ts` are allowlisted in the script), or if
+`src/adapters/gemini.ts` reappears, or if a
 file in `src/core/` imports `node:fs`, `node:child_process` or the database, or reads the clock.
 
 `test/fixtures/` holds the spec-first fixture tables for the risky logic (tasks.md parser, JSON
@@ -571,7 +581,7 @@ container. Copy the source in so the container's `npm ci` does not replace your 
 ```
 src/orchestrator.ts   per-project contexts; gathers facts, calls src/core, performs side effects: plan → approve → run → validate → merge
 src/core/             pure decisions: readiness (who starts), task transitions, PR-poll actions, phase validation and fix-ups
-src/adapters/         one adapter per agent CLI (claude.ts, gemini.ts) + the shared process runner
+src/adapters/         one adapter per agent CLI (claude.ts, antigravity.ts, codex.ts) + the shared process runner
 src/git.ts            worktrees, diffs, push, gh pr create/merge/view, CI logs, local merge
 src/prfeedback.ts     PR feedback loop helpers: check verdicts, review comments, worker feedback text
 src/speckit.ts        tasks.md parser and ticker
