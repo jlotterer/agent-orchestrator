@@ -8,6 +8,12 @@ Each task is a self-contained brief for one agent session and one PR. Start with
 
 **From TASK-27 on**, orch's own briefs live in `specs/NNN-*/tasks/`, written with the [`orch-spec` skill](../../skills/README.md) in the format of [architecture §6.4](../architecture.md#64-feature-folder-and-brief-contract), and this folder stays as the record of TASK-01..26. TASK-25 and TASK-26 were written here before the skill was dogfooded.
 
+| Task | Wave | Area | Summary | Depends on | Parallel |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| [T027](../../specs/001-orch-roadmap/tasks/T027.md) | 18 | Adapters | (todo) Antigravity CLI and Codex CLI adapters; retire the Gemini CLI adapter (its Google-account sign-in ended 2026-06-18); Docker image and docs follow | 01–26 | No |
+| [T028](../../specs/001-orch-roadmap/tasks/T028.md) | 19 | Dashboard | (todo) Agents tab: installed version and signed-in state per CLI, Sign in runs the CLI's own device/URL flow from the browser; credentials stay with the CLIs | 27 | No |
+| [T029](../../specs/001-orch-roadmap/tasks/T029.md) | 20 | Dashboard | (todo) Settings tab: server and project forms generated from one settings schema; validate with the loaders, hot-reload, commit project settings; drift test against architecture §19 | 28 | No |
+
 **Running these with orch itself:** [specs/001-orch-roadmap/tasks.md](../../specs/001-orch-roadmap/tasks.md) lists the same tasks in Spec Kit format (one phase per wave), so `orch plan specs/001-orch-roadmap` imports them. TASK-01 needs the owner's review: give it merge policy `manual`.
 
 **Hot files:** `src/orchestrator.ts`, `dashboard/index.html`, `src/server.ts` and `src/cli.ts` are touched by most feature tasks, which is why waves 5–12 are sequential. **Shared doc files** (`README.md`, `docs/architecture.md`, `docs/requirements.md`, `docs/user-guide/feature-status.md`) are touched by nearly every task: in wave 14 three parallel tasks conflicted there. Parallel tasks should add their doc lines in task-specific places (their own §, row or page) and the last one to merge resolves the shared paragraphs.

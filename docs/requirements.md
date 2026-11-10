@@ -346,6 +346,9 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-UI-06 | The dashboard MUST show cost and agent time per task, per run and per project where the agent CLI reports them, and "n/a" where it doesn't. | built (TASK-17) |
 | REQ-UI-07 | The CLI MUST offer the owner's main actions: register, list and archive projects; plan (and preview); approve; run, pause, stop; status; answer; retry, skip, merge. Commands MUST act on the project given explicitly, else the project whose repo contains the current directory, else the only project. Otherwise they fail, listing the projects. | built (actions; projects and scoping, TASK-10; plan preview `--dry-run`, TASK-13) |
 | REQ-UI-08 | CLI commands MUST exit 0 on success, 1 on failure (with the error on stderr), and 2 on usage errors. `[ASSUMED]` | built (TASK-10) |
+| REQ-UI-09 | The dashboard MUST show, for every configured agent CLI and for the GitHub CLI, whether it is installed and signed in, and MUST let the owner run that CLI's own sign-in flow from the browser: the URL and code the CLI prints appear in the page, and anything the flow asks the owner to type is sent back to it. Credentials stay in the CLI's own store. | new (T028) |
+| REQ-UI-10 | The dashboard MUST let the owner view and change server settings and the selected project's settings in forms validated by the same rules as the files, with secrets never displayed, and MUST say which changes need a restart. Saving writes the same two files orch reads; a project's file is committed to its base branch. | new (T029) |
+| REQ-UI-11 | Every setting MUST be described once (name, type, default, scope, description, restart needed), and that description MUST drive the loader defaults, the forms and the documented settings table, so they cannot drift. | new (T029) |
 
 **Edge cases:**
 - Very large diffs → truncated with a visible notice and the total size.
@@ -361,6 +364,9 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - `REQ-UI-06`: Given a run whose agents reported $0.10 and $0.05, Then the run shows $0.15. Given a validator CLI that reports no cost, Then its cost shows "n/a".
 - `REQ-UI-07`: Given two projects and a terminal inside project B's repo, When `orch status` runs without a project flag, Then it shows B. Given a terminal outside both, Then it fails listing both projects.
 - `REQ-UI-08`: Given `orch answer` without arguments, Then the exit code is 2.
+- `REQ-UI-09`: Given Codex CLI is installed but signed out, When the owner clicks Sign in on its card, Then the page shows the URL and one-time code the CLI printed, and after the owner approves on another device the card shows signed in without a reload.
+- `REQ-UI-10`: Given the owner changes the validator role to another adapter in the Server form and saves, Then `server.json` holds the change, the next validator launch uses it without a restart, and the token field never showed its value. Given a project setting that the loader rejects, Then the form shows the loader's message and the file is unchanged.
+- `REQ-UI-11`: Given a setting is added to the schema but not to the architecture settings table (or the reverse), Then the unit tests fail naming the key.
 
 ### 5.11 Operations & Security (OPS)
 **User intent:** As the owner, I want orch to be safe to leave running on a server, and to stay healthy for months, so that I can rely on it without maintaining it.
@@ -374,6 +380,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 | REQ-OPS-05 | Stored data from earlier versions MUST be upgraded automatically on start, without data loss. | built (`user_version` migrations, TASK-07) |
 | REQ-OPS-06 | orch MUST run as a systemd service and in Docker, keeping all of its state in one data directory. | built (ORCH_HOME layout TASK-05; daemon keeps all state there TASK-09) |
 | REQ-OPS-07 | The access token and notification credentials MUST NOT be written to the store, the event log, or agent prompts. | built (TASK-08) |
+| REQ-OPS-08 | Sign-in flows run from the dashboard MUST NOT write their output or the owner's input to the store, the event log or any file orch owns; the output is streamed to open dashboards only, and credentials are written only by the CLI itself. | new (T028) |
 
 **Edge cases:**
 - The token is wrong → 401, with no detail about why.
@@ -388,6 +395,7 @@ Keywords MUST / SHOULD / MAY follow RFC 2119.
 - `REQ-OPS-05`: Given a database from the previous version, When orch starts, Then it starts, and all previous runs are readable.
 - `REQ-OPS-06`: Given the Docker setup, When the container is rebuilt, Then all projects, runs and logins survive.
 - `REQ-OPS-07`: Given a configured token and ntfy token, Then neither string appears in the database file or any agent prompt.
+- `REQ-OPS-08`: Given a sign-in flow that printed a one-time code and received a pasted code, Then neither string is in the database file or in any orch log.
 
 ### 5.12 Spec Skill (SPEC)
 **User intent:** As the owner, I want one guided process that writes specs orch can run at full fidelity, so that I never hand-tune files to fit orch. Design: [decision 0023](decisions/0023-orch-owns-spec-skill.md), [proposal](proposals/spec-workflow.md).
