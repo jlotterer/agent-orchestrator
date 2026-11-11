@@ -59,6 +59,30 @@ export interface AdapterConfig {
   env: Record<string, string>;
 }
 
+/** Result of a sign-in status probe. */
+export interface AccountStatus {
+  signedIn: boolean;
+  /** Short human text: the sign-in method or account, or why the CLI is signed out. Never a credential. */
+  detail: string;
+}
+
+/**
+ * How the dashboard's Agents tab (T028, decision 0025) checks and starts this CLI's own sign-in. The adapter
+ * only names commands; src/accounts.ts runs them, streams the output to open dashboards and stores nothing.
+ */
+export interface AdapterAccount {
+  /** Command that reports the sign-in state (the version check `<command> --version` runs separately). */
+  status(cfg: AdapterConfig): LaunchSpec;
+  /** `output` is stdout and stderr of the status command, merged; `exitCode` is null when it timed out. */
+  parseStatus(output: string, exitCode: number | null): AccountStatus;
+  /** The CLI's interactive login, run under a pseudo-terminal. Null = no in-browser flow (see `loginNotice`). */
+  login(cfg: AdapterConfig): LaunchSpec | null;
+  /** Shown on the card when `login` is null. */
+  loginNotice?: string;
+  /** Shown when a flow ends with a non-zero exit code. */
+  failureHint?: string;
+}
+
 export interface AgentAdapter {
   /** Short name shown in logs/dashboard. */
   readonly name: string;
@@ -73,6 +97,8 @@ export interface AgentAdapter {
   parseLine(msg: any, state: StreamState): NormalizedEvent[];
   /** Called when the process exits so the adapter can finalize text (e.g. flush deltas). */
   finish(state: StreamState, exitCode: number | null): void;
+  /** Status probe and login commands for the dashboard's Agents tab. Optional: an adapter without it shows "unknown". */
+  readonly account?: AdapterAccount;
 }
 
 export type { AgentResult };

@@ -28,6 +28,8 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 | `400` | The request isn't valid, or the action isn't allowed in the current state. |
 | `401` | The token is missing or wrong. |
 | `404` | The item doesn't exist. |
+| `409` | A sign-in for that program is already running, or none is. |
+| `501` | Signing in from the dashboard isn't supported on this server's operating system. The body also has `command`, the command to run by hand. |
 
 ## Server
 
@@ -35,7 +37,19 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 | :--- | :--- | :--- |
 | `GET /api/health` | None | `{ok, version, uptimeSec}` |
 | `POST /api/login` | `{token}` | Sets the sign-in cookie and returns `{ok, auth: true}`. With access control off, returns `{ok, auth: false}`. A wrong token returns `401`. |
-| `GET /api/events/stream` | None | A live stream of server-sent events: `event` for new log entries and `change` for state changes. |
+| `GET /api/events/stream` | None | A live stream of server-sent events: `event` for new log entries, `change` for state changes and `account` for a sign-in flow's lines and end. |
+
+## Agent accounts
+
+| Method and path | Body | Returns |
+| :--- | :--- | :--- |
+| `GET /api/accounts` | None | One row per adapter in `agents.adapters` plus `gh`: `{id, kind, type, command, version, status, detail, loginActive, canLogin, loginNotice, manualCommand}`. `status` is `signed_in`, `signed_out` or `unknown`. A program that can't be started has `version: null` and a `detail` that starts with `not installed`. Each check has a 15-second limit. |
+| `GET /api/accounts/:id/login` | None | `{active, lines}`: what a running sign-in has printed so far. |
+| `POST /api/accounts/:id/login` | None | Starts the program's own sign-in. `409` if one is running, `501` on an unsupported system. |
+| `POST /api/accounts/:id/login/input` | `{text}` | Sends `text` and **Enter** to the running sign-in. Empty `text` sends only **Enter**. |
+| `POST /api/accounts/:id/login/cancel` | None | Stops the running sign-in. |
+
+The lines and the end of a sign-in arrive on the live stream as `account` events: `{id, line}`, then `{id, done: true, exitCode}`, then `{id, account}` with the new row. orch doesn't store them.
 
 ## Projects
 

@@ -9,7 +9,7 @@
  *   {type:"result", subtype:"success"|..., is_error, result, total_cost_usd, session_id}
  *   (plus stream_event / autocompact_state lines, ignored)
  */
-import type { AdapterConfig, AgentAdapter, LaunchOptions, LaunchSpec, NormalizedEvent, StreamState } from "./types.js";
+import type { AccountStatus, AdapterConfig, AgentAdapter, LaunchOptions, LaunchSpec, NormalizedEvent, StreamState } from "./types.js";
 import { summarizeInput } from "./runner.js";
 
 export const claudeAdapter: AgentAdapter = {
@@ -63,5 +63,24 @@ export const claudeAdapter: AgentAdapter = {
 
   finish(state: StreamState): void {
     if (!state.finalText) state.finalText = state.currentText;
+  },
+
+  // Sign-in (T028; contract sign-in-flows.md). `claude auth login` defaults to the subscription (--claudeai);
+  // headless it prints a URL and then waits for the code shown after sign-in to be pasted back.
+  account: {
+    status: (cfg: AdapterConfig): LaunchSpec => ({ command: cfg.command, args: ["auth", "status", "--json"], stdin: null }),
+    parseStatus(output: string, exitCode: number | null): AccountStatus {
+      const i = output.indexOf("{");
+      if (i >= 0) {
+        try {
+          const j = JSON.parse(output.slice(i, output.lastIndexOf("}") + 1));
+          if (j.loggedIn === true) return { signedIn: true, detail: String(j.authMethod ?? j.apiProvider ?? "signed in") };
+          if (j.loggedIn === false) return { signedIn: false, detail: "not signed in" };
+        } catch { /* fall through */ }
+      }
+      return { signedIn: false, detail: exitCode === null ? "status check timed out" : "not signed in" };
+    },
+    login: (cfg: AdapterConfig): LaunchSpec => ({ command: cfg.command, args: ["auth", "login"], stdin: null }),
+    failureHint: "Run `claude auth login` by hand, or `claude setup-token` and set the token in the adapter's env.",
   },
 };

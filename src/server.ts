@@ -6,6 +6,7 @@ import type { Orchestrator } from "./orchestrator.js";
 import { PKG_ROOT } from "./prompts.js";
 import { isAuthorized, loginCookie, tokenMatches } from "./auth.js";
 import { archivedLogEvent } from "./archive.js";
+import { Accounts, AccountError } from "./accounts.js";
 
 const VERSION: string = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")).version ?? "unknown"; } catch { return "unknown"; }
@@ -14,7 +15,7 @@ const STARTED = Date.now();
 
 type Handler = (req: http.IncomingMessage, res: http.ServerResponse, params: Record<string, string>, body: any) => Promise<any> | any;
 
-export function startServer(orch: Orchestrator) {
+export function startServer(orch: Orchestrator, opts: { accounts?: Accounts } = {}) {
   const routes: { method: string; pattern: RegExp; keys: string[]; handler: Handler }[] = [];
   const route = (method: string, p: string, handler: Handler) => {
     const keys: string[] = [];
@@ -102,6 +103,18 @@ export function startServer(orch: Orchestrator) {
   route("POST", "/api/ask", (_r, _s, _p, b) => orch.recordQuestion(String(b.taskId), String(b.text), Array.isArray(b.options) ? b.options.map(String) : []));
   route("POST", "/api/decide", (_r, _s, _p, b) => orch.recordDecision(b.taskId ?? null, b.runId ?? null, String(b.actor ?? "worker"), String(b.text), b.rationale ? String(b.rationale) : null));
 
+  // ---- agent accounts (§15.1, §15.3; decision 0025): installed/signed-in state and the CLIs' own sign-in flows ----
+  // Flow output and typed input pass through here to open dashboards only (REQ-OPS-08): no store, no log, no file.
+  const accounts = opts.accounts ?? new Accounts({
+    config: () => ({ adapters: orch.server.agents.adapters, ghCommand: orch.server.git.ghCommand }),
+    cwd: orch.home,
+  });
+  route("GET", "/api/accounts", () => accounts.list());
+  route("GET", "/api/accounts/:id/login", (_r, _s, p) => ({ active: accounts.isActive(p.id), lines: accounts.lines(p.id) }));
+  route("POST", "/api/accounts/:id/login", (_r, _s, p) => { accounts.startLogin(p.id); return { ok: true }; });
+  route("POST", "/api/accounts/:id/login/input", (_r, _s, p, b) => { accounts.sendInput(p.id, typeof b.text === "string" ? b.text : ""); return { ok: true }; });
+  route("POST", "/api/accounts/:id/login/cancel", (_r, _s, p) => { accounts.cancel(p.id); return { ok: true }; });
+
   // ---- SSE ----
   const clients = new Set<http.ServerResponse>();
   const send = (type: string, payload: any) => {
@@ -110,6 +123,7 @@ export function startServer(orch: Orchestrator) {
   };
   orch.on("event", (ev) => send("event", ev));
   orch.on("change", (ch) => send("change", ch));
+  accounts.on("account", (ev) => send("account", ev));
   const keepalive = setInterval(() => { for (const c of clients) c.write(": ping\n\n"); }, 25000);
   keepalive.unref();
 
@@ -165,8 +179,9 @@ export function startServer(orch: Orchestrator) {
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "not found" }));
     } catch (e: any) {
-      res.writeHead(e?.status === 404 ? 404 : 400, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: e?.message ?? String(e) }));
+      const status = e instanceof AccountError ? e.status : e?.status === 404 ? 404 : 400;
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: e?.message ?? String(e), ...(e instanceof AccountError ? e.body : {}) }));
     }
   });
 

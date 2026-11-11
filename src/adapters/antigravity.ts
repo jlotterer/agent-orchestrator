@@ -20,7 +20,7 @@
  *   {event:"result", result:{conversation_id, status:"SUCCESS"|"ERROR"|"CANCELED"|"INTERRUPTED"|"INVALID", response, error?, duration_seconds, num_turns, usage}}
  * No cost is reported (tokens only), so costUsd stays null and the dashboard shows n/a.
  */
-import type { AdapterConfig, AgentAdapter, LaunchOptions, LaunchSpec, NormalizedEvent, StreamState } from "./types.js";
+import type { AccountStatus, AdapterConfig, AgentAdapter, LaunchOptions, LaunchSpec, NormalizedEvent, StreamState } from "./types.js";
 import { summarizeInput } from "./runner.js";
 
 interface Scratch {
@@ -126,5 +126,29 @@ export const antigravityAdapter: AgentAdapter = {
       const open = [...sc.steps.values()].find((t) => t.trim());
       state.finalText = open ?? sc.lastText ?? state.currentText;
     }
+  },
+
+  // Sign-in (T028; contracts sign-in-flows.md and antigravity-cli.md). agy documents no status command, so the probe
+  // is one tiny headless turn (a real model call: the dashboard runs it only when the Agents tab is opened or
+  // refreshed). Login is the interactive CLI under a pty: it prints an authorization URL and asks for the code.
+  account: {
+    status: (cfg: AdapterConfig): LaunchSpec => ({
+      command: cfg.command, args: ["-p", "reply with ok", "--output-format", "json", "--print-timeout", "12s"], stdin: null,
+    }),
+    parseStatus(output: string, exitCode: number | null): AccountStatus {
+      if (/authentication required|not (signed|logged) in|please (sign|log) in/i.test(output)) return { signedIn: false, detail: "authentication required" };
+      const i = output.indexOf("{");
+      if (i >= 0) {
+        try {
+          const j = JSON.parse(output.slice(i, output.lastIndexOf("}") + 1));
+          const status = String(j.status ?? j.result?.status ?? "");
+          if (status === "SUCCESS") return { signedIn: true, detail: "signed in" };
+          if (status) return { signedIn: false, detail: `status ${status}` };
+        } catch { /* fall through */ }
+      }
+      return { signedIn: false, detail: exitCode === null ? "status check timed out" : "not signed in" };
+    },
+    login: (cfg: AdapterConfig): LaunchSpec => ({ command: cfg.command, args: [], stdin: null }),
+    failureHint: "Without a working keyring, use an API key: set modelProvider to gemini in ~/.gemini/antigravity-cli/settings.json and GEMINI_API_KEY in the adapter's env.",
   },
 };

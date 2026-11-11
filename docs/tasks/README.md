@@ -11,7 +11,7 @@ Each task is a self-contained brief for one agent session and one PR. Start with
 | Task | Wave | Area | Summary | Depends on | Parallel |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | [T027](../../specs/001-orch-roadmap/tasks/T027.md) | 18 | Adapters | (done) Antigravity CLI and Codex CLI adapters; retire the Gemini CLI adapter (its Google-account sign-in ended 2026-06-18); Docker image and docs follow | 01–26 | No |
-| [T028](../../specs/001-orch-roadmap/tasks/T028.md) | 19 | Dashboard | (todo) Agents tab: installed version and signed-in state per CLI, Sign in runs the CLI's own device/URL flow from the browser; credentials stay with the CLIs | 27 | No |
+| [T028](../../specs/001-orch-roadmap/tasks/T028.md) | 19 | Dashboard | (done) Agents tab: installed version and signed-in state per CLI, Sign in runs the CLI's own device/URL flow from the browser; credentials stay with the CLIs | 27 | No |
 | [T029](../../specs/001-orch-roadmap/tasks/T029.md) | 20 | Dashboard | (todo) Settings tab: server and project forms generated from one settings schema; validate with the loaders, hot-reload, commit project settings; drift test against architecture §19 | 28 | No |
 
 **Running these with orch itself:** [specs/001-orch-roadmap/tasks.md](../../specs/001-orch-roadmap/tasks.md) lists the same tasks in Spec Kit format (one phase per wave), so `orch plan specs/001-orch-roadmap` imports them. TASK-01 needs the owner's review: give it merge policy `manual`.
