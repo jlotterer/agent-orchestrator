@@ -73,6 +73,7 @@ In the panel:
 
 - Lines the program prints appear as they arrive. Addresses (`https://…`) are links. A one-time code has a **copy** button.
 - When the program asks you to type something, such as a code shown after you sign in, enter it in the text box and select **Send**. Select **Send** with an empty box to press **Enter**.
+- Antigravity CLI shows a menu with **Google OAuth** already selected. Select **Send** with an empty box to choose it. The program doesn't exit after you sign in: when the card reads **Signed in**, select **Cancel** to end the panel.
 - **Cancel** stops the sign-in. A sign-in that is still running after 10 minutes is stopped.
 - When the sign-in ends, the panel says whether it finished, and the card shows the new state without reloading the page.
 

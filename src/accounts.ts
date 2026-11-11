@@ -71,7 +71,7 @@ const MAX_INPUT = 4096;
 const PARTIAL_FLUSH_MS = 400;
 
 // CSI sequences, OSC sequences (BEL or ST terminated), charset selects and other two-byte escapes.
-const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[@-Z\\-_=>]/g;
+const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[0-?@-Z\\-_`-~]/g;
 const CONTROL = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
 
 /** One output line, escape sequences removed; a carriage return overwrites what came before it. */
@@ -240,6 +240,9 @@ export class Accounts extends EventEmitter {
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     const onData = (chunk: string) => {
+      // Some prompt libraries (gh's) ask the terminal where the cursor is (ESC[6n) and wait for the answer; a bare
+      // pty never replies, so answer with the size we set (rows 50, cols 1000).
+      if (chunk.includes("\x1b[6n")) child.stdin.write("\x1b[50;1000R");
       flow.partial += chunk;
       const parts = flow.partial.split("\n");
       flow.partial = parts.pop() ?? "";
@@ -265,7 +268,8 @@ export class Accounts extends EventEmitter {
     if (flow.partialTimer) clearTimeout(flow.partialTimer);
     this.flushPartial(id, flow);
     flow.lastInput = clean ? clean : null;
-    flow.child.stdin!.write(clean + "\n");
+    // CR is the Enter key: a line-mode prompt sees it as a newline (the pty's ICRNL), a full-screen menu as the Enter key.
+    flow.child.stdin!.write(clean + "\r");
   }
 
   cancel(id: string): void {

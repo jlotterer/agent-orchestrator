@@ -26,3 +26,64 @@ What T028's accounts panel relies on. Versions checked in the orch Docker image 
 ## GitHub CLI (`gh`, not an adapter; commands live in `src/accounts.ts`)
 - Status: `gh auth status` → exit 0 when a host is logged in; stdout names the account. Honour `git.ghCommand` from server settings.
 - Login: `gh auth login --hostname github.com --git-protocol https --web` prints `! First copy your one-time code: XXXX-XXXX` then `Press Enter to open https://github.com/login/device in your browser...`; the owner copies the code, sends an empty input, opens the URL on any device, and the process exits 0 once approved. `GH_TOKEN` in the environment makes `gh` ignore the stored login, so the panel says so when that variable is set. Store: `~/.config/gh` (volume `gh-config`).
+
+## Real run (2026-11-10)
+
+Run on the AORUS server in a scratch container (`orch:t028`, port 4801, fresh volumes, no `GH_TOKEN`), each CLI signed in through the Agents tab. Versions: Claude Code 2.1.321, Codex 0.167.0, Antigravity (`agy`) 1.5.3, gh 2.103.3. `script` gave usable lines for all four.
+
+**Claude Code** (`claude auth login`), exact lines:
+```
+Opening browser to sign in…
+If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&client_id=…&state=…
+Paste code here if prompted >
+```
+Pasting the code shown after sign-in finished the flow; the card read `signed_in`, detail `claude.ai`.
+
+**Codex** (`codex login --device-auth -c cli_auth_credentials_store=file`), exact lines; the process exits on its own once the device is approved, no input needed:
+```
+Welcome to Codex [v0.167.0]
+OpenAI's command-line coding agent
+Follow these steps to sign in with ChatGPT using device code authorization:
+1. Open this link in your browser and sign in to your account
+   https://auth.openai.com/codex/device
+2. Enter this one-time code (expires in 15 minutes)
+   BCSF-IQFJZ
+Continue only if you started this login in Codex. If a website or another person gave you this code, cancel.
+```
+Status afterwards: `Logged in using ChatGPT`.
+
+**gh** (`gh auth login --hostname github.com --git-protocol https --web`), exact lines. gh asks `Authenticate Git with your GitHub credentials?` even with `--git-protocol` (answer `Y`), then waits for Enter; the exit code is 0 once the code is entered on github.com:
+```
+! Did you know that expiring tokens can be requested with --expiring? Read more at https://gh.io/gh-expiring-tokens
+? Authenticate Git with your GitHub credentials? (Y/n)
+? Authenticate Git with your GitHub credentials? Yes
+! Failed to copy one-time code to clipboard
+  No clipboard utilities available. Please install xsel, xclip, wl-clipboard or Termux:API add-on for termux-clipboard-get/set.
+! First copy your one-time code: 66F6-2D74
+Press Enter to open https://github.com/login/device in your browser...
+! Failed opening a web browser at https://github.com/login/device
+  exec: "xdg-open,x-www-browser,www-browser,wslview": executable file not found in $PATH
+  Please try entering the URL in your browser manually
+```
+Status afterwards: `Logged in to github.com account <name> (/home/orch/.config/gh/hosts.yml)`.
+
+**Antigravity** (bare `agy`): it draws a full-screen menu, not lines. The default choice is already the Google sign-in, so **Send** with an empty box (Enter) selects it. Option 2 cannot be chosen from the panel because the panel sends no arrow keys. Lines seen:
+```
+Welcome to the Antigravity CLI. You are currently not signed in.
+Select login method:
+ > 1. Google OAuth
+2. Use a Google Cloud project
+↑/↓ Navigate · enter Select
+ Signing in...Your browser should open automatically. If not:
+ https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=…&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&…
+ Copy and paste the URL or click on the link below:
+ If you aren't automatically redirected, paste the authorization code below:
+ authorization code...
+```
+After consent, Google's page shows a code; pasting it signs in. The CLI then carries on into its first-run screens ("Welcome to Antigravity CLI! Choose your color scheme") and never exits, so the flow ends only on **Cancel** or the 10-minute limit; the re-probe then reads signed in. A signed-out `agy -p` does not fail fast: it starts its own OAuth and waits, so the probe hits its 15 s timeout and the card reads `unknown` ("status check timed out after 15 s") rather than signed out. The token is `~/.gemini/antigravity-cli/antigravity-oauth-token`, in the `gemini-home` volume; it survived a container recreate.
+
+**Engine findings, fixed in T028:**
+- A line-mode prompt accepts LF, but a full-screen menu in raw keyboard mode needs CR for Enter. Input now ends in CR; the pty turns it into a newline for line-mode prompts.
+- gh asks the terminal for its cursor position (`ESC[6n`) and hangs without an answer. The engine now replies with the size it set (rows 50, cols 1000).
+- gh leaves a bare `ESC 7` (save cursor) after its prompt; the line cleaner now strips two-byte escapes of that kind.
+- One status read right after the gh and Antigravity flows reported Antigravity as signed out; three reads later it was signed in again. Not reproduced.

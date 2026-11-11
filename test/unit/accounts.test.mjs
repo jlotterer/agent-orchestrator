@@ -131,6 +131,11 @@ describe("cleanLine", () => {
     assert.equal(cleanLine("spin |\rspin /\rdone"), "done");
     assert.equal(cleanLine("  \r"), "");
   });
+
+  test("strips two-byte cursor escapes such as save/restore cursor (gh prints ESC 7 after its prompt)", () => {
+    assert.equal(cleanLine("? Authenticate Git with your GitHub credentials? (Y/n) \x1b7"), "? Authenticate Git with your GitHub credentials? (Y/n)");
+    assert.equal(cleanLine("a\x1b8b\x1bcc"), "abc");
+  });
 });
 
 describe("sign-in flow", flowOpts, () => {
@@ -254,6 +259,25 @@ describe("sign-in flow", flowOpts, () => {
     acc.startLogin("fake");
     await until(() => events.some((e) => e.line === "Paste the code here >"));
     acc.sendInput("fake", "");
+    await until(() => events.some((e) => e.done));
+    assert.equal(events.find((e) => e.done).exitCode, 0);
+  });
+
+  test("input ends in Enter (CR), so a full-screen menu in raw mode is selected too", async () => {
+    const { acc, events } = make({ FAKE_LOGIN_MODE: "raw" });
+    acc.startLogin("fake");
+    await until(() => events.some((e) => e.line?.includes("ABCD-EFGH")));
+    acc.sendInput("fake", "");
+    await until(() => events.some((e) => e.done));
+    assert.equal(events.find((e) => e.done).exitCode, 0);
+    assert.ok(events.some((e) => e.line?.startsWith("Enter key received")));
+  });
+
+  test("a cursor-position query (ESC[6n) from the CLI is answered, so gh-style prompts do not hang", async () => {
+    const { acc, events } = make({ FAKE_LOGIN_MODE: "cpr" });
+    acc.startLogin("fake");
+    await until(() => events.some((e) => e.line?.includes("cursor report received")));
+    acc.sendInput("fake", "Y");
     await until(() => events.some((e) => e.done));
     assert.equal(events.find((e) => e.done).exitCode, 0);
   });

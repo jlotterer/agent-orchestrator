@@ -26,7 +26,22 @@ if (process.env.FAKE_LOGIN_PIDFILE) fs.writeFileSync(process.env.FAKE_LOGIN_PIDF
 const C = (n, s) => (mode === "ansi" ? `\x1b[${n}m${s}\x1b[0m` : s);
 
 console.log(C(32, "Open https://example.test/device and enter code ABCD-EFGH"));
-if (mode === "hang") setInterval(() => {}, 1000);
+if (mode === "raw" || mode === "cpr") {
+  // Full-screen style: raw keyboard mode, so only a CR byte counts as Enter and a LF does not (agy's menu).
+  // "cpr" also asks the terminal for the cursor position (as gh does) and waits for the answer first.
+  process.stdin.setRawMode(true);
+  if (mode === "cpr") process.stdout.write("Ready? (Y/n) \x1b[6n");
+  let seenReport = mode !== "cpr";
+  process.stdin.on("data", (d) => {
+    const s = String(d);
+    if (!seenReport) { if (/\x1b\[\d+;\d+R/.test(s)) { seenReport = true; console.log("cursor report received"); } return; }
+    if (s.includes("\r")) {
+      if (marker) fs.writeFileSync(marker, "signed in\n");
+      console.log(`Enter key received after "${s.replace(/\r/g, "").trim()}"`);
+      process.exit(0);
+    }
+  });
+} else if (mode === "hang") setInterval(() => {}, 1000);
 else {
   if (mode === "prompt") process.stdout.write("Paste the code here > ");
   const rl = readline.createInterface({ input: process.stdin });

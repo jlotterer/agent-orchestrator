@@ -23,5 +23,6 @@ Each agent CLI is signed in on the orch server with the owner's own subscription
 ## Consequences
 - The Agents tab depends on `script` being installed (util-linux on Linux; present on macOS). The unit tests that run a flow need it, so on Windows hosts they run in Docker.
 - Output that a CLI draws with cursor movement rather than lines can look rough; the panel shows lines, not a terminal. A CLI whose login needs a real keyring (Antigravity without one) shows its failure text and the API-key instructions instead.
+- Antigravity's login is a full-screen menu that never exits after sign-in: the panel can press Enter on the highlighted Google choice, cannot pick the other choice, and the owner cancels the flow once the card reads signed in. Its signed-out probe waits for the 15 s timeout and reads `unknown`.
 - `GET /api/accounts` runs the status commands each time it is called. Antigravity has no status command, so its probe is one tiny headless model turn; the dashboard calls it only when the Agents tab opens or is refreshed, never on the tick.
 - Every adapter added later can offer sign-in by implementing `account`, with no dashboard change.
