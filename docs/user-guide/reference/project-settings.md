@@ -2,6 +2,8 @@
 
 Each project's settings live in `orch.config.json` at the top of its repo. orch reads the file again whenever you plan or start a run in that project, so changes apply from the next run without a restart. A run that's already going keeps the settings it started with.
 
+You can edit these settings in the **Settings** tab of the dashboard (see [Settings tab](dashboard.md#settings-tab)). Saving writes this file and commits it to the base branch. A save also applies to the project at once: its next agent launch uses the new settings.
+
 Every key is optional. When a key is missing, orch uses the value from `defaults` in `server.json`, and then the built-in default.
 
 For a full example, see `orch.config.example.json` in the orch source.

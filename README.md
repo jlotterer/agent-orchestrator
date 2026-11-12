@@ -159,6 +159,19 @@ example: [orch.config.example.json](orch.config.example.json).
 
 Full example: [examples/server.example.json](examples/server.example.json).
 
+### Editing settings in the dashboard
+
+The **Settings** tab edits both files as forms: a Server form (agent adapters with their command, extra
+arguments and environment variables, the role table, notifications with a **Send test** button, and the
+address, port and token read-only) and a Project form for the selected project (validation, scheduler,
+git, roles, an Advanced toggle, and a raw JSON editor). Saving runs the same checks as startup and
+leaves the file alone if they fail. Server changes apply to the next agent launch, except `host`,
+`port`, `publicUrl`, `auth.*`, `retention.*` and `scheduler.tickSeconds`, which are saved and marked
+"restart required". A project's file is committed to its base branch as `chore(orch): update project
+settings` when that checkout has no other uncommitted change; otherwise it is only written and the page
+says why. Tokens and environment values are write-only: the page and the API show only whether one is
+set. Every setting is described once in `src/settings-schema.ts` ([decision 0026](docs/decisions/0026-settings-schema-and-forms.md)).
+
 ### Access token
 
 By default orch listens on `127.0.0.1` only. To reach it from another machine, set `host` to
@@ -589,6 +602,7 @@ src/git.ts            worktrees, diffs, push, gh pr create/merge/view, CI logs, 
 src/prfeedback.ts     PR feedback loop helpers: check verdicts, review comments, worker feedback text
 src/speckit.ts        tasks.md parser and ticker
 src/config.ts         settings: server.json and per-project loaders, plus the single-file format read by the upgrade
+src/settings-schema.ts every setting once (default, type, secret, restart); drives the defaults, the Settings forms and the §19 table check
 src/paths.ts          ORCH_HOME layout (server.json, orch.db, worktrees/, archive/, run/)
 src/db.ts             SQLite: projects, runs, tasks, phases, events, decisions, questions; versioned migrations
 src/projects.ts       project registry: register a repo, archive, find the project for a directory

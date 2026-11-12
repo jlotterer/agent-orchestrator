@@ -7,6 +7,7 @@ import { PKG_ROOT } from "./prompts.js";
 import { isAuthorized, loginCookie, tokenMatches } from "./auth.js";
 import { archivedLogEvent } from "./archive.js";
 import { Accounts, AccountError } from "./accounts.js";
+import { settingsSchema } from "./settings-schema.js";
 
 const VERSION: string = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")).version ?? "unknown"; } catch { return "unknown"; }
@@ -103,6 +104,15 @@ export function startServer(orch: Orchestrator, opts: { accounts?: Accounts } = 
   route("POST", "/api/ask", (_r, _s, _p, b) => orch.recordQuestion(String(b.taskId), String(b.text), Array.isArray(b.options) ? b.options.map(String) : []));
   route("POST", "/api/decide", (_r, _s, _p, b) => orch.recordDecision(b.taskId ?? null, b.runId ?? null, String(b.actor ?? "worker"), String(b.text), b.rationale ? String(b.rationale) : null));
 
+  // ---- settings (§5.2, §15.1; T029, decision 0026): the two settings files, edited as forms ----
+  // Secrets are write-only: reads return `{set}` for them (§16), and a masked value sent back means "keep".
+  route("GET", "/api/settings/schema", () => settingsSchema);
+  route("GET", "/api/settings/server", () => orch.serverSettings());
+  route("PUT", "/api/settings/server", (_r, _s, _p, b) => orch.saveServerSettings(b));
+  route("POST", "/api/settings/notify-test", () => orch.sendTestNotification());
+  route("GET", "/api/projects/:id/settings", (_r, _s, p) => orch.projectSettings(p.id));
+  route("PUT", "/api/projects/:id/settings", (_r, _s, p, b) => orch.saveProjectSettings(p.id, b));
+
   // ---- agent accounts (§15.1, §15.3; decision 0025): installed/signed-in state and the CLIs' own sign-in flows ----
   // Flow output and typed input pass through here to open dashboards only (REQ-OPS-08): no store, no log, no file.
   const accounts = opts.accounts ?? new Accounts({
@@ -170,7 +180,7 @@ export function startServer(orch: Orchestrator, opts: { accounts?: Accounts } = 
         if (!m) continue;
         const params: Record<string, string> = {};
         r.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1])));
-        const body = req.method === "POST" ? await readJson(req) : null;
+        const body = req.method === "POST" || req.method === "PUT" ? await readJson(req) : null;
         const out = await r.handler(req, res, params, body ?? {});
         res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" });
         res.end(JSON.stringify(out ?? { ok: true }));

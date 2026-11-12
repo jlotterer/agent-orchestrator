@@ -1,6 +1,8 @@
 # Server settings
 
-Server settings apply to the whole orch server and every project. They live in `server.json` in the data directory, `~/.orch/server.json` by default. If the file doesn't exist, orch uses the defaults. Restart orch after you change it.
+Server settings apply to the whole orch server and every project. They live in `server.json` in the data directory, `~/.orch/server.json` by default. If the file doesn't exist, orch uses the defaults.
+
+You can edit these settings in the **Settings** tab of the dashboard (see [Settings tab](dashboard.md#settings-tab)) or by hand. Changes saved in the tab take effect for the next agent launch without a restart, except the network, access token and retention keys and `scheduler.tickSeconds`, which need a restart. If you edit the file by hand, restart orch.
 
 For a full example, see `examples/server.example.json` in the orch source.
 

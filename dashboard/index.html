@@ -156,6 +156,29 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px;
 .acct-send { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .acct-send input { flex: 1 1 200px; min-width: 0; font-family: var(--mono); }
 .acct-end { font-size: 12px; margin-top: 6px; } .acct-end.bad { color: var(--bad); } .acct-end.ok { color: var(--ok); }
 button.copy { margin-left: 4px; padding: 0 6px; font-size: 11px; }
+/* settings tab: forms generated from the settings schema (T029, decision 0026) */
+.setbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; }
+.setbar button.active { border-color: var(--accent); color: var(--accent); }
+.setgrp { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; max-width: 760px; }
+.setgrp h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.setgrp h4 { margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
+.fld { margin: 8px 0; } .fld label { margin: 0 0 3px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.fld input[type=text], .fld input[type=number], .fld input[type=password], .fld select, .fld textarea { width: 100%; max-width: 520px; }
+.fld textarea { min-height: 52px; }
+label.chk { display: flex; gap: 8px; align-items: baseline; color: var(--text); font-size: 13px; margin: 8px 0 2px; }
+.hint { color: var(--dim); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+.restart-badge { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--warn); border: 1px solid var(--warn); }
+.restart-note { border: 1px solid var(--warn); color: var(--warn); border-radius: 6px; padding: 6px 10px; margin-bottom: 12px; font-size: 12px; max-width: 760px; }
+.adapter { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 8px 0; background: var(--panel2); }
+.adapter .adhead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin-bottom: 4px; }
+.adapter input[type=text], .adapter input[type=password], .adapter textarea { width: 100%; max-width: 520px; }
+.envrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; } .envrow code { min-width: 120px; } .envrow input { flex: 1 1 160px; min-width: 0; }
+table.roles { border-collapse: collapse; width: 100%; max-width: 720px; margin-top: 6px; } table.roles th, table.roles td { text-align: left; padding: 4px 8px 4px 0; font-size: 12px; vertical-align: middle; }
+table.roles th { color: var(--muted); font-weight: 600; } table.roles select, table.roles input { width: 100%; min-width: 0; }
+.setrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 2px; }
+.setmsg { font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; white-space: pre-wrap; } .setmsg.bad { color: var(--bad); } .setmsg.ok { color: var(--ok); } .setmsg.warn { color: var(--warn); }
+details.rawwrap { margin: 8px 0 12px; max-width: 760px; } details.rawwrap summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+details.rawwrap textarea { min-height: 220px; margin-top: 6px; }
 /* review: diff viewer + send back (decision 0018) */
 .diffsum { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
 .n-add { color: var(--add-fg); font-family: var(--mono); font-size: 12px; } .n-del { color: var(--del-fg); font-family: var(--mono); font-size: 12px; }
@@ -223,12 +246,14 @@ pre.patch .h { color: var(--hunk-fg); } pre.patch .m { color: var(--dim); font-s
       <button data-tab="decisions">Decisions</button>
       <button data-tab="activity">Activity</button>
       <button data-tab="agents">Agents</button>
+      <button data-tab="settings">Settings</button>
     </div>
     <div id="tab-board"><div id="projectError" hidden></div><div id="board"></div></div>
     <div id="tab-plan" hidden></div>
     <div id="tab-decisions" hidden></div>
     <div id="tab-activity" hidden><div class="activity" id="activity"></div></div>
     <div id="tab-agents" hidden></div>
+    <div id="tab-settings" hidden></div>
   </div>
 
   <div id="detail" class="col">
@@ -369,6 +394,7 @@ function setProject(id) {
   selectedProject = id; selectedRun = null; activityRun = null; state = EMPTY;
   lsSet(LS_PROJECT, id);
   closeDetail();
+  if (!$("#tab-settings").hidden) { setDirty = false; loadSettings(true).catch(() => {}); } // the Project form follows the selection
 }
 async function switchProject(id) {
   closeMenu();
@@ -802,7 +828,7 @@ function closeDetail() {
   $("#detailBody").className = "empty"; $("#detailBody").innerHTML = "Select a task to see its plan, log, and actions.";
 }
 $("#closeDetail").onclick = () => { closeDetail(); renderBoard(); };
-document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b)); for (const t of ["board", "plan", "decisions", "activity", "agents"]) $(`#tab-${t}`).hidden = t !== b.dataset.tab; if (b.dataset.tab === "agents") act(loadAccounts); });
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b)); for (const t of ["board", "plan", "decisions", "activity", "agents", "settings"]) $(`#tab-${t}`).hidden = t !== b.dataset.tab; if (b.dataset.tab === "agents") act(loadAccounts); if (b.dataset.tab === "settings") act(() => loadSettings(true)); });
 
 // Agents tab (T028, decision 0025): one card per configured CLI plus gh, rendered from GET /api/accounts so a new
 // adapter needs no change here. Sign in streams the CLI's own login flow; nothing from a flow is stored or kept
@@ -927,6 +953,305 @@ $("#tab-agents").addEventListener("submit", async (e) => {
   input.focus();
 });
 
+// Settings tab (T029, decision 0026): a Server form and a Project form generated from GET /api/settings/schema, so a new
+// setting needs no change here. Saving PUTs only what changed; the server validates with the same loaders as startup.
+// Secrets are write-only: the API sends {set}, the page shows "set" and sends a value only when the owner types one.
+// <settings-forms>
+const SET_TYPES = ["string", "int", "bool", "enum", "list", "map"];
+const ROLES = ["planner", "worker", "validator", "phaseValidator"];
+const hasPlaceholder = (k) => /[<*]/.test(k);
+const dotGet = (o, p) => p.split(".").reduce((n, s) => (n !== null && typeof n === "object" ? n[s] : undefined), o);
+const listText = (v) => (Array.isArray(v) ? v.join("\n") : "");
+const envText = (v) => Object.entries(v && typeof v === "object" ? v : {}).map(([k, x]) => `${k}=${x}`).join("\n");
+const isEnvMap = (e) => e.type === "map" && e.key.endsWith(".env");
+
+/** The text a field starts with. Saving compares it with what the field holds now, so unchanged fields are never sent. */
+function fieldText(e, value) {
+  if (e.secret) return "";
+  if (e.type === "bool") return String(!!value);
+  if (e.type === "list") return listText(value);
+  if (isEnvMap(e)) return envText(value);
+  if (e.type === "map") return JSON.stringify(value ?? {}, null, 2);
+  return value === undefined || value === null ? "" : String(value);
+}
+
+/** One schema entry as a form field. `o.readOnly` disables it; `o.pending` lists the keys waiting for a restart. */
+function fieldHtml(e, value, o = {}) {
+  const dataType = e.type === "map" && !isEnvMap(e) ? "json" : e.type;
+  const attrs = `data-key="${esc(e.key)}" data-type="${esc(dataType)}" data-init="${esc(fieldText(e, value))}"${o.readOnly ? " disabled" : ""}`;
+  const badge = (o.pending || []).includes(e.key) ? ` <span class="restart-badge" data-restart="${esc(e.key)}">restart required</span>` : "";
+  const hint = `<div class="hint">${esc(e.description)}${e.restart && !o.readOnly ? " Takes effect after a restart." : ""}</div>`;
+  const name = `<code>${esc(e.key)}</code>`;
+  if (e.type === "bool") return `<div class="fld"><label class="chk"><input type="checkbox" ${attrs}${value ? " checked" : ""}> <span>${name}</span>${badge}</label>${hint}</div>`;
+  let input;
+  if (e.secret) {
+    const set = !!(value && value.set === true);
+    input = `<input type="password" ${attrs} autocomplete="new-password" placeholder="${o.readOnly ? (set ? "set" : "not set") : (set ? "set (leave empty to keep)" : "not set")}">`;
+  } else if (e.type === "int") {
+    input = `<input type="number" step="1" ${attrs} value="${esc(fieldText(e, value))}"${e.min !== undefined ? ` min="${e.min}"` : ""}${e.max !== undefined ? ` max="${e.max}"` : ""}>`;
+  } else if (e.type === "enum") {
+    input = `<select ${attrs}>${(e.enum || []).map(v => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(v)}</option>`).join("")}</select>`;
+  } else if (e.type === "list" || e.type === "map") {
+    input = `<textarea ${attrs} rows="${e.type === "list" ? 2 : 4}" spellcheck="false">${esc(fieldText(e, value))}</textarea>`;
+  } else {
+    input = `<input type="text" ${attrs} value="${esc(fieldText(e, value))}">`;
+  }
+  const note = isEnvMap(e) ? `<div class="hint">One NAME=value per line.</div>` : e.type === "list" ? `<div class="hint">One per line.</div>` : "";
+  return `<div class="fld"><label>${name}${badge}</label>${input}${note}${hint}</div>`;
+}
+
+/** Plain-key entries of one scope that the page can draw as a field, and the ones whose type it does not know. */
+function formEntries(schema, scope) {
+  const plain = schema.filter(e => e.scope === scope && !hasPlaceholder(e.key));
+  return { fields: plain.filter(e => SET_TYPES.includes(e.type)), unknown: plain.filter(e => !SET_TYPES.includes(e.type)) };
+}
+const groupOrder = (entries) => [...new Set(entries.map(e => e.group))];
+
+function adapterOptions(names, selected, blank) {
+  return (blank !== undefined ? [`<option value=""${selected ? "" : " selected"}>${esc(blank)}</option>`] : [])
+    .concat(names.map(n => `<option value="${esc(n)}"${n === selected ? " selected" : ""}>${esc(n)}</option>`)).join("");
+}
+function envRowNewHtml() {
+  return `<div class="envrow new"><input type="text" data-envkey placeholder="NAME" autocomplete="off"><input type="password" data-envval placeholder="value" autocomplete="new-password"></div>`;
+}
+function adapterHtml(name, a) {
+  const env = a.env && typeof a.env === "object" ? a.env : {};
+  const init = (v) => `data-init="${esc(v)}"`;
+  const rows = Object.entries(env).map(([k, v]) => `<div class="envrow" data-env="${esc(k)}"><code>${esc(k)}</code><input type="password" data-envval autocomplete="new-password" placeholder="${v && v.set ? "set (leave empty to keep)" : "not set"}"><button type="button" class="small danger" data-act="env-del">Remove</button></div>`).join("");
+  return `<div class="adapter" data-adapter="${esc(name)}" data-envkeys="${esc(JSON.stringify(Object.keys(env)))}">
+    <div class="adhead"><b>${esc(name)}</b><span class="hint">adapter</span></div>
+    <label>type</label><input type="text" data-ad="type" ${init(a.type ?? "")} value="${esc(a.type ?? "")}">
+    <label>command</label><input type="text" data-ad="command" ${init(a.command ?? "")} value="${esc(a.command ?? "")}">
+    <label>extra arguments (one per line)</label><textarea data-ad="extraArgs" rows="2" spellcheck="false" ${init(listText(a.extraArgs))}>${esc(listText(a.extraArgs))}</textarea>
+    <label>environment variables (values are write-only)</label>
+    <div class="envrows">${rows}${envRowNewHtml()}</div>
+    <button type="button" class="small" data-act="env-add">Add variable</button>
+  </div>`;
+}
+
+/** Roles: the server default (editable here) beside the selected project's override (read-only; changed in the Project form). */
+function rolesTableHtml(S, ctx) {
+  const names = Object.keys((S.agents && S.agents.adapters) || {});
+  const over = (ctx.projectSettings && ctx.projectSettings.settings && ctx.projectSettings.settings.roles) || {};
+  const pname = ctx.project ? (ctx.project.name || ctx.project.id) : null;
+  const rows = ROLES.map(r => {
+    const d = (S.agents && S.agents.roles && S.agents.roles[r]) || {};
+    const o = over[r] || {};
+    const k = (f) => `agents.roles.${r}.${f}`;
+    const adapterCell = `<select data-key="${k("adapter")}" data-type="enum" data-init="${esc(d.adapter ?? "")}">${adapterOptions(names, d.adapter, r === "phaseValidator" ? "(same as validator)" : undefined)}</select>`;
+    const modelCell = `<input type="text" data-key="${k("model")}" data-type="string" data-init="${esc(d.model ?? "")}" value="${esc(d.model ?? "")}" placeholder="CLI default">`;
+    const projCell = pname ? `<select disabled>${adapterOptions(names, o.adapter, "(server default)")}</select> <input type="text" disabled value="${esc(o.model ?? "")}" placeholder="server default">` : `<span class="hint">no project</span>`;
+    return `<tr data-role="${r}"><td><code>${r}</code></td><td>${adapterCell}</td><td>${modelCell}</td><td>${projCell}</td></tr>`;
+  }).join("");
+  return `<h4>Roles</h4><div class="hint">Which adapter and model each role uses by default. Different adapters for the worker and the validator give independent judgement. A project can override a role in the Project form${pname ? ` (the column on the right shows <b>${esc(pname)}</b>)` : ""}. Sign-in status of each CLI is on the Agents tab.</div>
+  <table class="roles"><tr><th>Role</th><th>Server default adapter</th><th>Model</th><th>${pname ? `Override in ${esc(pname)}` : "Project override"}</th></tr>${rows}</table>`;
+}
+
+function serverFormHtml(schema, view, ctx = {}) {
+  const S = view.settings, pending = view.restartRequired || [];
+  const { fields } = formEntries(schema, "server");
+  const by = (g) => fields.filter(e => e.group === g);
+  const draw = (list, readOnly) => list.map(e => fieldHtml(e, dotGet(S, e.key), { readOnly, pending })).join("");
+  const adapters = Object.entries((S.agents && S.agents.adapters) || {}).map(([n, a]) => adapterHtml(n, a)).join("");
+  const defaultsEntry = schema.find(e => e.scope === "server" && e.key === "defaults.*");
+  const banner = pending.length ? `<div class="restart-note">Saved, but the running daemon still uses the old value of <code>${pending.map(esc).join("</code>, <code>")}</code>. Restart orch to apply ${pending.length === 1 ? "it" : "them"}.</div>` : "";
+  return `${banner}
+  <section class="setgrp"><h3>Agents</h3>${draw(by("Agents"), false)}<h4>Adapters</h4><div class="hint">Named agent CLIs. A project's roles pick one by name. Environment values are write-only.</div>${adapters}${rolesTableHtml(S, ctx)}</section>
+  <section class="setgrp"><h3>Notifications</h3>${draw(by("Notifications"), false)}<div class="setrow"><button type="button" data-act="notify-test">Send test</button><span id="notifyResult" class="setmsg"></span></div><div class="hint">Send test uses the saved settings: save first.</div></section>
+  <section class="setgrp"><h3>Server</h3><div class="hint">Read-only here: edit server.json and restart. Changing the address, port or token from the page that depends on them could lock you out.</div>${draw(by("Server"), true)}</section>
+  ${defaultsEntry ? `<details class="rawwrap"><summary>Advanced: defaults for every project</summary>${fieldHtml(defaultsEntry, dotGet(S, "defaults"), { pending })}</details>` : ""}
+  <div class="setrow"><button class="primary" type="button" data-act="save-server">Save server settings</button></div><div id="serverMsg" class="setmsg"></div>`;
+}
+
+function projectRolesHtml(S, view) {
+  const names = Object.keys((S && S.agents && S.agents.adapters) || {});
+  const over = (view.settings && view.settings.roles) || {};
+  const eff = (view.effective && view.effective.roles) || {};
+  const rows = ROLES.map(r => {
+    const o = over[r] || {}, e = eff[r] || {};
+    return `<tr data-role="${r}"><td><code>${r}</code></td>
+      <td><select data-key="roles.${r}.adapter" data-type="enum" data-init="${esc(o.adapter ?? "")}">${adapterOptions(names, o.adapter, `(server default${e.adapter ? ": " + e.adapter : ""})`)}</select></td>
+      <td><input type="text" data-key="roles.${r}.model" data-type="string" data-init="${esc(o.model ?? "")}" value="${esc(o.model ?? "")}" placeholder="${esc(e.model || "CLI default")}"></td></tr>`;
+  }).join("");
+  return `<div class="hint">An empty adapter uses the server default (Server form). Adapters are defined in server.json.</div><table class="roles"><tr><th>Role</th><th>Adapter</th><th>Model</th></tr>${rows}</table>`;
+}
+
+function projectFormHtml(schema, view, ctx = {}) {
+  const raw = view.invalidText !== undefined ? view.invalidText : JSON.stringify(view.settings || {}, null, 2);
+  const rawEditor = `<details class="rawwrap"${view.effective ? "" : " open"}><summary>Raw JSON (orch.config.json)</summary><textarea id="projectRaw" spellcheck="false">${esc(raw)}</textarea>
+    <div class="setrow"><button type="button" data-act="save-raw">Save raw JSON</button><span class="hint">Replaces the whole file; validated by the same rules.</span></div></details>`;
+  const problem = view.error ? `<div class="setmsg bad">${esc(view.error)}</div>` : "";
+  if (!view.effective) return `${problem}${rawEditor}<div id="projectMsg" class="setmsg"></div>`;
+  const { fields, unknown } = formEntries(schema, "project");
+  const eff = view.effective;
+  const draw = (list) => list.map(e => fieldHtml(e, dotGet(eff, e.key))).join("");
+  const normal = fields.filter(e => !e.advanced), adv = fields.filter(e => e.advanced);
+  const groups = groupOrder(normal).map(g => `<section class="setgrp"><h3>${esc(g)}</h3>${draw(normal.filter(e => e.group === g))}</section>`).join("");
+  const advanced = groupOrder(adv).map(g => `<section class="setgrp"><h3>${esc(g)} (advanced)</h3>${draw(adv.filter(e => e.group === g))}</section>`).join("");
+  const warnings = (view.warnings || []).length ? `<div class="setmsg warn">${view.warnings.map(esc).join("<br>")}</div>` : "";
+  const skipped = unknown.length ? `<div class="hint">Not editable as a field, use the raw JSON: ${unknown.map(e => `<code>${esc(e.key)}</code> (${esc(e.type)})`).join(", ")}</div>` : "";
+  return `${problem}${warnings}${groups}
+  <section class="setgrp"><h3>Roles</h3>${projectRolesHtml(ctx.serverSettings && ctx.serverSettings.settings, view)}</section>
+  <div class="setrow"><button type="button" class="small" data-act="toggle-advanced">Advanced settings</button><span class="hint">Hand-off budgets and the pull request feedback loop.</span></div>
+  <div class="advanced" hidden>${advanced}</div>
+  ${skipped}${rawEditor}
+  <div class="setrow"><button class="primary" type="button" data-act="save-project">Save project settings</button></div>
+  <div class="hint">Saving writes <code>orch.config.json</code> in the repository and commits it to the base branch when that checkout has no other changes.</div><div id="projectMsg" class="setmsg"></div>`;
+}
+// </settings-forms>
+
+let setView = { schema: null, server: null, project: null, pid: null };
+let setSub = "server", setDirty = false;
+const setRoot = () => $("#tab-settings");
+
+async function loadSettings(force) {
+  if (setDirty && !force) return; // never replace a form the owner is typing into
+  const pid = selectedProject;
+  const [schema, server, project] = await Promise.all([
+    setView.schema || api("GET", "/api/settings/schema"),
+    api("GET", "/api/settings/server"),
+    pid ? api("GET", `/api/projects/${enc(pid)}/settings`) : Promise.resolve(null),
+  ]);
+  setView = { schema, server, project, pid };
+  setDirty = false;
+  renderSettings();
+}
+function renderSettings() {
+  const el = setRoot(), { schema, server, project, pid } = setView;
+  if (!schema) { el.innerHTML = `<div class="empty">Loading settings…</div>`; return; }
+  const p = pid ? projects.find(x => x.id === pid) : null;
+  const pname = p ? p.name || p.id : null;
+  el.innerHTML = `<div class="setbar"><button type="button" data-sub="server" class="${setSub === "server" ? "active" : ""}">Server</button>
+    <button type="button" data-sub="project" class="${setSub === "project" ? "active" : ""}"${pid ? "" : " disabled"}>Project${pname ? `: ${esc(pname)}` : ""}</button>
+    <span class="hint">Server settings are <code>server.json</code>; project settings are <code>orch.config.json</code> in the repository.</span></div>
+    <div id="setServer"${setSub === "server" ? "" : " hidden"}>${serverFormHtml(schema, server, { project: p, projectSettings: project })}</div>
+    <div id="setProject"${setSub === "project" ? "" : " hidden"}>${project ? projectFormHtml(schema, project, { serverSettings: server }) : `<div class="empty">No project selected.</div>`}</div>`;
+}
+
+// Field values -> a PUT patch holding only what changed.
+function setPath(obj, key, v) {
+  const segs = key.split(".");
+  let n = obj;
+  for (const s of segs.slice(0, -1)) n = (n[s] = n[s] || {});
+  n[segs[segs.length - 1]] = v;
+}
+function fieldValue(el) {
+  switch (el.dataset.type) {
+    case "bool": return el.checked;
+    case "int": return el.value.trim() === "" ? undefined : Number(el.value);
+    case "list": return el.value.split("\n").map(s => s.trim()).filter(Boolean);
+    case "map": return Object.fromEntries(el.value.split("\n").map(l => l.trim()).filter(Boolean).map(l => { const i = l.indexOf("="); return i < 0 ? [l, ""] : [l.slice(0, i).trim(), l.slice(i + 1)]; }));
+    case "json": { const t = el.value.trim(); return t ? JSON.parse(t) : {}; }
+    default: return el.value;
+  }
+}
+const fieldChanged = (el) => el.dataset.type === "bool" ? String(el.checked) !== el.dataset.init : el.type === "password" ? el.value !== "" : el.value !== el.dataset.init;
+
+/** The changed `data-key` fields of a form as a nested patch. `scope` decides how an emptied role override is sent. */
+function collectPatch(root, scope) {
+  const patch = {};
+  const roleSiblings = new Set();
+  for (const el of root.querySelectorAll("[data-key]")) {
+    if (el.disabled || !fieldChanged(el)) continue;
+    const key = el.dataset.key;
+    let v = fieldValue(el);
+    if (v === undefined) continue;
+    if (scope === "project" && /^roles\.\w+\.adapter$/.test(key) && v === "") v = null; // no override: use the server default
+    setPath(patch, key, v);
+    const m = key.match(/^agents\.roles\.(\w+)\./);
+    if (m) roleSiblings.add(m[1]);
+  }
+  // A server role is always sent whole (adapter and model), so a half-written role never lands in the file.
+  for (const r of roleSiblings) for (const f of ["adapter", "model"]) {
+    const el = root.querySelector(`[data-key="agents.roles.${r}.${f}"]`);
+    if (el) setPath(patch, `agents.roles.${r}.${f}`, el.value);
+  }
+  return patch;
+}
+function collectAdapters(root, patch) {
+  for (const card of root.querySelectorAll(".adapter[data-adapter]")) {
+    const name = card.dataset.adapter, base = `agents.adapters.${name}`;
+    for (const el of card.querySelectorAll("[data-ad]")) {
+      if (el.value === el.dataset.init) continue;
+      setPath(patch, `${base}.${el.dataset.ad}`, el.dataset.ad === "extraArgs" ? el.value.split("\n").map(s => s.trim()).filter(Boolean) : el.value);
+    }
+    const before = JSON.parse(card.dataset.envkeys || "[]"), env = {};
+    let changed = false;
+    const present = [];
+    for (const row of card.querySelectorAll(".envrow")) {
+      const val = row.querySelector("[data-envval]").value;
+      if (row.dataset.env !== undefined) { present.push(row.dataset.env); env[row.dataset.env] = val === "" ? { set: true } : val; if (val !== "") changed = true; }
+      else { const k = row.querySelector("[data-envkey]").value.trim(); if (k && val !== "") { env[k] = val; changed = true; } }
+    }
+    if (before.some(k => !present.includes(k))) changed = true; // a variable was removed
+    if (changed) setPath(patch, `${base}.env`, env);
+  }
+}
+const setMsg = (id, text, cls) => { const m = $(id); if (m) { m.textContent = text; m.className = "setmsg " + (cls || ""); } };
+
+async function saveServerSettings() {
+  const root = $("#setServer");
+  let patch;
+  try { patch = collectPatch(root, "server"); collectAdapters(root, patch); } catch (e) { return setMsg("#serverMsg", e.message, "bad"); }
+  if (!Object.keys(patch).length) return setMsg("#serverMsg", "Nothing changed.", "");
+  try {
+    const r = await api("PUT", "/api/settings/server", { settings: patch });
+    toast(r.restartRequired.length ? `saved; restart needed for ${r.restartRequired.join(", ")}` : "server settings saved");
+    setDirty = false;
+    await loadSettings(true);
+    setMsg("#serverMsg", r.restartRequired.length ? `Saved. These need a restart: ${r.restartRequired.join(", ")}.` : "Saved. Agent launches from now on use the new settings.", "ok");
+  } catch (e) { setMsg("#serverMsg", e.message, "bad"); }
+}
+async function putProject(body) {
+  const pid = setView.pid;
+  try {
+    const r = await api("PUT", `/api/projects/${enc(pid)}/settings`, body);
+    setDirty = false;
+    await loadSettings(true);
+    const note = r.committed ? "Saved and committed to the base branch." : `Saved to orch.config.json, not committed: ${r.reason}.`;
+    setMsg("#projectMsg", note + (r.warnings.length ? "\n" + r.warnings.join("\n") : ""), r.committed && !r.warnings.length ? "ok" : "warn");
+    quietRefresh();
+  } catch (e) { setMsg("#projectMsg", e.message, "bad"); }
+}
+async function saveProjectSettings() {
+  let patch;
+  try { patch = collectPatch($("#setProject"), "project"); } catch (e) { return setMsg("#projectMsg", e.message, "bad"); }
+  if (!Object.keys(patch).length) return setMsg("#projectMsg", "Nothing changed.", "");
+  await putProject({ settings: patch });
+}
+async function saveProjectRaw() {
+  let doc;
+  try { doc = JSON.parse($("#projectRaw").value); } catch (e) { return setMsg("#projectMsg", `Not valid JSON: ${e.message}`, "bad"); }
+  await putProject({ replace: true, settings: doc });
+}
+async function sendNotifyTest() {
+  setMsg("#notifyResult", "Sending…", "");
+  try {
+    const r = await api("POST", "/api/settings/notify-test", {});
+    setMsg("#notifyResult", r.ok ? "Sent. Check your phone." : `Failed: ${r.error}`, r.ok ? "ok" : "bad");
+  } catch (e) { setMsg("#notifyResult", e.message, "bad"); }
+}
+
+setRoot().addEventListener("input", () => { setDirty = true; });
+setRoot().addEventListener("click", (e) => {
+  const sub = e.target.closest("[data-sub]");
+  if (sub) { setSub = sub.dataset.sub; renderSettings(); return; }
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const a = b.dataset.act;
+  if (a === "save-server") act(saveServerSettings);
+  else if (a === "save-project") act(saveProjectSettings);
+  else if (a === "save-raw") act(saveProjectRaw);
+  else if (a === "notify-test") act(sendNotifyTest);
+  else if (a === "toggle-advanced") { const adv = $("#setProject .advanced"); adv.hidden = !adv.hidden; }
+  else if (a === "env-add") { b.closest(".adapter").querySelector(".envrows").insertAdjacentHTML("beforeend", envRowNewHtml()); }
+  else if (a === "env-del") { b.closest(".envrow").remove(); setDirty = true; }
+});
+/** An SSE `change` about settings: reload the forms unless the owner is in the middle of an edit. */
+function onSettingsChange(data) {
+  if (data && data.what === "settings" && !setRoot().hidden) quietSettings();
+}
+const quietSettings = () => loadSettings(false).catch(() => {});
+
 // Activity: the shown run's notable events; reloaded when the shown run changes (project or run switch, reconnect).
 const ACTIVITY_KINDS = ["state", "git", "error", "verdict", "decision", "question"];
 async function loadActivity() {
@@ -964,7 +1289,7 @@ function connect() {
     setLive(false, `connection lost; retrying in ${wait / 1000} s`);
     clearTimeout(retryTimer); retryTimer = setTimeout(reconnect, wait);
   };
-  src.addEventListener("change", () => scheduleRefresh());
+  src.addEventListener("change", (m) => { scheduleRefresh(); try { onSettingsChange(JSON.parse(m.data)); } catch { /* not JSON */ } });
   src.addEventListener("account", (m) => onAccountEvent(JSON.parse(m.data)));
   src.addEventListener("event", (m) => {
     const ev = JSON.parse(m.data);
