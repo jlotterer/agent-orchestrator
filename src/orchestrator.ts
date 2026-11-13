@@ -3,13 +3,19 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ChildProcess } from "node:child_process";
 import type { Config, ProjectConfig, ServerConfig } from "./config.js";
-import { loadProjectConfig, toLegacyConfig, DEFAULT_PROJECT_CONFIG } from "./config.js";
+import {
+  loadProjectConfig, toLegacyConfig, DEFAULT_PROJECT_CONFIG, loadServerConfig, readServerFile, readProjectFile,
+  buildServerConfig, buildProjectConfig, mergeServerDefaults, writeSettingsFile, CONFIG_FILENAME,
+} from "./config.js";
+import {
+  applyPatch, buildDefaults, checkSettings, isPlain, maskServerSettings, pruneDefaults, resolveSecrets, restartKeysChanged,
+} from "./settings-schema.js";
 import type { Store } from "./db.js";
 import { Git, sh, shell } from "./git.js";
 import { runAgent, getAdapter } from "./adapters/index.js";
 import type { RoleName, RoleConfig } from "./config.js";
 import { loadPrompt, render, clip, PKG_ROOT } from "./prompts.js";
-import { notify, type NotifyOptions } from "./notify.js";
+import { notify, sendNtfy, type NotifyOptions, type NotifyResult } from "./notify.js";
 import { readSpecDir, importFeature, markTaskDoneInFile, type SpecDir } from "./speckit.js";
 import { DEFAULT_BRIEF_CHARS, earlierPhaseKeys, parseBrief, parseFrontmatter, type Conflict, type FeatureTask, type Problem } from "./core/brief.js";
 import { assembleSpecContext, extractReqRows, resolveContracts, cutDecision, type ContextBudgets, type ContextCut, type NamedText, type SpecContextInput } from "./core/context.js";
@@ -22,7 +28,7 @@ import { findCycle } from "./core/graph.js";
 import { nextTaskState, type TaskEvent, type TransitionResult, type Effect } from "./core/transitions.js";
 import { decidePrAction } from "./core/prpoll.js";
 import { UNFINISHED_RUN_STATUSES, resolveProjectForCwd, registerProject, archiveProject, type RegisterResult } from "./projects.js";
-import { orchHome, runDir } from "./paths.js";
+import { orchHome, runDir, serverConfigPath } from "./paths.js";
 import { startApp, killLeftovers, AppStartError, APP_OUTPUT_CHARS, type AppProcess } from "./appserver.js";
 import { addRunUsage, addTaskUsage, projectTotals, runTotals } from "./costs.js";
 import { ALREADY_COMPLETE_SUMMARY, buildDocsUpdate, docsUpdateText, docsUpdateTitle, type DocsUpdate } from "./core/docsUpdate.js";
@@ -99,6 +105,8 @@ export class Orchestrator extends EventEmitter {
   private busyAgents = 0;
   /** Last context error per project, so the tick reports each distinct one once. */
   private contextErrors = new Map<string, string>();
+  /** Settings saved from the dashboard that only take effect after a restart (T029). Empty after a restart, by construction. */
+  private restartPending = new Set<string>();
   readonly home: string;
 
   constructor(public server: ServerConfig, public store: Store, opts: { home?: string } = {}) {
@@ -188,6 +196,127 @@ export class Orchestrator extends EventEmitter {
     this.contextErrors.delete(projectId);
     this.changed("projects", { projectId });
     return p;
+  }
+
+  // ------------------------------------------------------------------ settings (§5.2, §15.1; T029, decision 0026)
+  /** `server.json` as the Settings tab shows it: the file over the defaults, every secret as `{set}` (§16). */
+  serverSettings(): { settings: any; restartRequired: string[]; path: string } {
+    const file = serverConfigPath(this.home);
+    const settings = maskServerSettings(mergeServerDefaults(readServerFile(this.home)));
+    if (!settings.auth.token.set && this.server.auth.token) settings.auth.token = { set: true }; // ORCH_TOKEN counts
+    return { settings, restartRequired: [...this.restartPending], path: file };
+  }
+
+  /**
+   * Apply a PUT body to `server.json`: a masked or omitted secret keeps the stored value, keys outside the schema
+   * and anything `buildServerConfig` (the startup rules) refuses are errors and leave the file as it was, and the
+   * file is rewritten atomically. The running config is reloaded; the result names the changed keys that need a restart.
+   */
+  saveServerSettings(body: any): { ok: true; restartRequired: string[] } {
+    const given = isPlain(body) && isPlain(body.settings) ? body.settings : body;
+    if (!isPlain(given)) throw new Error("settings must be a JSON object");
+    const file = serverConfigPath(this.home);
+    const stored = readServerFile(this.home);
+    const patch = resolveSecrets(given, stored);
+    const problems = checkSettings("server", patch, { strict: true });
+    if (problems.length) throw new Error(problems.join("; "));
+    const merged = applyPatch("server", stored, patch);
+    buildServerConfig(merged, file); // the loader's rules, on everything the owner sent (pruning must not hide a refused key); throws with its message
+    const doc = pruneDefaults(merged, buildDefaults("server"), stored);
+    const restartRequired = restartKeysChanged("server", mergeServerDefaults(stored), mergeServerDefaults(doc));
+    writeSettingsFile(file, doc);
+    this.reloadServer();
+    for (const k of restartRequired) this.restartPending.add(k);
+    return { ok: true, restartRequired };
+  }
+
+  /**
+   * Swap in the settings now in `server.json` and rebuild every project context, so the next agent launch uses
+   * them. What the daemon bound at start keeps its running value until a restart: host, port, public URL, the
+   * access token, the archive timer's retention and the tick interval.
+   */
+  reloadServer(): ServerConfig {
+    const fresh = loadServerConfig(this.home), run = this.server;
+    this.server = {
+      ...fresh, host: run.host, port: run.port, publicUrl: run.publicUrl, auth: run.auth, retention: run.retention,
+      scheduler: { ...fresh.scheduler, tickSeconds: run.scheduler.tickSeconds },
+    };
+    this.contexts.clear();
+    this.contextErrors.clear();
+    this.changed("settings", {});
+    return this.server;
+  }
+
+  /** A project's settings file, its effective settings and what the loader makes of them. A file that cannot load is reported, not thrown. */
+  projectSettings(projectId: string) {
+    const project = this.requireProject(projectId);
+    const file = path.join(project.repo_path, CONFIG_FILENAME);
+    const out: { settings: Record<string, unknown>; effective: ProjectConfig | null; warnings: string[]; error: string | null; path: string; exists: boolean; invalidText?: string } =
+      { settings: {}, effective: null, warnings: [], error: null, path: file, exists: fs.existsSync(file) };
+    if (!fs.existsSync(project.repo_path)) return { ...out, error: `repository ${project.repo_path} does not exist` };
+    try {
+      out.settings = readProjectFile(project.repo_path);
+    } catch (e: any) {
+      out.error = e?.message ?? String(e);
+      out.invalidText = fs.readFileSync(file, "utf8"); // so the raw editor can repair it
+      return out;
+    }
+    try {
+      const l = buildProjectConfig(project.repo_path, out.exists ? out.settings : null, this.server);
+      out.effective = l.config;
+      out.warnings = l.warnings;
+    } catch (e: any) {
+      out.error = e?.message ?? String(e);
+    }
+    return out;
+  }
+
+  /**
+   * Apply a PUT body to a project's `orch.config.json`: a patch over the stored file (`null` removes a key), or the
+   * whole file with `replace: true`. Server-only keys are refused with the loader's message. The file is written, and
+   * committed on the base branch when that checkout has no other change (never to a task branch); `committed: false`
+   * carries the reason. The project's context is rebuilt so the next tick uses the new settings.
+   */
+  async saveProjectSettings(projectId: string, body: any): Promise<{ ok: true; committed: boolean; reason?: string; warnings: string[]; path: string }> {
+    const project = this.requireProject(projectId);
+    const repo = project.repo_path, file = path.join(repo, CONFIG_FILENAME);
+    if (!fs.existsSync(repo)) throw new Error(`repository ${repo} does not exist`);
+    const given = isPlain(body) && isPlain(body.settings) ? body.settings : body;
+    if (!isPlain(given)) throw new Error("settings must be a JSON object");
+    const replace = isPlain(body) && body.replace === true;
+
+    return this.withProjectLock(projectId, async () => {
+      let stored: Record<string, unknown> = {};
+      try { stored = readProjectFile(repo); } catch (e) { if (!replace) throw e; } // a broken file can only be replaced
+      const doc = replace ? structuredClone(given) : applyPatch("project", stored, given);
+      const loaded = buildProjectConfig(repo, doc, this.server); // the loader's rules: server-only keys, unknown role adapters
+      const problems = checkSettings("project", replace ? doc : given, { strict: false });
+      if (problems.length) throw new Error(problems.join("; "));
+
+      // Which branch the checkout should be on: the base branch as it is now, not as this save may change it.
+      let base = loaded.config.baseBranch;
+      try { base = buildProjectConfig(repo, stored, this.server).config.baseBranch; } catch { /* the new value */ }
+      const blocker = await commitBlocker(repo, base);
+      writeSettingsFile(file, doc);
+
+      let committed = false, reason = blocker ?? undefined;
+      if (!blocker) {
+        try {
+          committed = await new Git(repo, base, this.server.git.ghCommand).commitPaths(repo, [CONFIG_FILENAME], "chore(orch): update project settings");
+          if (!committed) reason = "the settings file is unchanged";
+        } catch (e: any) {
+          reason = `git commit failed: ${e?.message ?? e}`;
+        }
+      }
+      try { this.refreshContext(projectId); } catch { /* validated above; a later change to the repo shows up on the project card */ }
+      this.changed("settings", { projectId });
+      return { ok: true as const, committed, ...(reason ? { reason } : {}), warnings: loaded.warnings, path: file };
+    });
+  }
+
+  /** One ntfy message with the saved URL and token (the Settings tab's Send test). Never returns or logs the token. */
+  sendTestNotification(): Promise<NotifyResult> {
+    return sendNtfy(this.server, "orch", "orch: test notification", { tags: ["bell"] });
   }
 
   // ------------------------------------------------------------------ helpers
@@ -1093,7 +1222,9 @@ export class Orchestrator extends EventEmitter {
 
   /** Serializes operations that touch a project's main checkout (local merges, tasks.md ticks); projects do not wait on each other. */
   private withMergeLock<T>(ctx: ProjectContext, fn: () => Promise<T>): Promise<T> {
-    const id = ctx.project.id;
+    return this.withProjectLock(ctx.project.id, fn);
+  }
+  private withProjectLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
     const next = (this.mergeChains.get(id) ?? Promise.resolve()).then(fn, fn);
     this.mergeChains.set(id, next.catch(() => {}));
     return next;
@@ -1835,6 +1966,18 @@ export class Orchestrator extends EventEmitter {
     }
     this.ensureTicking();
   }
+}
+
+/**
+ * Why a settings file cannot be committed on the base branch right now, or null when it can: the checkout is on
+ * another branch, or it has staged or unstaged changes (untracked files do not count).
+ */
+async function commitBlocker(repo: string, base: string): Promise<string | null> {
+  const cur = (await sh("git", ["rev-parse", "--abbrev-ref", "HEAD"], repo)).stdout.trim();
+  if (cur !== base) return `the checkout is on '${cur || "no branch"}', not the base branch '${base}'`;
+  const st = await sh("git", ["status", "--porcelain", "--untracked-files=no"], repo);
+  if (st.code !== 0) return `git status failed: ${(st.stderr || st.stdout).trim()}`;
+  return st.stdout.trim() ? "the base checkout has uncommitted changes" : null;
 }
 
 /** Task fields the owner may edit (REQ-INTAKE-09). */

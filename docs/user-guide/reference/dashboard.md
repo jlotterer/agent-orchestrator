@@ -79,6 +79,28 @@ In the panel:
 
 orch shows the output and your input only in your open browsers. It doesn't save them in its database, logs or any file, and the program saves the credentials in its own store. On a server that isn't Linux or macOS, **Sign in** shows the command to run by hand instead.
 
+## Settings tab
+
+The **Settings** tab edits the same two files orch reads at start: `server.json` and the selected project's `orch.config.json`. The forms are built from the list of settings in orch, so every setting appears. Changes are checked by the same rules orch applies at start, so a value orch would refuse is refused here, with the same message, and the file is left as it was.
+
+Choose **Server** or **Project** at the top.
+
+**Server** has three groups.
+
+| Group | What you can do |
+| :--- | :--- |
+| Agents | Change the agent time limit, the number of agents that run at once and the GitHub CLI command. Each adapter has its type, command, extra arguments and environment variables. A variable's value is never shown: the box says **set (leave empty to keep)**. Type a value to replace it, or select **Remove** to delete the variable. The role table shows the server default for each role next to the selected project's override; change an override in the Project form. Sign-in status is on the [Agents tab](#agents-tab). |
+| Notifications | Set the ntfy address and token. **Send test** sends one message with the settings you last saved. |
+| Server | Shows the address, port, public address, access token and retention. They are read-only here: edit `server.json` and restart orch. A page can't safely change the address or token it is loaded from. |
+
+**Project** has groups for the project name and base branch, validation, scheduler, git and roles. Select **Advanced settings** for the hand-off budgets and the pull request feedback loop. **Raw JSON** shows the whole file; **Save raw JSON** replaces it. The roles table shows an empty adapter as **(server default: …)**.
+
+When you save, only the fields you changed are written, so a later change to a default still reaches you. After a save:
+
+- Server settings apply to the next agent launch. A run in progress picks them up too, at its next launch. A setting that needs a restart is saved but marked **restart required** until orch restarts.
+- A project save is committed to the base branch as `chore(orch): update project settings` when the project's checkout is on that branch and has no other uncommitted changes. If not, the file is saved and the page says why it wasn't committed. orch never commits to a task branch and never pushes.
+- Warnings, such as a key orch doesn't recognise, appear under the form.
+
 ## Task panel
 
 The right column shows the selected task. When no task is selected, it shows "Select a task to see its plan, log, and actions."

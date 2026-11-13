@@ -37,7 +37,20 @@ Errors return `{"error": "<message>"}` with one of these status codes:
 | :--- | :--- | :--- |
 | `GET /api/health` | None | `{ok, version, uptimeSec}` |
 | `POST /api/login` | `{token}` | Sets the sign-in cookie and returns `{ok, auth: true}`. With access control off, returns `{ok, auth: false}`. A wrong token returns `401`. |
-| `GET /api/events/stream` | None | A live stream of server-sent events: `event` for new log entries, `change` for state changes and `account` for a sign-in flow's lines and end. |
+| `GET /api/events/stream` | None | A live stream of server-sent events: `event` for new log entries, `change` for state changes (including `settings`) and `account` for a sign-in flow's lines and end. |
+
+## Settings
+
+The Settings tab uses these routes. Secrets are write-only: a read returns `{"set": true}` or `{"set": false}` in place of the token, the ntfy token and every adapter environment value.
+
+| Method and path | Body | Returns |
+| :--- | :--- | :--- |
+| `GET /api/settings/schema` | None | Every setting: `{key, scope, type, default, enum, min, max, description, group, secret, restart, advanced}`. |
+| `GET /api/settings/server` | None | `{settings, restartRequired, path}`: `server.json` over the defaults, and the keys saved since orch started that need a restart. |
+| `PUT /api/settings/server` | `{settings}` | `{ok, restartRequired}`. `settings` holds only the keys to change; a secret sent as `{"set": true}`, or left out, keeps its stored value, and `null` removes a key. `400` with the reason, and `server.json` unchanged, when a key isn't a server setting or the value is refused. |
+| `POST /api/settings/notify-test` | None | `{ok: true}`, or `{ok: false, error}`. Sends one message, `orch: test notification`, with the saved ntfy address and token. |
+| `GET /api/projects/:id/settings` | None | `{settings, effective, warnings, error, path, exists}`: the project file, the settings orch will use, and the problems found in the file. |
+| `PUT /api/projects/:id/settings` | `{settings}` or `{settings, replace: true}` | `{ok, committed, reason, warnings, path}`. Without `replace`, `settings` holds only the keys to change. `400` with the reason, and the file unchanged, for a server-only key or a refused value. `committed` is `false`, with `reason`, when the checkout wasn't clean or wasn't on the base branch; the file is still written. |
 
 ## Agent accounts
 

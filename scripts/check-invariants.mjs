@@ -20,18 +20,24 @@ const VENDOR = /claude|gemini|anthropic|antigravity|\bagy\b|codex|openai/i;
 
 /**
  * Lines outside src/adapters/ that may name a vendor. Keep this list short and specific:
- * src/config.ts ships the built-in adapter definitions (`agents.adapters.claude|antigravity|codex`), the
- * default role → adapter mapping, the pre-0.2 `agent` block migration, and the upgrade error for the
- * retired `gemini` type (T027, decision 0024), which by nature name vendors.
+ * src/settings-schema.ts ships the built-in adapter definitions (`agents.adapters.claude|antigravity|codex`) and
+ * the default role → adapter mapping (T029: the schema is where defaults live); src/config.ts keeps the pre-0.2
+ * `agent` block migration and the upgrade error for the retired `gemini` type (T027, decision 0024), which by
+ * nature name vendors.
  * Matched against the trimmed line. Anything else naming a vendor belongs in src/adapters/.
  */
+const COMMENT = /^(\/\/|\/\*|\*)/;
 const ALLOWLIST = {
-  "src/config.ts": [
-    /^(\/\/|\/\*|\*)/,                                                     // comments in the config module
+  "src/settings-schema.ts": [
+    COMMENT,
     /^(claude|antigravity|codex): \{$/,                                    // default adapter keys
     /^(type|command): "(claude|antigravity|agy|codex)",$/,                 // default adapter type / CLI command
+    /^(planner|worker|validator): \{ adapter: "claude", model: "" \},$/,   // default roles
+  ],
+  "src/config.ts": [
+    COMMENT,                                                               // comments in the config module
     /^const RETIRED_ADAPTER_(TYPE = "gemini"|MESSAGE = 'has type "gemini", retired in T027 \(decision 0024\); use type "antigravity" \(command agy\) or "codex", or remove it and point roles at claude');$/, // retired-adapter upgrade error
-    /^(planner|worker|validator): \{ adapter: "claude", model: (""|a\.\w+ \?\? "") \},$/, // default roles + legacy migration
+    /^(planner|worker|validator): \{ adapter: "claude", model: a\.\w+ \?\? "" \},$/, // legacy `agent` block migration
     /^adapters: \{ claude: \{ type: "claude", command: a\.command \?\? "claude", /,        // legacy `agent` block migration
   ],
 };

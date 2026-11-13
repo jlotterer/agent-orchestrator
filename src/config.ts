@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { orchHome, serverConfigPath, dbPath, worktreesDir, projectSlug } from "./paths.js";
 import { resolveToken } from "./auth.js";
+import { buildDefaults } from "./settings-schema.js";
 
 export interface RoleConfig {
   /** Key into agents.adapters. */
@@ -134,95 +135,6 @@ export interface Config {
     ntfyToken: string;
   };
 }
-
-export const DEFAULT_CONFIG: Config = {
-  repo: process.cwd(),
-  baseBranch: "main",
-  worktreeDir: path.join(process.cwd(), "..", "orch-worktrees"),
-  dbPath: path.join(process.cwd(), ".orch", "orch.db"),
-  host: "127.0.0.1",
-  port: 4800,
-  publicUrl: "http://localhost:4800",
-  auth: { token: "", allowInsecure: false },
-  agents: {
-    timeoutMinutes: 90,
-    adapters: {
-      claude: {
-        type: "claude",
-        command: "claude",
-        // Headless runs need permissions resolved up front. Scope this down with
-        // --allowedTools if you don't want full autonomy inside the worktree.
-        extraArgs: ["--permission-mode", "bypassPermissions"],
-        env: {},
-      },
-      antigravity: {
-        type: "antigravity",
-        command: "agy",
-        // Auto-approves every tool call; without it a tool needing approval is soft-denied and the
-        // run still exits 0 with nothing done. The worktree is the boundary (decision 0024).
-        extraArgs: ["--dangerously-skip-permissions"],
-        env: {},
-      },
-      codex: {
-        type: "codex",
-        command: "codex",
-        // No approvals and no sandbox: orch's worktree is the boundary, as with the other adapters.
-        extraArgs: ["--dangerously-bypass-approvals-and-sandbox"],
-        env: {},
-      },
-    },
-    roles: {
-      planner: { adapter: "claude", model: "" },
-      worker: { adapter: "claude", model: "" },
-      validator: { adapter: "claude", model: "" },
-    },
-  },
-  scheduler: {
-    maxParallel: 1,
-    tickSeconds: 5,
-    maxAttempts: 2,
-    resumeOnRetry: true,
-  },
-  validation: {
-    command: "",
-    agent: true,
-  },
-  git: {
-    pr: true,
-    mergePolicy: "auto",
-    squash: true,
-    copyFiles: [],
-    setupCommand: "",
-    tickTasksMd: true,
-    ghCommand: "gh",
-    feedback: {
-      enabled: true,
-      waitForChecks: true,
-      pollSeconds: 60,
-      maxRounds: 3,
-      checksTimeoutMinutes: 60,
-      noChecksGraceSeconds: 90,
-      trigger: "/orch",
-      ignoreAuthors: [],
-      logChars: 6000,
-    },
-  },
-  handoff: {
-    specChars: 12000,
-    historyChars: 6000,
-    contextFiles: ["spec.md", "data-model.md", "plan.md"],
-    briefChars: 8000,
-    reqChars: 4000,
-    contractChars: 6000,
-    rulesChars: 6000,
-    requirementsFile: "docs/requirements.md",
-    projectFiles: ["AGENTS.md"],
-  },
-  notify: {
-    ntfyUrl: "",
-    ntfyToken: "",
-  },
-};
 
 export const CONFIG_FILENAME = "orch.config.json";
 
@@ -380,43 +292,46 @@ export const SERVER_CONFIG_FILENAME = "server.json";
 const RETIRED_ADAPTER_TYPE = "gemini";
 const RETIRED_ADAPTER_MESSAGE = 'has type "gemini", retired in T027 (decision 0024); use type "antigravity" (command agy) or "codex", or remove it and point roles at claude';
 
-export const DEFAULT_SERVER_CONFIG: ServerConfig = {
-  host: "127.0.0.1",
-  port: 4800,
-  publicUrl: "http://localhost:4800",
-  auth: { token: "", allowInsecure: false },
-  notify: { ntfyUrl: "", ntfyToken: "" },
-  agents: {
-    timeoutMinutes: DEFAULT_CONFIG.agents.timeoutMinutes,
-    adapters: DEFAULT_CONFIG.agents.adapters,
-    roles: DEFAULT_CONFIG.agents.roles,
-  },
-  scheduler: { maxAgents: 2, tickSeconds: 5 },
-  retention: { eventDays: 30 },
-  git: { ghCommand: "gh" },
-  defaults: {},
-};
+/** Built-in server settings (§19), derived from `src/settings-schema.ts` (decision 0026). */
+export const DEFAULT_SERVER_CONFIG: ServerConfig = buildDefaults("server");
 
-/** Built-in project defaults (§19). `name` and `roles` are filled per project at load time. */
-export const DEFAULT_PROJECT_CONFIG: Omit<ProjectConfig, "name" | "roles"> = {
-  baseBranch: "main",
-  scheduler: { maxParallel: 1, maxAttempts: 2, resumeOnRetry: true },
-  validation: {
-    command: "",
-    agent: true,
-    phase: { enabled: true, command: "", maxFixups: 2 },
-    ui: { startCommand: "", url: "http://127.0.0.1:{port}/", readyTimeoutSeconds: 120, env: {} },
+/** Built-in project defaults (§19), derived from the schema. `name` and `roles` are filled per project at load time. */
+export const DEFAULT_PROJECT_CONFIG: Omit<ProjectConfig, "name" | "roles"> = buildDefaults("project");
+
+/** The pre-split single-file settings (legacy `orch.config.json`, §5.5): the typed defaults above joined into one `Config`. */
+export const DEFAULT_CONFIG: Config = {
+  repo: process.cwd(),
+  baseBranch: DEFAULT_PROJECT_CONFIG.baseBranch,
+  worktreeDir: path.join(process.cwd(), "..", "orch-worktrees"),
+  dbPath: path.join(process.cwd(), ".orch", "orch.db"),
+  host: DEFAULT_SERVER_CONFIG.host,
+  port: DEFAULT_SERVER_CONFIG.port,
+  publicUrl: DEFAULT_SERVER_CONFIG.publicUrl,
+  auth: DEFAULT_SERVER_CONFIG.auth,
+  agents: {
+    timeoutMinutes: DEFAULT_SERVER_CONFIG.agents.timeoutMinutes,
+    adapters: DEFAULT_SERVER_CONFIG.agents.adapters,
+    roles: DEFAULT_SERVER_CONFIG.agents.roles as Config["agents"]["roles"],
   },
+  scheduler: {
+    maxParallel: DEFAULT_PROJECT_CONFIG.scheduler.maxParallel,
+    tickSeconds: DEFAULT_SERVER_CONFIG.scheduler.tickSeconds,
+    maxAttempts: DEFAULT_PROJECT_CONFIG.scheduler.maxAttempts,
+    resumeOnRetry: DEFAULT_PROJECT_CONFIG.scheduler.resumeOnRetry,
+  },
+  validation: { command: DEFAULT_PROJECT_CONFIG.validation.command, agent: DEFAULT_PROJECT_CONFIG.validation.agent },
   git: {
-    pr: true,
-    mergePolicy: "auto",
-    squash: true,
-    copyFiles: [],
-    setupCommand: "",
-    tickTasksMd: true,
-    feedback: DEFAULT_CONFIG.git.feedback,
+    pr: DEFAULT_PROJECT_CONFIG.git.pr,
+    mergePolicy: DEFAULT_PROJECT_CONFIG.git.mergePolicy,
+    squash: DEFAULT_PROJECT_CONFIG.git.squash,
+    copyFiles: DEFAULT_PROJECT_CONFIG.git.copyFiles,
+    setupCommand: DEFAULT_PROJECT_CONFIG.git.setupCommand,
+    tickTasksMd: DEFAULT_PROJECT_CONFIG.git.tickTasksMd,
+    ghCommand: DEFAULT_SERVER_CONFIG.git.ghCommand,
+    feedback: DEFAULT_PROJECT_CONFIG.git.feedback,
   },
-  handoff: DEFAULT_CONFIG.handoff,
+  handoff: DEFAULT_PROJECT_CONFIG.handoff,
+  notify: DEFAULT_SERVER_CONFIG.notify,
 };
 
 /**
@@ -498,13 +413,26 @@ function readJsonObject(p: string): Record<string, unknown> {
   return raw;
 }
 
+/** Read `<home>/server.json` as a JSON object without applying defaults; a missing file is `{}`. */
+export function readServerFile(home: string = orchHome()): Record<string, unknown> {
+  const p = serverConfigPath(home);
+  return fs.existsSync(p) ? readJsonObject(p) : {};
+}
+
 /**
  * Load `<home>/server.json` over the built-in server defaults; a missing file yields the defaults.
  * Throws if a role names an undefined adapter or `defaults` holds a server-only key.
  */
 export function loadServerConfig(home: string = orchHome()): ServerConfig {
-  const p = serverConfigPath(home);
-  const raw = fs.existsSync(p) ? readJsonObject(p) : {};
+  return buildServerConfig(readServerFile(home), serverConfigPath(home));
+}
+
+/**
+ * The rules of `loadServerConfig` applied to a settings document, so the dashboard can validate a candidate
+ * before it writes it (T029). `where` labels the source in error messages.
+ */
+export function buildServerConfig(raw: Record<string, unknown>, where: string): ServerConfig {
+  const p = where;
   if (raw.defaults !== undefined) {
     if (!isPlainObject(raw.defaults)) throw new Error(`${p}: 'defaults' must be an object`);
     assertNoForbiddenKeys(raw.defaults, p, "defaults.");
@@ -518,6 +446,11 @@ export function loadServerConfig(home: string = orchHome()): ServerConfig {
     if (r && !cfg.agents.adapters[r.adapter]) throw new Error(`${p}: agents.roles.${role}.adapter '${r.adapter}' is not defined in agents.adapters`);
   }
   return cfg;
+}
+
+/** `raw` merged over the built-in defaults, with no environment applied: what the settings file means. */
+export function mergeServerDefaults(raw: Record<string, unknown>): ServerConfig {
+  return clone(deepMerge(DEFAULT_SERVER_CONFIG, raw));
 }
 
 export interface LoadedProjectConfig {
@@ -536,6 +469,22 @@ export interface LoadedProjectConfig {
  * returned as warnings.
  */
 export function loadProjectConfig(repoPath: string, server: ServerConfig): LoadedProjectConfig {
+  const file = path.join(path.resolve(repoPath), CONFIG_FILENAME);
+  const exists = fs.existsSync(file);
+  return buildProjectConfig(repoPath, exists ? readJsonObject(file) : null, server);
+}
+
+/** Read `<repo>/orch.config.json` as a JSON object without applying defaults; a missing file is `{}`. */
+export function readProjectFile(repoPath: string): Record<string, unknown> {
+  const file = path.join(path.resolve(repoPath), CONFIG_FILENAME);
+  return fs.existsSync(file) ? readJsonObject(file) : {};
+}
+
+/**
+ * The rules of `loadProjectConfig` applied to a settings document (`null` = the repo has no file), so the
+ * dashboard can validate a candidate before it writes it (T029).
+ */
+export function buildProjectConfig(repoPath: string, rawFile: Record<string, unknown> | null, server: ServerConfig): LoadedProjectConfig {
   const repo = path.resolve(repoPath);
   const file = path.join(repo, CONFIG_FILENAME);
   const warnings: string[] = [];
@@ -544,13 +493,12 @@ export function loadProjectConfig(repoPath: string, server: ServerConfig): Loade
   const defaults = pickKnown(clone(server.defaults) as Record<string, unknown>, PROJECT_SCHEMA, "", dw);
   warnings.push(...dw.map((w) => `${SERVER_CONFIG_FILENAME} defaults: ${w}`));
 
-  const exists = fs.existsSync(file);
+  const exists = rawFile !== null;
   let own: Record<string, unknown> = {};
-  if (exists) {
-    const raw = readJsonObject(file);
-    assertNoForbiddenKeys(raw, file);
+  if (rawFile) {
+    assertNoForbiddenKeys(rawFile, file);
     const pw: string[] = [];
-    own = pickKnown(raw, PROJECT_SCHEMA, "", pw);
+    own = pickKnown(rawFile, PROJECT_SCHEMA, "", pw);
     warnings.push(...pw.map((w) => `${CONFIG_FILENAME}: ${w}`));
   }
 
@@ -567,6 +515,24 @@ export function loadProjectConfig(repoPath: string, server: ServerConfig): Loade
     }
   }
   return { config: cfg, warnings, path: exists ? file : null };
+}
+
+/**
+ * Write a settings file as 2-space JSON through a temp file and a rename, so a reader never sees half a file.
+ * A new file is created owner-only (it may hold tokens); an existing file keeps its permissions.
+ */
+export function writeSettingsFile(file: string, doc: unknown): void {
+  const tmp = `${file}.${process.pid}.tmp`;
+  let mode = 0o600;
+  try { mode = fs.statSync(file).mode & 0o777; } catch { /* new file */ }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + "\n", { mode });
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    throw e;
+  }
 }
 
 /**
